@@ -1,14 +1,11 @@
 [package]
-name = "fast-trace" # You can change "fast-trace" to your project's name
+name = "fast-trace"
 version = "0.1.0"
 edition = "2024"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 socket2 = "0.5"
 pnet = "0.34"
 anyhow = "1.0"
-rand = "0.8" # Still useful for randomizing ICMP payload or if you revert to UDP source ports
 clap = { version = "4.4.8", features = ["derive"] }
