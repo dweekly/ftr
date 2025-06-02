@@ -17,6 +17,14 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 
 ## Installation
 
+### Using Homebrew
+
+```bash
+brew tap dweekly/ftr && brew install ftr
+```
+
+### Using Cargo
+
 ```bash
 cargo install ftr
 ```
