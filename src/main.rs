@@ -8,6 +8,9 @@
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use futures::stream::{FuturesUnordered, StreamExt};
+use hickory_resolver::config::ResolverConfig;
+use hickory_resolver::name_server::TokioConnectionProvider;
+use hickory_resolver::TokioResolver;
 use ipnet::Ipv4Net;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
@@ -21,9 +24,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::time::timeout as tokio_timeout;
-use hickory_resolver::config::ResolverConfig;
-use hickory_resolver::TokioResolver;
-use hickory_resolver::name_server::TokioConnectionProvider;
 
 /// The size of the payload to send with ICMP Echo Requests.
 const ICMP_ECHO_PAYLOAD_SIZE: usize = 16;
