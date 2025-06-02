@@ -2,8 +2,8 @@
 
 [![Crates.io](https://img.shields.io/crates/v/ftr.svg)](https://crates.io/crates/ftr)
 [![Documentation](https://docs.rs/ftr/badge.svg)](https://docs.rs/ftr)
-[![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/tracer/blob/main/LICENSE)
-[![CI](https://github.com/dweekly/tracer/workflows/CI/badge.svg)](https://github.com/dweekly/tracer/actions)
+[![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/ftr/blob/main/LICENSE)
+[![CI](https://github.com/dweekly/ftr/workflows/CI/badge.svg)](https://github.com/dweekly/ftr/actions)
 
 A fast, parallel ICMP traceroute implementation with ASN lookup.
 
@@ -62,8 +62,8 @@ Minimalist ICMP Traceroute to 8.8.8.8
 ## Building from Source
 
 ```bash
-git clone https://github.com/dweekly/tracer
-cd tracer
+git clone https://github.com/dweekly/ftr
+cd ftr
 cargo build --release
 ```
 

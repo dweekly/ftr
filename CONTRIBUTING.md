@@ -16,8 +16,8 @@ Thank you for your interest in contributing to ftr! This document provides guide
 
 ```bash
 # Clone your fork
-git clone git@github.com:YOUR_USERNAME/tracer.git
-cd tracer
+git clone git@github.com:YOUR_USERNAME/ftr.git
+cd ftr
 
 # Build the project
 cargo build
