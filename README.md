@@ -25,12 +25,12 @@ cargo install ftr
 
 Basic usage:
 ```bash
-sudo ftr google.com
+ftr google.com
 ```
 
 With options:
 ```bash
-sudo ftr example.com -m 20 -W 5000
+ftr example.com -m 20 -W 5000
 ```
 
 ### Options
@@ -44,19 +44,33 @@ sudo ftr example.com -m 20 -W 5000
 ## Example Output
 
 ```
-Minimalist ICMP Traceroute to 8.8.8.8
- 1  192.168.1.1      1.234 ms    (Local/Private)
- 2  10.0.0.1         5.678 ms    (Local/Private)
- 3  203.0.113.1      8.901 ms    AS64496 Example ISP
- 4  198.51.100.1    12.345 ms    AS64497 Transit Provider
- 5  192.0.2.1       15.678 ms    AS64498 Another Network
- 6  8.8.8.8         18.901 ms    AS15169 Google LLC
+ftr to www.facebook.com (157.240.22.35), 30 max hops, 1000ms probe timeout, 3000ms overall timeout
+
+Performing ASN lookups and classifying segments...
+ 1 [LAN   ] 192.168.1.1 (Private Network)    0.409 ms
+ 2 [ISP   ] 157.131.132.109 (AS46375 - AS-SONICTELECOM, US)   18.589 ms
+ 3 [ISP   ] 135.180.179.42 (AS46375 - AS-SONICTELECOM, US)   10.193 ms
+ 4 [ISP   ] 142.254.59.217 (AS46375 - AS-SONICTELECOM, US)   17.891 ms
+ 5 [ISP   ] 157.131.209.161 (AS46375 - AS-SONICTELECOM, US)   53.078 ms
+ 6 [UNKNOWN] * * *
+ 7 [UNKNOWN] * * *
+ 8 [UNKNOWN] * * *
+ 9 [UNKNOWN] * * *
+10 [UNKNOWN] * * *
+11 [UNKNOWN] * * *
+12 [UNKNOWN] * * *
+13 [UNKNOWN] * * *
+14 [ISP   ] 75.101.33.185 (AS46375 - AS-SONICTELECOM, US)    4.255 ms
+15 [BEYOND] 157.240.70.50 (AS32934 - FACEBOOK, US)    4.249 ms
+16 [BEYOND] 157.240.112.90 (AS32934 - FACEBOOK, US)    4.192 ms
+17 [BEYOND] 129.134.118.175 (AS32934 - FACEBOOK, US)    4.689 ms
+18 [BEYOND] 129.134.60.98 (AS32934 - FACEBOOK, US)    6.501 ms
+19 [BEYOND] 157.240.22.35 (AS32934 - FACEBOOK, US)    4.515 ms
 ```
 
 ## Requirements
 
-- Rust 1.70.0 or later
-- Root/administrator privileges (required for raw ICMP sockets)
+- Rust 1.87.0 or later
 - Windows: [Npcap](https://npcap.com/) or WinPcap installed
 
 ## Building from Source
