@@ -1,8 +1,8 @@
-# tracer
+# ftr (Fast TraceRoute)
 
-[![Crates.io](https://img.shields.io/crates/v/tracer.svg)](https://crates.io/crates/tracer)
-[![Documentation](https://docs.rs/tracer/badge.svg)](https://docs.rs/tracer)
-[![License](https://img.shields.io/crates/l/tracer.svg)](https://github.com/dweekly/tracer/blob/main/LICENSE)
+[![Crates.io](https://img.shields.io/crates/v/ftr.svg)](https://crates.io/crates/ftr)
+[![Documentation](https://docs.rs/ftr/badge.svg)](https://docs.rs/ftr)
+[![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/tracer/blob/main/LICENSE)
 [![CI](https://github.com/dweekly/tracer/workflows/CI/badge.svg)](https://github.com/dweekly/tracer/actions)
 
 A fast, parallel ICMP traceroute implementation with ASN lookup.
@@ -18,19 +18,19 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 ## Installation
 
 ```bash
-cargo install tracer
+cargo install ftr
 ```
 
 ## Usage
 
 Basic usage:
 ```bash
-sudo tracer google.com
+sudo ftr google.com
 ```
 
 With options:
 ```bash
-sudo tracer example.com -m 20 -W 5000
+sudo ftr example.com -m 20 -W 5000
 ```
 
 ### Options

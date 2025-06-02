@@ -1,4 +1,4 @@
-//! tracer - A fast, parallel ICMP traceroute implementation with ASN lookup.
+//! ftr - Fast TraceRoute: A parallel ICMP traceroute implementation with ASN lookup.
 //!
 //! This crate provides a high-performance traceroute tool that uses parallel
 //! probing to significantly reduce scan time compared to traditional sequential
@@ -210,7 +210,7 @@ async fn main() -> Result<()> {
     };
 
     println!(
-        "tracer to {} ({}), {} max hops, {}ms probe timeout, {}ms overall timeout{}",
+        "ftr to {} ({}), {} max hops, {}ms probe timeout, {}ms overall timeout{}",
         args.host,
         target_ipv4,
         effective_max_hops,
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_clap_args_parsing_basic() {
-        let args = Args::try_parse_from(&["tracer", "example.com"]).unwrap();
+        let args = Args::try_parse_from(&["ftr", "example.com"]).unwrap();
         assert_eq!(args.host, "example.com");
         assert_eq!(args.start_ttl, 1);
         assert_eq!(args.max_hops, 30);
@@ -752,14 +752,14 @@ mod tests {
 
     #[test]
     fn test_clap_args_no_enrich() {
-        let args = Args::try_parse_from(&["tracer", "example.com", "--no-enrich"]).unwrap();
+        let args = Args::try_parse_from(&["ftr", "example.com", "--no-enrich"]).unwrap();
         assert!(args.no_enrich);
     }
 
     #[test]
     fn test_clap_args_custom_values() {
         let args = Args::try_parse_from(&[
-            "tracer",
+            "ftr",
             "example.com",
             "-s",
             "5",

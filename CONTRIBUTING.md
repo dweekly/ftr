@@ -1,6 +1,6 @@
-# Contributing to tracer
+# Contributing to ftr
 
-Thank you for your interest in contributing to tracer! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to ftr! This document provides guidelines for contributing to the project.
 
 ## How to Contribute
 

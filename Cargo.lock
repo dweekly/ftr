@@ -262,6 +262,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ftr"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
+ "hickory-resolver",
+ "ipnet",
+ "pnet",
+ "socket2",
+ "tokio",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1281,20 +1295,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tracer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "futures",
- "hickory-resolver",
- "ipnet",
- "pnet",
- "socket2",
- "tokio",
 ]
 
 [[package]]

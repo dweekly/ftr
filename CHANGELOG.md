@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-01-06
 
 ### Added
-- Initial release of tracer
+- Initial release of ftr (Fast TraceRoute)
 - Fast parallel ICMP traceroute implementation
 - Automatic ASN (Autonomous System Number) lookup for each hop
 - Intelligent hop classification (LAN, ISP, Beyond)
