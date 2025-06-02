@@ -11,8 +11,15 @@ readme = "README.md"
 keywords = ["traceroute", "icmp", "networking", "asn", "diagnostics"]
 categories = ["command-line-utilities", "network-programming"]
 
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+opt-level = "z"  # Optimize for size
+
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "macros"] }
 socket2 = "0.5"
 pnet = "0.34"
 anyhow = "1.0"
