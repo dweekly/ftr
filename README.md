@@ -13,7 +13,7 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 - **ASN lookups** - Automatically identifies the autonomous system for each hop
 - **Smart classification** - Categorizes hops (e.g., local networks, IXPs, CDNs)
 - **Minimal dependencies** - Built with efficiency in mind
-- **Cross-platform** - Works on Linux, macOS, and Windows
+- **Cross-platform** - Works on Linux, macOS, and Windows (requires Npcap on Windows)
 
 ## Installation
 
@@ -57,6 +57,7 @@ Minimalist ICMP Traceroute to 8.8.8.8
 
 - Rust 1.70.0 or later
 - Root/administrator privileges (required for raw ICMP sockets)
+- Windows: [Npcap](https://npcap.com/) or WinPcap installed
 
 ## Building from Source
 
