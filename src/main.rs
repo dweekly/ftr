@@ -481,16 +481,26 @@ async fn main() -> Result<()> {
         .await?;
 
         // --- Phase 3: Printing Final Classified Results ---
+        let destination_ip = IpAddr::V4(target_ipv4);
         for hop_info in &final_classified_hops {
             print_classified_hop_info(hop_info);
+            // Stop printing once we reach the destination
+            if hop_info.addr == Some(destination_ip) {
+                break;
+            }
         }
     } else {
         // Print raw results if --no-enrich
         println!("\nTraceroute path (raw):");
+        let destination_ip = IpAddr::V4(target_ipv4);
         for ttl_val in args.start_ttl..=effective_max_hops {
             let results_guard = raw_results_map.lock().unwrap();
             if let Some(raw_hop) = results_guard.get(&ttl_val) {
                 print_raw_hop_info(raw_hop);
+                // Stop printing once we reach the destination
+                if raw_hop.addr == Some(destination_ip) {
+                    break;
+                }
             } else {
                 print_raw_hop_info(&RawHopInfo {
                     ttl: ttl_val,
