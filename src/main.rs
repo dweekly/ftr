@@ -199,7 +199,7 @@ struct SentProbe {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
-    let effective_max_hops = args.max_hops.min(30);
+    let effective_max_hops = args.max_hops;
 
     let target_ipv4 = match resolve_host(&args.host).await {
         Ok(ip) => ip,
