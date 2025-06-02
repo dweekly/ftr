@@ -1,0 +1,86 @@
+# tracer
+
+A fast, parallel ICMP traceroute implementation with ASN lookup.
+
+## Features
+
+- **Parallel probing** - Sends multiple TTL probes concurrently for faster route discovery
+- **ASN lookups** - Automatically identifies the autonomous system for each hop
+- **Smart classification** - Categorizes hops (e.g., local networks, IXPs, CDNs)
+- **Minimal dependencies** - Built with efficiency in mind
+- **Cross-platform** - Works on Linux, macOS, and Windows
+
+## Installation
+
+```bash
+cargo install tracer
+```
+
+## Usage
+
+Basic usage:
+```bash
+sudo tracer google.com
+```
+
+With options:
+```bash
+sudo tracer example.com -m 20 -W 5000
+```
+
+### Options
+
+- `-s, --start-ttl <START_TTL>` - Starting TTL value (default: 1)
+- `-m, --max-hops <MAX_HOPS>` - Maximum number of hops (default: 30)
+- `--probe-timeout-ms <MS>` - Timeout for individual probes in milliseconds (default: 1000)
+- `-i, --send-launch-interval-ms <MS>` - Interval between launching probes (default: 5)
+- `-W, --overall-timeout-ms <MS>` - Overall timeout for the traceroute (default: 3000)
+
+## Example Output
+
+```
+Minimalist ICMP Traceroute to 8.8.8.8
+ 1  192.168.1.1      1.234 ms    (Local/Private)
+ 2  10.0.0.1         5.678 ms    (Local/Private)
+ 3  203.0.113.1      8.901 ms    AS64496 Example ISP
+ 4  198.51.100.1    12.345 ms    AS64497 Transit Provider
+ 5  192.0.2.1       15.678 ms    AS64498 Another Network
+ 6  8.8.8.8         18.901 ms    AS15169 Google LLC
+```
+
+## Requirements
+
+- Rust 1.70.0 or later
+- Root/administrator privileges (required for raw ICMP sockets)
+
+## Building from Source
+
+```bash
+git clone https://github.com/dweekly/tracer
+cd tracer
+cargo build --release
+```
+
+## How It Works
+
+This traceroute implementation:
+1. Sends ICMP Echo Request packets with increasing TTL values
+2. Captures ICMP Time Exceeded messages from intermediate routers
+3. Performs reverse DNS and ASN lookups for discovered hops
+4. Uses parallel probing to significantly reduce total scan time
+
+## Performance
+
+Unlike traditional sequential traceroute implementations, this tool sends multiple probes in parallel, dramatically reducing the time needed to map a complete network path.
+
+## License
+
+MIT License - see LICENSE file for details
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Author
+
+David Weekly (dweekly)
