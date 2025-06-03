@@ -2,7 +2,7 @@
 name = "ftr"
 version = "0.1.1"
 edition = "2021"
-authors = ["David Weekly <dweekly@gmail.com>"]
+authors = ["David Weekly <david@weekly.org>"]
 description = "A fast, parallel ICMP traceroute implementation with ASN lookup"
 license = "MIT"
 repository = "https://github.com/dweekly/ftr"
@@ -26,4 +26,23 @@ anyhow = "1.0"
 futures = "0.3"
 ipnet = "2.9"
 clap = { version = "4.4.8", features = ["derive"] }
-hickory-resolver = { version = "0.25", features = ["tokio"] } 
+hickory-resolver = { version = "0.25", features = ["tokio"] }
+
+[package.metadata.deb]
+section = "net"
+priority = "optional"
+depends = "$auto"
+maintainer = "David Weekly <david@weekly.org>"
+copyright = "2025, David Weekly <david@weekly.org>"
+license-file = ["LICENSE", "4"]
+extended-description = """\
+ftr (Fast TraceRoute) is a high-performance, parallel ICMP traceroute \
+implementation written in Rust. It features concurrent probing for faster \
+route discovery, automatic ASN (Autonomous System Number) lookups to identify \
+network operators, and intelligent hop classification (e.g., local networks, \
+IXPs, CDNs)."""
+assets = [
+    ["target/release/ftr", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/ftr/README", "644"],
+    ["CHANGELOG.md", "usr/share/doc/ftr/CHANGELOG", "644"],
+] 

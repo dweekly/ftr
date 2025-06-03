@@ -23,6 +23,20 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 brew tap dweekly/ftr && brew install ftr
 ```
 
+### Using Debian/Ubuntu Package
+
+Download the appropriate .deb package from the [latest release](https://github.com/dweekly/ftr/releases/latest):
+
+```bash
+# For x86_64/amd64
+wget https://github.com/dweekly/ftr/releases/latest/download/ftr_<version>_amd64.deb
+sudo dpkg -i ftr_<version>_amd64.deb
+
+# For ARM64/aarch64
+wget https://github.com/dweekly/ftr/releases/latest/download/ftr_<version>_arm64.deb
+sudo dpkg -i ftr_<version>_arm64.deb
+```
+
 ### Using Cargo
 
 ```bash
