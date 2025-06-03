@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2025-01-06
+
+### Added
+- APT repository installation instructions for Debian/Ubuntu users
+- Release checklist documentation to ensure consistent release process
+
+### Changed
+- Optimized APT repository workflow to avoid downloading entire package pool
+- Fixed aptly repository URL to use HTTP instead of HTTPS
+
+### Documentation
+- Added comprehensive Ubuntu/Debian installation instructions via APT repository
+- Created RELEASE_CHECKLIST.md for maintaining release quality
+
 ## [0.1.1] - 2025-01-06
 
 ### Added
@@ -40,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/dweekly/ftr/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dweekly/ftr/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/dweekly/ftr/releases/tag/v0.1.0
