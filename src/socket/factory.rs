@@ -1,9 +1,10 @@
 //! Factory for creating probe sockets with automatic fallback
 
 use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
+use super::icmp_v4::DgramIcmpV4Socket;
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
 
 /// Try to create a socket with the specified configuration
 fn try_create_socket(mode: ProbeMode) -> Result<Socket> {
@@ -79,11 +80,24 @@ pub fn create_probe_socket(
             };
 
             match try_create_socket(mode) {
-                Ok(_socket) => {
+                Ok(socket) => {
                     eprintln!("Using {} mode for traceroute", mode.description());
-                    // TODO: Create appropriate ProbeSocket implementation based on mode
-                    // For now, return an error as we haven't implemented the concrete types yet
-                    return Err(anyhow!("Socket implementations not yet available"));
+                    
+                    // Create the appropriate ProbeSocket implementation
+                    match (mode.ip_version, mode.protocol, mode.socket_mode) {
+                        (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
+                            // Bind the socket
+                            let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+                            socket.bind(&bind_addr.into())
+                                .context("Failed to bind ICMP socket")?;
+                            
+                            return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                        }
+                        _ => {
+                            // Other implementations not yet available
+                            return Err(anyhow!("Socket implementation for {} not yet available", mode.description()));
+                        }
+                    }
                 }
                 Err(e) => {
                     eprintln!("Failed to create {}: {}", mode.description(), e);
@@ -106,8 +120,11 @@ mod tests {
         let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
         let ipv6 = IpAddr::V6("2001:db8::1".parse().unwrap());
 
-        // These will fail for now since implementations aren't ready
-        assert!(create_probe_socket(ipv4, None).is_err());
+        // IPv4 ICMP DGRAM might succeed if we have permissions
+        // or fail if we don't - both are valid outcomes
+        let _ = create_probe_socket(ipv4, None);
+        
+        // IPv6 not implemented yet
         assert!(create_probe_socket(ipv6, None).is_err());
     }
 

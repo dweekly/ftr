@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 
 pub mod factory;
+pub mod icmp_v4;
 
 /// IP version to use for probing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
