@@ -1,5 +1,9 @@
 name: Publish to APT Repository on R2
 
+# This workflow publishes Debian packages to an APT repository hosted on Cloudflare R2.
+# To optimize performance, it only syncs metadata files (dists/) and uploads new .deb files,
+# avoiding the need to download all existing .deb packages.
+
 on:
   release:
     types: [published] # Triggers when a new release is published
@@ -43,13 +47,14 @@ jobs:
           sudo apt-get update
 
           # Ensure dependencies for adding external repositories are present
-          sudo apt-get install -y gpg wget ca-certificates
+          sudo apt-get install -y gpg wget ca-certificates jq
 
           # Download aptly's GPG key directly and store it in the recommended location
           wget -qO - https://www.aptly.info/pubkey.txt | sudo gpg --dearmor -o /usr/share/keyrings/aptly-archive-keyring.gpg
 
           # Add aptly's repository, referencing the GPG key
-          echo "deb [signed-by=/usr/share/keyrings/aptly-archive-keyring.gpg] https://repo.aptly.info/ stable main" | sudo tee /etc/apt/sources.list.d/aptly.list
+          # Note: aptly's repo is HTTP-only, so we need to explicitly allow it
+          echo "deb [signed-by=/usr/share/keyrings/aptly-archive-keyring.gpg trusted=yes] http://repo.aptly.info/ stable main" | sudo tee /etc/apt/sources.list.d/aptly.list
 
           # Update package list and install aptly
           sudo apt-get update
@@ -77,6 +82,14 @@ jobs:
           mkdir -p ~/.aptly/db ~/.aptly/public
           echo "Downloading existing aptly database (if any)..."
           rclone sync ":s3:${R2_BUCKET_NAME}/_aptly_db/" ~/.aptly/db/ --create-empty-src-dirs || echo "No existing aptly DB found or error syncing, proceeding..."
+          
+          # Only download metadata files, not the actual .deb packages
+          echo "Downloading existing repository metadata..."
+          mkdir -p ~/.aptly/public/dists ~/.aptly/public/pool
+          
+          # Download only the metadata structure (dists directory)
+          rclone sync ":s3:${R2_BUCKET_NAME}/dists/" ~/.aptly/public/dists/ --create-empty-src-dirs || echo "No existing dists found"
+          
           # Ensure aptly config exists, create a basic one if not
           if [ ! -f ~/.aptly.conf ]; then
             echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
@@ -94,6 +107,10 @@ jobs:
             exit 1
           fi
           echo "DEB_FILE=$DEB_FILE" >> $GITHUB_ENV
+          
+          # Extract package name for pool path
+          CARGO_PKG_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
+          echo "CARGO_PKG_NAME=$CARGO_PKG_NAME" >> $GITHUB_ENV
 
       - name: Add package to aptly and publish
         env:
@@ -127,10 +144,25 @@ jobs:
           # Cleanup old snapshots (optional, keep last 5 for example)
           aptly snapshot list -sort=time | awk 'NR>5 {print $1}' | xargs -r aptly snapshot drop
 
-      - name: Sync published APT repository to R2
+      - name: Upload APT repository files to R2
         run: |
-          echo "Syncing ~/.aptly/public/ to R2 bucket ${R2_BUCKET_NAME}..."
-          rclone sync ~/.aptly/public/ ":s3:${R2_BUCKET_NAME}/${APT_REPO_PREFIX}" --create-empty-src-dirs --progress --verbose
+          echo "Uploading new .deb package to R2..."
+          # Upload the new .deb file
+          DEB_FILENAME=$(basename "${{ env.DEB_FILE }}")
+          POOL_PATH="pool/${APT_COMPONENT}/${DEB_FILENAME:0:1}/${CARGO_PKG_NAME}/"
+          rclone mkdir ":s3:${R2_BUCKET_NAME}/${POOL_PATH}"
+          rclone copy "${{ env.DEB_FILE }}" ":s3:${R2_BUCKET_NAME}/${POOL_PATH}" --progress
+          
+          echo "Uploading updated metadata to R2..."
+          # Only sync the dists directory (metadata)
+          rclone sync ~/.aptly/public/dists/ ":s3:${R2_BUCKET_NAME}/dists/" --create-empty-src-dirs --progress
+          
+          # Also ensure the GPG key exists
+          if [ ! -f ~/.aptly/public/networkweather.gpg.key ]; then
+            echo "Exporting GPG public key..."
+            gpg --armor --export "${GPG_KEY_ID}" > ~/.aptly/public/networkweather.gpg.key
+            rclone copy ~/.aptly/public/networkweather.gpg.key ":s3:${R2_BUCKET_NAME}/" --progress
+          fi
 
       - name: Sync aptly database back to R2
         run: |
