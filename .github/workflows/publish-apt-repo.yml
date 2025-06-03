@@ -3,6 +3,7 @@ name: Publish to APT Repository on R2
 on:
   release:
     types: [published] # Triggers when a new release is published
+  workflow_dispatch: # allow manual triggering in GitHub UI
 
 jobs:
   build_and_publish_apt:
