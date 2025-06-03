@@ -53,7 +53,8 @@ jobs:
           wget -qO - https://www.aptly.info/pubkey.txt | sudo gpg --dearmor -o /usr/share/keyrings/aptly-archive-keyring.gpg
 
           # Add aptly's repository, referencing the GPG key
-          echo "deb [signed-by=/usr/share/keyrings/aptly-archive-keyring.gpg] https://repo.aptly.info/ stable main" | sudo tee /etc/apt/sources.list.d/aptly.list
+          # Note: aptly's repo is HTTP-only, so we need to explicitly allow it
+          echo "deb [signed-by=/usr/share/keyrings/aptly-archive-keyring.gpg trusted=yes] http://repo.aptly.info/ stable main" | sudo tee /etc/apt/sources.list.d/aptly.list
 
           # Update package list and install aptly
           sudo apt-get update
