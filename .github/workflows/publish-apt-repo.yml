@@ -76,7 +76,7 @@ jobs:
         run: |
           mkdir -p ~/.aptly/db ~/.aptly/public
           echo "Downloading existing aptly database (if any)..."
-          rclone sync "r2-s3:${R2_BUCKET_NAME}/_aptly_db/" ~/.aptly/db/ --create-empty-src-dirs || echo "No existing aptly DB found or error syncing, proceeding..."
+          rclone sync ":s3:${R2_BUCKET_NAME}/_aptly_db/" ~/.aptly/db/ --create-empty-src-dirs || echo "No existing aptly DB found or error syncing, proceeding..."
           # Ensure aptly config exists, create a basic one if not
           if [ ! -f ~/.aptly.conf ]; then
             echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
@@ -130,10 +130,9 @@ jobs:
       - name: Sync published APT repository to R2
         run: |
           echo "Syncing ~/.aptly/public/ to R2 bucket ${R2_BUCKET_NAME}..."
-          rclone sync ~/.aptly/public/ "r2-s3:${R2_BUCKET_NAME}/${APT_REPO_PREFIX}" --create-empty-src-dirs --progress
-          # The rclone remote name "r2-s3" is a placeholder; rclone uses environment variables for S3 config
+          rclone sync ~/.aptly/public/ ":s3:${R2_BUCKET_NAME}/${APT_REPO_PREFIX}" --create-empty-src-dirs --progress --verbose
 
       - name: Sync aptly database back to R2
         run: |
           echo "Syncing ~/.aptly/db/ to R2 bucket ${R2_BUCKET_NAME}/_aptly_db/..."
-          rclone sync ~/.aptly/db/ "r2-s3:${R2_BUCKET_NAME}/_aptly_db/" --create-empty-src-dirs --progress
+          rclone sync ~/.aptly/db/ ":s3:${R2_BUCKET_NAME}/_aptly_db/" --create-empty-src-dirs --progress --verbose
