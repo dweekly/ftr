@@ -6,6 +6,7 @@ use anyhow::Result;
 
 pub mod factory;
 pub mod icmp_v4;
+pub mod udp;
 
 /// IP version to use for probing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
