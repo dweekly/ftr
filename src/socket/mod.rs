@@ -4,6 +4,8 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 use anyhow::Result;
 
+pub mod factory;
+
 /// IP version to use for probing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpVersion {
