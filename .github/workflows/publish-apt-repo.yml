@@ -33,14 +33,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          sparse-checkout: |
+            Cargo.toml
 
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
+      # Rust toolchain not needed since we're downloading pre-built .deb files
 
       - name: Install aptly
         run: |
@@ -97,20 +94,32 @@ jobs:
           fi
           aptly version # Verify aptly is working
 
-      - name: Build .deb package
+      - name: Download release assets
         run: |
-          cargo deb --output target/debian/
-          # Find the .deb file (adjust if your naming/path is different)
-          DEB_FILE=$(find target/debian -name "*.deb" -type f | head -n 1)
-          if [ -z "$DEB_FILE" ]; then
-            echo "Error: .deb file not found!"
-            exit 1
+          # Get the release tag from the event
+          if [ "${{ github.event_name }}" = "release" ]; then
+            RELEASE_TAG="${{ github.event.release.tag_name }}"
+          else
+            # For manual dispatch, get the latest release
+            RELEASE_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName')
           fi
-          echo "DEB_FILE=$DEB_FILE" >> $GITHUB_ENV
           
-          # Extract package name for pool path
+          echo "Downloading .deb files from release $RELEASE_TAG"
+          
+          # Create directory for debs
+          mkdir -p release-debs
+          
+          # Download all .deb files from the release
+          gh release download "$RELEASE_TAG" --pattern "*.deb" --dir release-debs
+          
+          # List downloaded files
+          ls -la release-debs/
+          
+          # Extract package name from Cargo.toml
           CARGO_PKG_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
           echo "CARGO_PKG_NAME=$CARGO_PKG_NAME" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Add package to aptly and publish
         env:
@@ -119,13 +128,18 @@ jobs:
           # Create local repo if it doesn't exist
           if ! aptly repo show -with-packages "${APT_REPO_NAME}"; then
             echo "Creating aptly local repo: ${APT_REPO_NAME}"
-            aptly repo create -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" "${APT_REPO_NAME}"
+            # Create repo with support for multiple architectures
+            aptly repo create -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${APT_REPO_NAME}"
           else
             echo "Aptly local repo ${APT_REPO_NAME} already exists."
           fi
 
-          echo "Adding package ${{ env.DEB_FILE }} to ${APT_REPO_NAME}..."
-          aptly repo add "${APT_REPO_NAME}" "${{ env.DEB_FILE }}"
+          echo "Adding packages to ${APT_REPO_NAME}..."
+          # Add all downloaded .deb files
+          for deb in release-debs/*.deb; do
+            echo "Adding $deb"
+            aptly repo add "${APT_REPO_NAME}" "$deb"
+          done
 
           SNAPSHOT_NAME="${APT_REPO_NAME}-$(date +%s)-${GITHUB_SHA::7}"
           echo "Creating snapshot: ${SNAPSHOT_NAME}"
@@ -135,7 +149,7 @@ jobs:
           # If publishing for the first time to this prefix/distribution:
           if ! aptly publish list | grep -q "${APT_DISTRIBUTION} .*${APT_REPO_PREFIX}"; then
              echo "Publishing new snapshot ${SNAPSHOT_NAME} for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}'"
-             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
+             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
           else
              echo "Switching existing publication for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}' to snapshot ${SNAPSHOT_NAME}"
              aptly publish switch -gpg-key="${GPG_KEY_ID}" -component="${APT_COMPONENT}" "${APT_DISTRIBUTION}" "${APT_REPO_PREFIX}" "${SNAPSHOT_NAME}"
@@ -146,22 +160,34 @@ jobs:
 
       - name: Upload APT repository files to R2
         run: |
-          echo "Uploading new .deb package to R2..."
-          # Upload the new .deb file
-          DEB_FILENAME=$(basename "${{ env.DEB_FILE }}")
-          POOL_PATH="pool/${APT_COMPONENT}/${DEB_FILENAME:0:1}/${CARGO_PKG_NAME}/"
-          rclone mkdir ":s3:${R2_BUCKET_NAME}/${POOL_PATH}"
-          rclone copy "${{ env.DEB_FILE }}" ":s3:${R2_BUCKET_NAME}/${POOL_PATH}" --progress
+          echo "Uploading new .deb packages to R2..."
+          # Upload all .deb files to their appropriate pool locations
+          for deb in release-debs/*.deb; do
+            DEB_FILENAME=$(basename "$deb")
+            # Extract architecture from filename (e.g., ftr_0.1.2_amd64.deb -> amd64)
+            ARCH=$(echo "$DEB_FILENAME" | sed -n 's/.*_\([^_]*\)\.deb$/\1/p')
+            POOL_PATH="pool/${APT_COMPONENT}/${DEB_FILENAME:0:1}/${CARGO_PKG_NAME}/"
+            
+            echo "Uploading $DEB_FILENAME to $POOL_PATH"
+            rclone mkdir ":s3:${R2_BUCKET_NAME}/${POOL_PATH}"
+            rclone copy "$deb" ":s3:${R2_BUCKET_NAME}/${POOL_PATH}" --progress
+          done
           
           echo "Uploading updated metadata to R2..."
           # Only sync the dists directory (metadata)
           rclone sync ~/.aptly/public/dists/ ":s3:${R2_BUCKET_NAME}/dists/" --create-empty-src-dirs --progress
           
-          # Also ensure the GPG key exists
+          # Also ensure the GPG keys exist
           if [ ! -f ~/.aptly/public/networkweather.gpg.key ]; then
-            echo "Exporting GPG public key..."
+            echo "Exporting GPG public key (armored)..."
             gpg --armor --export "${GPG_KEY_ID}" > ~/.aptly/public/networkweather.gpg.key
             rclone copy ~/.aptly/public/networkweather.gpg.key ":s3:${R2_BUCKET_NAME}/" --progress
+          fi
+          
+          if [ ! -f ~/.aptly/public/networkweather.noarmor.gpg ]; then
+            echo "Exporting GPG public key (dearmored)..."
+            gpg --export "${GPG_KEY_ID}" > ~/.aptly/public/networkweather.noarmor.gpg
+            rclone copy ~/.aptly/public/networkweather.noarmor.gpg ":s3:${R2_BUCKET_NAME}/" --progress
           fi
 
       - name: Sync aptly database back to R2

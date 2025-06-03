@@ -40,17 +40,15 @@ sudo apt-get install -y curl gpg ca-certificates
 sudo mkdir -p /usr/share/keyrings
 
 # Download and save the GPG key
-curl -sSL https://apt.networkweather.com/networkweather.gpg.key | sudo tee /usr/share/keyrings/networkweather-archive-keyring.gpg > /dev/null
+sudo curl -sSL https://apt.networkweather.com/networkweather.noarmor.gpg -o /usr/share/keyrings/networkweather-archive-keyring.gpg
 ```
 
 3. Add the ftr APT repository:
 
 ```bash
-# For amd64 systems
-echo "deb [signed-by=/usr/share/keyrings/networkweather-archive-keyring.gpg arch=amd64] https://apt.networkweather.com stable main" | sudo tee /etc/apt/sources.list.d/networkweather.list
-
-# For arm64 systems
-echo "deb [signed-by=/usr/share/keyrings/networkweather-archive-keyring.gpg arch=arm64] https://apt.networkweather.com stable main" | sudo tee /etc/apt/sources.list.d/networkweather.list
+# Automatically detect your system architecture and add the appropriate repository
+ARCH=$(dpkg --print-architecture)
+echo "deb [signed-by=/usr/share/keyrings/networkweather-archive-keyring.gpg arch=$ARCH] https://apt.networkweather.com stable main" | sudo tee /etc/apt/sources.list.d/networkweather.list
 ```
 
 4. Install ftr:
