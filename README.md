@@ -22,9 +22,49 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 brew tap dweekly/ftr && brew install ftr
 ```
 
-### Using Debian/Ubuntu Package
+### Using APT Repository (Debian/Ubuntu)
 
-Download the appropriate .deb package from the [latest release](https://github.com/dweekly/ftr/releases/latest):
+If you are on a Debian-based Linux distribution (like Ubuntu, Debian, Mint, etc.), you can install ftr using our APT repository for easy installation and updates.
+
+1. Update your package list and install prerequisites:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y curl gpg ca-certificates
+```
+
+2. Add the ftr repository GPG key:
+
+```bash
+# Create the directory for GPG keys if it doesn't exist
+sudo mkdir -p /usr/share/keyrings
+
+# Download and save the GPG key
+curl -sSL https://apt.networkweather.com/networkweather.gpg.key | sudo tee /usr/share/keyrings/networkweather-archive-keyring.gpg > /dev/null
+```
+
+3. Add the ftr APT repository:
+
+```bash
+# For amd64 systems
+echo "deb [signed-by=/usr/share/keyrings/networkweather-archive-keyring.gpg arch=amd64] https://apt.networkweather.com stable main" | sudo tee /etc/apt/sources.list.d/networkweather.list
+
+# For arm64 systems
+echo "deb [signed-by=/usr/share/keyrings/networkweather-archive-keyring.gpg arch=arm64] https://apt.networkweather.com stable main" | sudo tee /etc/apt/sources.list.d/networkweather.list
+```
+
+4. Install ftr:
+
+```bash
+sudo apt-get update
+sudo apt-get install ftr
+```
+
+Once installed, ftr will be updated along with your other system packages when you run `sudo apt-get upgrade`.
+
+### Direct Download (Debian/Ubuntu)
+
+Alternatively, you can download the .deb package directly from the [latest release](https://github.com/dweekly/ftr/releases/latest):
 
 ```bash
 # For x86_64/amd64
