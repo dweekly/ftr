@@ -1,7 +1,6 @@
 # ftr (Fast TraceRoute)
 
 [![Crates.io](https://img.shields.io/crates/v/ftr.svg)](https://crates.io/crates/ftr)
-[![Documentation](https://docs.rs/ftr/badge.svg)](https://docs.rs/ftr)
 [![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/ftr/blob/main/LICENSE)
 [![CI](https://github.com/dweekly/ftr/workflows/CI/badge.svg)](https://github.com/dweekly/ftr/actions)
 
