@@ -1,0 +1,128 @@
+name: Publish to APT Repository on R2
+
+on:
+  release:
+    types: [published] # Triggers when a new release is published
+
+jobs:
+  build_and_publish_apt:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # To checkout the repository
+      id-token: write # If you were to use Cloudflare OIDC for rclone (more advanced)
+    
+    env:
+      R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+      APT_REPO_PREFIX: "" # Optional: if your repo is in a subdirectory within the R2 bucket root e.g. "apt"
+      APT_DISTRIBUTION: "stable"
+      APT_COMPONENT: "main"
+      APT_REPO_NAME: "ftr-repo" # Name of the aptly local repo
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      # For rclone S3 provider
+      RCLONE_S3_PROVIDER: "Cloudflare"
+      RCLONE_S3_ACCESS_KEY_ID: ${{ secrets.RCLONE_ACCESS_KEY_ID }}
+      RCLONE_S3_SECRET_ACCESS_KEY: ${{ secrets.RCLONE_SECRET_ACCESS_KEY }}
+      RCLONE_S3_ENDPOINT: "https://${{ secrets.RCLONE_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+      RCLONE_S3_REGION: "auto" # Or your specific region, e.g., "wnam"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Install aptly
+        run: |
+          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys E083A3782A194091
+          echo "deb http://repo.aptly.info/ stable main" | sudo tee /etc/apt/sources.list.d/aptly.list
+          sudo apt-get update
+          sudo apt-get install -y aptly
+
+      - name: Install rclone
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rclone
+      
+      - name: Configure rclone (using env vars)
+        run: |
+          rclone version # Verifies rclone can see S3 env vars (RCLONE_S3_*)
+          # No explicit rclone config file needed when using env vars for S3 provider
+
+      - name: Import GPG Key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          # GPG User ID will be automatically trusted.
+
+      - name: Prepare aptly directories and data
+        run: |
+          mkdir -p ~/.aptly/db ~/.aptly/public
+          echo "Downloading existing aptly database (if any)..."
+          rclone sync "r2-s3:${R2_BUCKET_NAME}/_aptly_db/" ~/.aptly/db/ --create-empty-src-dirs || echo "No existing aptly DB found or error syncing, proceeding..."
+          # Ensure aptly config exists, create a basic one if not
+          if [ ! -f ~/.aptly.conf ]; then
+            echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
+            echo "Created default aptly.conf"
+          fi
+          aptly version # Verify aptly is working
+
+      - name: Build .deb package
+        run: |
+          cargo deb --output target/debian/
+          # Find the .deb file (adjust if your naming/path is different)
+          DEB_FILE=$(find target/debian -name "*.deb" -type f | head -n 1)
+          if [ -z "$DEB_FILE" ]; then
+            echo "Error: .deb file not found!"
+            exit 1
+          fi
+          echo "DEB_FILE=$DEB_FILE" >> $GITHUB_ENV
+
+      - name: Add package to aptly and publish
+        env:
+          APTLY_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }} # Pass GPG passphrase to aptly
+        run: |
+          # Create local repo if it doesn't exist
+          if ! aptly repo show -with-packages "${APT_REPO_NAME}"; then
+            echo "Creating aptly local repo: ${APT_REPO_NAME}"
+            aptly repo create -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" "${APT_REPO_NAME}"
+          else
+            echo "Aptly local repo ${APT_REPO_NAME} already exists."
+          fi
+
+          echo "Adding package ${{ env.DEB_FILE }} to ${APT_REPO_NAME}..."
+          aptly repo add "${APT_REPO_NAME}" "${{ env.DEB_FILE }}"
+
+          SNAPSHOT_NAME="${APT_REPO_NAME}-$(date +%s)-${GITHUB_SHA::7}"
+          echo "Creating snapshot: ${SNAPSHOT_NAME}"
+          aptly snapshot create "${SNAPSHOT_NAME}" from repo "${APT_REPO_NAME}"
+
+          echo "Publishing snapshot..."
+          # If publishing for the first time to this prefix/distribution:
+          if ! aptly publish list | grep -q "${APT_DISTRIBUTION} .*${APT_REPO_PREFIX}"; then
+             echo "Publishing new snapshot ${SNAPSHOT_NAME} for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}'"
+             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
+          else
+             echo "Switching existing publication for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}' to snapshot ${SNAPSHOT_NAME}"
+             aptly publish switch -gpg-key="${GPG_KEY_ID}" -component="${APT_COMPONENT}" "${APT_DISTRIBUTION}" "${APT_REPO_PREFIX}" "${SNAPSHOT_NAME}"
+          fi
+          
+          # Cleanup old snapshots (optional, keep last 5 for example)
+          aptly snapshot list -sort=time | awk 'NR>5 {print $1}' | xargs -r aptly snapshot drop
+
+      - name: Sync published APT repository to R2
+        run: |
+          echo "Syncing ~/.aptly/public/ to R2 bucket ${R2_BUCKET_NAME}..."
+          rclone sync ~/.aptly/public/ "r2-s3:${R2_BUCKET_NAME}/${APT_REPO_PREFIX}" --create-empty-src-dirs --progress
+          # The rclone remote name "r2-s3" is a placeholder; rclone uses environment variables for S3 config
+
+      - name: Sync aptly database back to R2
+        run: |
+          echo "Syncing ~/.aptly/db/ to R2 bucket ${R2_BUCKET_NAME}/_aptly_db/..."
+          rclone sync ~/.aptly/db/ "r2-s3:${R2_BUCKET_NAME}/_aptly_db/" --create-empty-src-dirs --progress
