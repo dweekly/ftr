@@ -225,6 +225,10 @@ async fn main() -> Result<()> {
 
     let icmp_identifier = std::process::id() as u16;
 
+    #[cfg(not(any(target_os="macos", target_os="windows")))]
+    let socket = Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))
+        .context("Failed to create ICMP DGRAM socket.")?;
+    #[cfg(any(target_os="macos", target_os="windows"))]
     let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4))
         .context("Failed to create ICMP DGRAM socket.")?;
     let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
