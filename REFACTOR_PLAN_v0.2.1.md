@@ -1,4 +1,4 @@
-# Refactoring Plan for v0.2.0 - Multi-Mode Probing
+# Refactoring Plan for v0.2.1 - Multi-Mode Probing
 
 ## Overview
 Refactor ftr to support three probing modes with automatic fallback:
@@ -250,7 +250,7 @@ Using DGRAM ICMP mode for IPv4 traceroute to google.com (142.250.80.46)
 
 ## Implementation Order
 
-### v0.2.0 - Core Multi-Mode Support (IPv4 only)
+### v0.2.1 - Core Multi-Mode Support (IPv4 only)
 1. Create socket abstraction module with traits
 2. Refactor current DGRAM ICMP to use abstractions
 3. Implement Raw ICMP mode

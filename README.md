@@ -10,7 +10,11 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 
 - **Parallel probing** - Sends multiple TTL probes concurrently for faster route discovery
 - **ASN lookups** - Automatically identifies the autonomous system for each hop
-- **Smart classification** - Categorizes hops (e.g., local networks, IXPs, CDNs)
+- **Reverse DNS** - Shows hostnames for each hop when available
+- **ISP detection** - Identifies your ISP by detecting your public IP's ASN
+- **Smart classification** - Categorizes hops as LAN, ISP, or BEYOND
+- **CGNAT aware** - Properly handles Carrier Grade NAT (100.64.0.0/10)
+- **Early exit optimization** - Completes instantly when destination is reached
 - **Minimal dependencies** - Built with efficiency in mind
 - **Cross-platform** - Works on Linux, macOS, and Windows (requires Npcap on Windows)
 
@@ -99,32 +103,28 @@ ftr example.com -m 20 -W 5000
 - `--probe-timeout-ms <MS>` - Timeout for individual probes in milliseconds (default: 1000)
 - `-i, --send-launch-interval-ms <MS>` - Interval between launching probes (default: 5)
 - `-W, --overall-timeout-ms <MS>` - Overall timeout for the traceroute (default: 3000)
+- `--no-enrich` - Disable ASN lookup and segment classification
+- `--no-rdns` - Disable reverse DNS lookups
 
 ## Example Output
 
 ```
-ftr to www.facebook.com (157.240.22.35), 30 max hops, 1000ms probe timeout, 3000ms overall timeout
+ftr to google.com (142.251.46.174), 30 max hops, 1000ms probe timeout, 3000ms overall timeout
 
-Performing ASN lookups and classifying segments...
- 1 [LAN   ] 192.168.1.1 (Private Network)    0.409 ms
- 2 [ISP   ] 157.131.132.109 (AS46375 - AS-SONICTELECOM, US)   18.589 ms
- 3 [ISP   ] 135.180.179.42 (AS46375 - AS-SONICTELECOM, US)   10.193 ms
- 4 [ISP   ] 142.254.59.217 (AS46375 - AS-SONICTELECOM, US)   17.891 ms
- 5 [ISP   ] 157.131.209.161 (AS46375 - AS-SONICTELECOM, US)   53.078 ms
- 6 [UNKNOWN] * * *
- 7 [UNKNOWN] * * *
- 8 [UNKNOWN] * * *
- 9 [UNKNOWN] * * *
-10 [UNKNOWN] * * *
-11 [UNKNOWN] * * *
-12 [UNKNOWN] * * *
-13 [UNKNOWN] * * *
-14 [ISP   ] 75.101.33.185 (AS46375 - AS-SONICTELECOM, US)    4.255 ms
-15 [BEYOND] 157.240.70.50 (AS32934 - FACEBOOK, US)    4.249 ms
-16 [BEYOND] 157.240.112.90 (AS32934 - FACEBOOK, US)    4.192 ms
-17 [BEYOND] 129.134.118.175 (AS32934 - FACEBOOK, US)    4.689 ms
-18 [BEYOND] 129.134.60.98 (AS32934 - FACEBOOK, US)    6.501 ms
-19 [BEYOND] 157.240.22.35 (AS32934 - FACEBOOK, US)    4.515 ms
+Performing ASN lookups, reverse DNS lookups and classifying segments...
+ 1 [LAN   ] unifi.localdomain (192.168.1.1) [Private Network]    2.854 ms
+ 2 [ISP   ] lo0.bras2.rdcyca01.sonic.net (157.131.132.109) [AS46375 - AS-SONICTELECOM, US]    3.861 ms
+ 3 [ISP   ] 135-180-179-42.dsl.dynamic.sonic.net (135.180.179.42) [AS46375 - AS-SONICTELECOM, US]    6.342 ms
+ 4 [ISP   ] ae8.cr2.lsatca11.sonic.net (142.254.59.217) [AS46375 - AS-SONICTELECOM, US]   16.705 ms
+ 5 [ISP   ] ae2.cr1.lsatca11.sonic.net (157.131.209.161) [AS46375 - AS-SONICTELECOM, US]   12.469 ms
+ 6 [BEYOND] be3402.ccr31.sjc04.atlas.cogentco.com (154.54.80.241) [AS174 - COGENT-174, US]    3.904 ms
+ 7 [BEYOND] be3142.ccr41.sjc03.atlas.cogentco.com (154.54.42.89) [AS174 - COGENT-174, US]    3.989 ms
+ 8 [BEYOND] tata.sjc03.atlas.cogentco.com (154.54.13.62) [AS174 - COGENT-174, US]    3.177 ms
+ 9 [BEYOND] 72.14.195.206 [AS15169 - GOOGLE, US]    6.174 ms
+10 [BEYOND] 108.170.252.33 [AS15169 - GOOGLE, US]    5.316 ms
+11 [BEYOND] 142.250.49.206 [AS15169 - GOOGLE, US]    4.892 ms
+12 [BEYOND] sfo07s16-in-f14.1e100.net (142.251.46.174) [AS15169 - GOOGLE, US]    3.275 ms
+Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 ```
 
 ## Requirements

@@ -1,9 +1,9 @@
 [package]
 name = "ftr"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 authors = ["David Weekly <david@weekly.org>"]
-description = "A fast, parallel ICMP traceroute implementation with ASN lookup"
+description = "A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection"
 license = "MIT"
 repository = "https://github.com/dweekly/ftr"
 homepage = "https://github.com/dweekly/ftr"
