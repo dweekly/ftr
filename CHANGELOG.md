@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- ISP detection via public IP address lookup
+  - Automatically detects user's public IP using HTTP services (ipify, ipinfo, checkip.amazonaws.com)
+  - Falls back to DNS TXT record queries when HTTP is blocked (using whoami.ds.akahelp.net)
+  - Only uses DNS method when resolver has private IP address
+  - Looks up ASN of public IP to identify user's ISP
+  - Improves hop classification accuracy even when public IP doesn't appear in traceroute
+- Carrier Grade NAT (CGNAT) support
+  - Recognizes 100.64.0.0/10 range as internal/private addresses
+  - Properly classifies CGNAT addresses as LAN segment
+- Reverse DNS (rDNS) lookup support
+  - Shows hostnames for each hop (e.g., 'router.local', 'xe-1-2-3.ar01.city.isp.net')
+  - Performs lookups in parallel with ASN queries for optimal performance
+  - Can be disabled with `--no-rdns` flag
+  - Clean display format: 'hostname (IP)' when available
+
+### Changed
+- Significantly improved traceroute performance
+  - Early exit when complete path to destination is found
+  - Reduced execution time from 3+ seconds to ~0.17 seconds for local IPs
+  - No longer waits for all probes when destination is reached
+- Skip public IP lookup when target is a private/internal address
+- Enhanced "Performing ASN lookups" message to indicate when rDNS is also running
+
+### Fixed
+- Traceroute no longer waits for full timeout when tracing to local network addresses
+- Improved ISP detection accuracy in various network configurations
+
 ## [0.1.2] - 2025-01-06
 
 ### Added
