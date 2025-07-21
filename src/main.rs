@@ -54,6 +54,8 @@ struct Args {
     overall_timeout_ms: u64,
     #[clap(long, help = "Disable ASN lookup and segment classification")]
     no_enrich: bool,
+    #[clap(long, help = "Disable reverse DNS lookups")]
+    no_rdns: bool,
 }
 
 /// Represents ASN information for an IP address.
@@ -89,6 +91,7 @@ struct ClassifiedHopInfo {
     ttl: u8,
     addr: Option<IpAddr>,
     rtt: Option<Duration>,
+    hostname: Option<String>,
     asn_info: Option<AsnInfo>,
     segment: HopSegment,
 }
@@ -102,6 +105,25 @@ fn is_cgnat(ip: &Ipv4Addr) -> bool {
 /// Check if an IPv4 address is considered internal (private, CGNAT, loopback, etc.)
 fn is_internal_ip(ip: &Ipv4Addr) -> bool {
     ip.is_loopback() || ip.is_private() || is_cgnat(ip)
+}
+
+/// Perform reverse DNS lookup for an IP address
+async fn reverse_dns_lookup(ip: IpAddr, resolver: &TokioResolver) -> Option<String> {
+    match resolver.reverse_lookup(ip).await {
+        Ok(lookup) => {
+            // Get the first PTR record
+            lookup.iter().next().map(|name| {
+                let name_str = name.to_string();
+                // Remove trailing dot if present
+                if name_str.ends_with('.') {
+                    name_str[..name_str.len() - 1].to_string()
+                } else {
+                    name_str
+                }
+            })
+        }
+        Err(_) => None,
+    }
 }
 
 /// Get private DNS resolvers from the resolver configuration
@@ -632,13 +654,15 @@ async fn main() -> Result<()> {
 
     // --- Phase 2: Post-Processing - ASN Lookup and Classification ---
     if !args.no_enrich {
-        println!("\nPerforming ASN lookups and classifying segments...");
+        println!("\nPerforming ASN lookups{} and classifying segments...", 
+                 if args.no_rdns { "" } else { ", reverse DNS lookups" });
         let final_classified_hops = process_hops_for_asn_and_classification(
             args.start_ttl,
             effective_max_hops,
             raw_results_map, // Pass the map with RawHopInfo
             args.no_enrich,  // Though already checked, pass for consistency
             target_ipv4,     // Pass the target IP
+            args.no_rdns,    // Pass the no_rdns flag
         )
         .await?;
 
@@ -684,6 +708,7 @@ async fn process_hops_for_asn_and_classification(
     raw_results_map_arc: Arc<Mutex<HashMap<u8, RawHopInfo>>>,
     no_asn: bool,
     target_ip: Ipv4Addr,
+    no_rdns: bool,
 ) -> Result<Vec<ClassifiedHopInfo>> {
     let collected_hops_raw: Vec<RawHopInfo> = {
         let guard = raw_results_map_arc.lock().unwrap();
@@ -713,7 +738,7 @@ async fn process_hops_for_asn_and_classification(
 
     let mut asn_info_results: HashMap<usize, Option<AsnInfo>> = HashMap::new();
     
-    let resolver = if !no_asn {
+    let resolver = if !no_asn || !no_rdns {
         let resolver_instance = TokioResolver::builder_with_config(
             ResolverConfig::default(),
             TokioConnectionProvider::default(),
@@ -724,23 +749,53 @@ async fn process_hops_for_asn_and_classification(
         None
     };
 
-    if !no_asn {
+    // Perform ASN and rDNS lookups in parallel
+    let mut rdns_results: HashMap<usize, Option<String>> = HashMap::new();
+    
+    if resolver.is_some() {
         let resolver = resolver.as_ref().unwrap();
+        let mut asn_futures = FuturesUnordered::new();
+        let mut rdns_futures = FuturesUnordered::new();
 
-        let mut asn_lookup_futures = FuturesUnordered::new();
-
-        for (idx, _raw_hop, ipv4_addr_opt) in &hops_to_enrich {
-            if let Some(ipv4_addr) = ipv4_addr_opt {
-                let resolver_clone = Arc::clone(&resolver);
-                let ip_to_lookup = *ipv4_addr;
-                asn_lookup_futures.push(async move {
-                    let asn_opt = lookup_asn(ip_to_lookup, &resolver_clone).await;
-                    (*idx, asn_opt)
-                });
+        for (idx, raw_hop, ipv4_addr_opt) in &hops_to_enrich {
+            // ASN lookup
+            if !no_asn {
+                if let Some(ipv4_addr) = ipv4_addr_opt {
+                    let resolver_clone = Arc::clone(&resolver);
+                    let ip_to_lookup = *ipv4_addr;
+                    let idx_copy = *idx;
+                    asn_futures.push(async move {
+                        let asn_opt = lookup_asn(ip_to_lookup, &resolver_clone).await;
+                        (idx_copy, asn_opt)
+                    });
+                }
+            }
+            
+            // rDNS lookup
+            if !no_rdns {
+                if let Some(addr) = raw_hop.addr {
+                    let resolver_clone = Arc::clone(&resolver);
+                    let ip_to_lookup = addr;
+                    let idx_copy = *idx;
+                    rdns_futures.push(async move {
+                        let hostname = reverse_dns_lookup(ip_to_lookup, &resolver_clone).await;
+                        (idx_copy, hostname)
+                    });
+                }
             }
         }
-        while let Some((idx, asn_opt)) = asn_lookup_futures.next().await {
-            asn_info_results.insert(idx, asn_opt);
+        
+        // Collect all results - process both streams concurrently
+        loop {
+            tokio::select! {
+                Some((idx, asn)) = asn_futures.next() => {
+                    asn_info_results.insert(idx, asn);
+                }
+                Some((idx, hostname)) = rdns_futures.next() => {
+                    rdns_results.insert(idx, hostname);
+                }
+                else => break,
+            }
         }
     }
 
@@ -781,6 +836,7 @@ async fn process_hops_for_asn_and_classification(
 
     for (idx, raw_hop, _ipv4_addr_opt) in hops_to_enrich {
         let current_asn_info = asn_info_results.remove(&idx).flatten();
+        let current_hostname = rdns_results.remove(&idx).flatten();
         let mut segment = HopSegment::Unknown;
 
         if let Some(ip_addr) = raw_hop.addr {
@@ -823,6 +879,7 @@ async fn process_hops_for_asn_and_classification(
             ttl: raw_hop.ttl,
             addr: raw_hop.addr,
             rtt: raw_hop.rtt,
+            hostname: current_hostname,
             asn_info: current_asn_info,
             segment,
         });
@@ -838,9 +895,17 @@ fn print_classified_hop_info(hop_info: &ClassifiedHopInfo) {
             || String::from("*       "),
             |rtt| format!("{:>7.3} ms", rtt.as_secs_f64() * 1000.0),
         );
+        
+        // Format address with hostname if available
+        let addr_display = if let Some(hostname) = &hop_info.hostname {
+            format!("{} ({})", hostname, addr)
+        } else {
+            addr.to_string()
+        };
+        
         let asn_display = if let Some(info) = &hop_info.asn_info {
             if info.asn == "N/A" {
-                format!("({})", info.name)
+                format!(" [{}]", info.name)
             } else {
                 let mut as_name_truncated = info.name.clone();
                 const MAX_AS_NAME_LEN: usize = 25;
@@ -848,14 +913,14 @@ fn print_classified_hop_info(hop_info: &ClassifiedHopInfo) {
                     as_name_truncated.truncate(MAX_AS_NAME_LEN - 3);
                     as_name_truncated.push_str("...");
                 }
-                format!("(AS{} - {})", info.asn, as_name_truncated)
+                format!(" [AS{} - {}]", info.asn, as_name_truncated)
             }
         } else {
             String::new()
         };
         println!(
-            "{:2} {} {} {}  {}",
-            hop_info.ttl, segment_str, addr, asn_display, rtt_str
+            "{:2} {} {}{}  {}",
+            hop_info.ttl, segment_str, addr_display, asn_display, rtt_str
         );
     } else {
         println!("{:2} {} * * *", hop_info.ttl, segment_str);
@@ -1052,11 +1117,13 @@ mod tests {
             ttl: 3,
             addr: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
             rtt: Some(Duration::from_millis(5)),
+            hostname: Some("router.local".to_string()),
             asn_info: None,
             segment: HopSegment::Lan,
         };
         assert_eq!(hop.ttl, 3);
         assert_eq!(hop.segment, HopSegment::Lan);
+        assert_eq!(hop.hostname, Some("router.local".to_string()));
     }
 
     #[test]
