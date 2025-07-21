@@ -204,26 +204,23 @@ async fn get_public_ip(resolver: Option<&TokioResolver>) -> Result<Ipv4Addr> {
     ];
     
     // Try HTTP first (may fail in restricted networks)
-    match reqwest::Client::builder()
+    if let Ok(client) = reqwest::Client::builder()
         .timeout(Duration::from_secs(3))
         .build() 
     {
-        Ok(client) => {
-            for service in &http_services {
-                match client.get(*service).send().await {
-                    Ok(response) => {
-                        if let Ok(text) = response.text().await {
-                            let trimmed = text.trim();
-                            if let Ok(ip) = trimmed.parse::<Ipv4Addr>() {
-                                return Ok(ip);
-                            }
+        for service in &http_services {
+            match client.get(*service).send().await {
+                Ok(response) => {
+                    if let Ok(text) = response.text().await {
+                        let trimmed = text.trim();
+                        if let Ok(ip) = trimmed.parse::<Ipv4Addr>() {
+                            return Ok(ip);
                         }
                     }
-                    Err(_) => continue,
                 }
+                Err(_) => continue,
             }
         }
-        Err(_) => {}
     }
     
     // If HTTP fails and we have a resolver, try DNS with private resolvers
@@ -299,7 +296,7 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
                     let mut as_name = "N/A".to_string();
 
                     if asn_num_str.chars().all(char::is_numeric) && !asn_num_str.is_empty() {
-                        let as_name_query = format!("AS{}.asn.cymru.com.", asn_num_str);
+                        let as_name_query = format!("AS{asn_num_str}.asn.cymru.com.");
                         if let Ok(name_lookup) = resolver.txt_lookup(as_name_query).await {
                             if let Some(name_txt_data) = name_lookup.iter().next() {
                                 let name_record_str = name_txt_data
@@ -520,7 +517,7 @@ async fn main() -> Result<()> {
                     if e.kind() == std::io::ErrorKind::WouldBlock
                         || e.kind() == std::io::ErrorKind::TimedOut => {}
                 Err(e) => {
-                    eprintln!("[Receiver] Socket recv error: {}. Terminating.", e);
+                    eprintln!("[Receiver] Socket recv error: {e}. Terminating.");
                     break;
                 }
             }
@@ -761,7 +758,7 @@ async fn process_hops_for_asn_and_classification(
             // ASN lookup
             if !no_asn {
                 if let Some(ipv4_addr) = ipv4_addr_opt {
-                    let resolver_clone = Arc::clone(&resolver);
+                    let resolver_clone = Arc::clone(resolver);
                     let ip_to_lookup = *ipv4_addr;
                     let idx_copy = *idx;
                     asn_futures.push(async move {
@@ -774,7 +771,7 @@ async fn process_hops_for_asn_and_classification(
             // rDNS lookup
             if !no_rdns {
                 if let Some(addr) = raw_hop.addr {
-                    let resolver_clone = Arc::clone(&resolver);
+                    let resolver_clone = Arc::clone(resolver);
                     let ip_to_lookup = addr;
                     let idx_copy = *idx;
                     rdns_futures.push(async move {
@@ -889,7 +886,8 @@ async fn process_hops_for_asn_and_classification(
 
 /// Prints enriched hop information including ASN and segment.
 fn print_classified_hop_info(hop_info: &ClassifiedHopInfo) {
-    let segment_str = format!("[{:<6}]", format!("{:?}", hop_info.segment).to_uppercase());
+    let segment_name = format!("{:?}", hop_info.segment).to_uppercase();
+    let segment_str = format!("[{segment_name:<6}]");
     if let Some(addr) = hop_info.addr {
         let rtt_str = hop_info.rtt.map_or_else(
             || String::from("*       "),
@@ -898,7 +896,7 @@ fn print_classified_hop_info(hop_info: &ClassifiedHopInfo) {
         
         // Format address with hostname if available
         let addr_display = if let Some(hostname) = &hop_info.hostname {
-            format!("{} ({})", hostname, addr)
+            format!("{hostname} ({addr})")
         } else {
             addr.to_string()
         };
@@ -956,9 +954,9 @@ async fn resolve_host(host: &str) -> Result<Ipv4Addr> {
             );
         }
     }
-    let addresses = tokio::net::lookup_host(format!("{}:0", host))
+    let addresses = tokio::net::lookup_host(format!("{host}:0"))
         .await
-        .with_context(|| format!("Failed to resolve host: {}", host))?;
+        .with_context(|| format!("Failed to resolve host: {host}"))?;
     for addr in addresses {
         if let SocketAddr::V4(sock_addr_v4) = addr {
             return Ok(*sock_addr_v4.ip());
