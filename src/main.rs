@@ -5,6 +5,8 @@
 //! implementations. It includes automatic ASN (Autonomous System Number) lookups
 //! and intelligent hop classification.
 
+mod socket;
+
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use futures::stream::{FuturesUnordered, StreamExt};

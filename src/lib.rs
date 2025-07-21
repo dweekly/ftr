@@ -6,5 +6,5 @@
 pub mod socket;
 
 // Re-export core types for library users
-pub use socket::factory::create_probe_socket;
-pub use socket::{IpVersion, ProbeMode, ProbeProtocol};
+pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
+pub use socket::factory::{create_probe_socket, create_probe_socket_with_mode};

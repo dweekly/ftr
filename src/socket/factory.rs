@@ -1,14 +1,20 @@
 //! Factory for creating probe sockets with automatic fallback
 
-use super::icmp_v4::DgramIcmpV4Socket;
-use super::udp::{UdpProbeSocket, UdpWithIcmpSocket};
 use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
+use super::icmp_v4::{DgramIcmpV4Socket, RawIcmpV4Socket};
+use super::udp::UdpWithIcmpSocket;
+#[cfg(target_os = "linux")]
+use super::udp::UdpRecvErrSocket;
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
 
+// Common POSIX error codes
+const EPERM: i32 = 1;   // Operation not permitted
+const EACCES: i32 = 13; // Permission denied
+
 /// Try to create a socket with the specified configuration
-fn try_create_socket(mode: ProbeMode) -> Result<Socket> {
+fn try_create_socket(mode: ProbeMode) -> Result<Socket, std::io::Error> {
     let domain = match mode.ip_version {
         IpVersion::V4 => Domain::IPV4,
         IpVersion::V6 => Domain::IPV6,
@@ -40,17 +46,28 @@ fn try_create_socket(mode: ProbeMode) -> Result<Socket> {
         }
         (SocketMode::Stream, ProbeProtocol::Tcp) => (Type::STREAM, Some(Protocol::TCP)),
         (SocketMode::Raw, ProbeProtocol::Tcp) => (Type::RAW, Some(Protocol::TCP)),
-        _ => return Err(anyhow!("Unsupported socket mode/protocol combination")),
+        _ => return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Unsupported socket mode/protocol combination"
+        )),
     };
 
     Socket::new(domain, socket_type, protocol)
-        .with_context(|| format!("Failed to create socket for {}", mode.description()))
 }
 
 /// Create a probe socket with automatic fallback
 pub fn create_probe_socket(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
+) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_mode(target, preferred_protocol, None)
+}
+
+/// Create a probe socket with specific mode preference
+pub fn create_probe_socket_with_mode(
+    target: IpAddr,
+    preferred_protocol: Option<ProbeProtocol>,
+    preferred_mode: Option<SocketMode>,
 ) -> Result<Box<dyn ProbeSocket>> {
     let ip_version = match target {
         IpAddr::V4(_) => IpVersion::V4,
@@ -64,13 +81,17 @@ pub fn create_probe_socket(
     };
 
     let mut last_error = None;
+    let user_specified_mode = preferred_mode.is_some();
 
     for protocol in protocols {
         // Try socket modes in order of preference (most capable first)
-        let socket_modes = match protocol {
-            ProbeProtocol::Icmp => vec![SocketMode::Raw, SocketMode::Dgram],
-            ProbeProtocol::Udp => vec![SocketMode::Dgram],
-            ProbeProtocol::Tcp => vec![SocketMode::Raw, SocketMode::Stream],
+        let socket_modes = match preferred_mode {
+            Some(mode) => vec![mode], // User specified a mode, only try that one
+            None => match protocol {
+                ProbeProtocol::Icmp => vec![SocketMode::Raw, SocketMode::Dgram],
+                ProbeProtocol::Udp => vec![SocketMode::Dgram],
+                ProbeProtocol::Tcp => vec![SocketMode::Raw, SocketMode::Stream],
+            },
         };
 
         for socket_mode in socket_modes {
@@ -81,11 +102,15 @@ pub fn create_probe_socket(
             };
 
             match try_create_socket(mode) {
-                Ok(socket) => {
+                Ok(mut socket) => {
                     eprintln!("Using {} mode for traceroute", mode.description());
 
                     // Create the appropriate ProbeSocket implementation
                     match (mode.ip_version, mode.protocol, mode.socket_mode) {
+                        (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
+                            // Raw socket doesn't need explicit binding
+                            return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
+                        }
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
                             // Bind the socket
                             let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
@@ -101,7 +126,28 @@ pub fn create_probe_socket(
                             socket
                                 .bind(&bind_addr.into())
                                 .context("Failed to bind UDP socket")?;
-
+                            
+                            // On Linux, try IP_RECVERR first (no root required)
+                            #[cfg(target_os = "linux")]
+                            {
+                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket) {
+                                    eprintln!("Using UDP with IP_RECVERR (no root required)");
+                                    return Ok(Box::new(recv_err_sock));
+                                }
+                                // If IP_RECVERR fails, we need to recreate the socket
+                                // since ownership was moved
+                                match try_create_socket(mode) {
+                                    Ok(new_socket) => {
+                                        new_socket.bind(&bind_addr.into())
+                                            .context("Failed to bind UDP socket")?;
+                                        socket = new_socket;
+                                    }
+                                    Err(e) => {
+                                        return Err(anyhow!("Failed to recreate UDP socket after IP_RECVERR attempt: {}", e));
+                                    }
+                                }
+                            }
+                            
                             // Try to create a raw ICMP socket for receiving responses
                             let icmp_socket = match Socket::new(
                                 Domain::IPV4,
@@ -113,10 +159,7 @@ pub fn create_probe_socket(
                                     Some(s)
                                 }
                                 Err(_) => {
-                                    eprintln!(
-                                        "Warning: Could not create raw ICMP socket for UDP mode"
-                                    );
-                                    eprintln!("UDP traceroute will have limited functionality");
+                                    eprintln!("Warning: Could not create raw ICMP socket for UDP mode");
                                     None
                                 }
                             };
@@ -124,7 +167,24 @@ pub fn create_probe_socket(
                             if icmp_socket.is_some() {
                                 return Ok(Box::new(UdpWithIcmpSocket::new(socket, icmp_socket)?));
                             } else {
-                                return Ok(Box::new(UdpProbeSocket::new(socket)?));
+                                // UDP without ICMP receive capability is not functional
+                                let error_msg = if cfg!(target_os = "linux") {
+                                    "UDP mode failed to enable IP_RECVERR and couldn't create raw ICMP socket.\n\
+                                     On Linux, UDP traceroute should work without root via IP_RECVERR.\n\
+                                     This might be a kernel configuration issue."
+                                } else {
+                                    "UDP mode requires root privileges to create a raw ICMP socket for receiving responses.\n\
+                                     Without raw ICMP capability, UDP traceroute cannot function.\n\
+                                     Try running with sudo: sudo {}"
+                                };
+                                
+                                if user_specified_mode {
+                                    let args = std::env::args().collect::<Vec<_>>().join(" ");
+                                    return Err(anyhow!("{}", error_msg.replace("{}", &args)));
+                                } else {
+                                    // Don't return a non-functional socket in automatic mode
+                                    return Err(anyhow!("UDP mode requires ICMP reception capability"));
+                                }
                             }
                         }
                         _ => {
@@ -136,15 +196,66 @@ pub fn create_probe_socket(
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Failed to create {}: {}", mode.description(), e);
-                    last_error = Some(e);
+                Err(io_err) => {
+                    // Check if this is a permission error by looking at the OS error code
+                    let is_permission_error = matches!(io_err.kind(), std::io::ErrorKind::PermissionDenied) ||
+                        io_err.raw_os_error().map(|code| code == EPERM || code == EACCES).unwrap_or(false);
+                    
+                    if is_permission_error {
+                        if socket_mode == SocketMode::Raw {
+                            if user_specified_mode {
+                                // User explicitly requested raw mode
+                                return Err(anyhow!(
+                                    "Failed to create Raw socket: Permission denied. Raw sockets require root privileges or CAP_NET_RAW capability.\n\
+                                     Try running with sudo: sudo {}", 
+                                    std::env::args().collect::<Vec<_>>().join(" ")
+                                ));
+                            } else {
+                                eprintln!("Raw {} mode requires root privileges, trying fallback...", 
+                                         match protocol {
+                                             ProbeProtocol::Icmp => "ICMP",
+                                             ProbeProtocol::Udp => "UDP",
+                                             ProbeProtocol::Tcp => "TCP",
+                                         });
+                            }
+                        } else if socket_mode == SocketMode::Dgram && protocol == ProbeProtocol::Icmp {
+                            if user_specified_mode {
+                                return Err(anyhow!(
+                                    "Failed to create DGRAM ICMP socket: {}.\n\
+                                     DGRAM ICMP requires either:\n\
+                                     1. Root privileges: sudo {}\n\
+                                     2. Configured ping group (Linux): sudo sysctl -w net.ipv4.ping_group_range=\"0 65535\"",
+                                    io_err,
+                                    std::env::args().collect::<Vec<_>>().join(" ")
+                                ));
+                            } else {
+                                eprintln!("DGRAM ICMP not available ({}), trying UDP mode...", io_err);
+                            }
+                        }
+                    } else {
+                        eprintln!("Failed to create {}: {}", mode.description(), io_err);
+                    }
+                    last_error = Some(anyhow::Error::from(io_err));
                 }
             }
         }
     }
 
-    Err(last_error.unwrap_or_else(|| anyhow!("Failed to create any probe socket")))
+    // Provide helpful error message based on what was tried
+    if user_specified_mode {
+        Err(last_error.unwrap_or_else(|| anyhow!("Failed to create requested socket mode")))
+    } else {
+        Err(anyhow!(
+            "Failed to create any probe socket. All modes require elevated privileges:\n\
+             - Raw ICMP: Requires root or CAP_NET_RAW capability\n\
+             - DGRAM ICMP: Requires root or configured ping_group_range (Linux)\n\
+             - UDP: Requires root (needs raw ICMP socket for responses)\n\n\
+             Solutions:\n\
+             1. Run with sudo: sudo {}\n\
+             2. On Linux, configure ping group: sudo sysctl -w net.ipv4.ping_group_range=\"0 65535\"",
+            std::env::args().collect::<Vec<_>>().join(" ")
+        ))
+    }
 }
 
 #[cfg(test)]

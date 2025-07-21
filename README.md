@@ -130,7 +130,21 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 ## Requirements
 
 - Rust 1.82.0 or later
+- Root privileges or configured ping_group_range (Linux) for traceroute functionality
 - Windows: [Npcap](https://npcap.com/) or WinPcap installed
+
+### Privilege Requirements
+
+Privilege requirements vary by mode and platform:
+- **ICMP modes**: Root or ping_group_range configuration
+- **UDP mode**: 
+  - Linux: No privileges required (uses `IP_RECVERR`)
+  - Other platforms: Root (needs raw socket for ICMP responses)
+
+On Linux, you can enable DGRAM ICMP for non-root users:
+```bash
+sudo sysctl -w net.ipv4.ping_group_range="0 65535"
+```
 
 ## Building from Source
 

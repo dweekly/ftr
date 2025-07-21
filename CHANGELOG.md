@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - TBD
+
+### Added
+- Socket abstraction layer for future multi-mode support
+  - Raw ICMP mode implementation (requires root/CAP_NET_RAW)
+  - DGRAM ICMP mode implementation (current default)
+  - UDP mode implementation for unprivileged operation
+- Factory pattern for automatic mode selection based on available permissions
+- Library interface (`lib.rs`) for programmatic use
+- Example program demonstrating socket abstraction
+
+### Technical Improvements
+- Modular socket implementations in `src/socket/` directory
+- Trait-based socket abstraction for protocol independence
+- Enhanced UDP implementation with ICMP response parsing
+- Prepared groundwork for future protocol support (TCP, IPv6)
+
 ## [0.2.0] - 2025-01-21
 
 ### Added
