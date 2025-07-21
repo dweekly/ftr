@@ -93,11 +93,136 @@ struct ClassifiedHopInfo {
     segment: HopSegment,
 }
 
+/// Check if an IPv4 address is in the Carrier Grade NAT range (100.64.0.0/10)
+fn is_cgnat(ip: &Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 100 && (octets[1] >= 64 && octets[1] <= 127)
+}
+
+/// Check if an IPv4 address is considered internal (private, CGNAT, loopback, etc.)
+fn is_internal_ip(ip: &Ipv4Addr) -> bool {
+    ip.is_loopback() || ip.is_private() || is_cgnat(ip)
+}
+
+/// Get private DNS resolvers from the resolver configuration
+fn get_private_dns_resolvers(resolver: &TokioResolver) -> Vec<SocketAddrV4> {
+    let config = resolver.config();
+    let mut private_resolvers = Vec::new();
+    
+    // Collect all name servers that use private IPs
+    for name_server in config.name_servers() {
+        if let SocketAddr::V4(addr) = name_server.socket_addr {
+            let ip = addr.ip();
+            if is_internal_ip(ip) {
+                private_resolvers.push(addr);
+            }
+        }
+    }
+    
+    private_resolvers
+}
+
+/// Get the public IP address via DNS TXT record lookup using a specific resolver
+async fn get_public_ip_via_dns_single(resolver_addr: SocketAddrV4) -> Result<Ipv4Addr> {
+    use hickory_resolver::config::NameServerConfig;
+    
+    // Create a resolver with just this specific name server
+    let mut config = ResolverConfig::new();
+    config.add_name_server(NameServerConfig {
+        socket_addr: SocketAddr::V4(resolver_addr),
+        protocol: hickory_resolver::proto::xfer::Protocol::Udp,
+        tls_dns_name: None,
+        trust_negative_responses: false,
+        bind_addr: None,
+        http_endpoint: None,
+    });
+    
+    let resolver = TokioResolver::builder_with_config(
+        config,
+        TokioConnectionProvider::default(),
+    )
+    .build();
+    
+    // Services that provide public IP via DNS TXT records
+    let dns_services = [
+        "whoami.ds.akahelp.net",  // Akamai
+        "o-o.myaddr.l.google.com", // Google
+        "whoami.akamai.net",       // Akamai alternative
+    ];
+    
+    for service in &dns_services {
+        match resolver.txt_lookup(*service).await {
+            Ok(txt_lookup) => {
+                for txt_data in txt_lookup.iter() {
+                    for data in txt_data.iter() {
+                        if let Ok(text) = std::str::from_utf8(data) {
+                            let trimmed = text.trim().trim_matches('"');
+                            if let Ok(ip) = trimmed.parse::<Ipv4Addr>() {
+                                return Ok(ip);
+                            }
+                        }
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+    
+    bail!("Failed to determine public IP via DNS from resolver {}", resolver_addr)
+}
+
+/// Get the public IP address by making a request to an external service
+/// Falls back to DNS TXT record lookup if HTTP fails
+async fn get_public_ip(resolver: Option<&TokioResolver>) -> Result<Ipv4Addr> {
+    // First try HTTP-based services
+    let http_services = [
+        "https://api.ipify.org",
+        "https://ipinfo.io/ip",
+        "https://checkip.amazonaws.com",
+    ];
+    
+    // Try HTTP first (may fail in restricted networks)
+    match reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build() 
+    {
+        Ok(client) => {
+            for service in &http_services {
+                match client.get(*service).send().await {
+                    Ok(response) => {
+                        if let Ok(text) = response.text().await {
+                            let trimmed = text.trim();
+                            if let Ok(ip) = trimmed.parse::<Ipv4Addr>() {
+                                return Ok(ip);
+                            }
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+        }
+        Err(_) => {}
+    }
+    
+    // If HTTP fails and we have a resolver, try DNS with private resolvers
+    if let Some(resolver) = resolver {
+        let private_resolvers = get_private_dns_resolvers(resolver);
+        
+        // Try each private resolver
+        for resolver_addr in private_resolvers {
+            if let Ok(ip) = get_public_ip_via_dns_single(resolver_addr).await {
+                return Ok(ip);
+            }
+        }
+    }
+    
+    bail!("Failed to determine public IP address via HTTP or DNS")
+}
+
 /// Looks up ASN information for a given IPv4 address using Team Cymru's service.
 /// Uses aggressive caching based on CIDR prefixes to minimize redundant lookups.
 async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
-    if ip.is_loopback()
-        || ip.is_private()
+    if is_internal_ip(&ip)
         || ip.is_link_local()
         || ip.is_broadcast()
         || ip.is_documentation()
@@ -107,6 +232,8 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
             "Loopback"
         } else if ip.is_private() {
             "Private Network"
+        } else if is_cgnat(&ip) {
+            "Carrier Grade NAT"
         } else {
             "Special Use"
         }
@@ -437,6 +564,40 @@ async fn main() -> Result<()> {
         let active_empty = active_probes.lock().unwrap().is_empty();
         let total_probes_expected = *probes_sent_count.lock().unwrap();
         let results_count = raw_results_map.lock().unwrap().len();
+        
+        // Check if we have a complete path when destination is reached
+        if dest_reached {
+            let results_guard = raw_results_map.lock().unwrap();
+            let mut have_complete_path = true;
+            
+            // Find the highest TTL that reached the destination
+            let mut dest_ttl = args.start_ttl;
+            for ttl in args.start_ttl..=effective_max_hops {
+                if let Some(hop) = results_guard.get(&ttl) {
+                    if hop.addr == Some(IpAddr::V4(target_ipv4)) {
+                        dest_ttl = ttl;
+                        break;
+                    }
+                }
+            }
+            
+            // Check if we have all hops from start to destination
+            for ttl in args.start_ttl..=dest_ttl {
+                if !results_guard.contains_key(&ttl) {
+                    // Still waiting for this hop
+                    if active_probes.lock().unwrap().contains_key(&(ttl as u16)) {
+                        have_complete_path = false;
+                        break;
+                    }
+                }
+            }
+            
+            if have_complete_path {
+                // We have all the hops we need, exit early
+                break;
+            }
+        }
+        
         if (dest_reached && active_empty)
             || (results_count >= total_probes_expected as usize
                 && total_probes_expected > 0
@@ -477,6 +638,7 @@ async fn main() -> Result<()> {
             effective_max_hops,
             raw_results_map, // Pass the map with RawHopInfo
             args.no_enrich,  // Though already checked, pass for consistency
+            target_ipv4,     // Pass the target IP
         )
         .await?;
 
@@ -521,6 +683,7 @@ async fn process_hops_for_asn_and_classification(
     max_ttl: u8,
     raw_results_map_arc: Arc<Mutex<HashMap<u8, RawHopInfo>>>,
     no_asn: bool,
+    target_ip: Ipv4Addr,
 ) -> Result<Vec<ClassifiedHopInfo>> {
     let collected_hops_raw: Vec<RawHopInfo> = {
         let guard = raw_results_map_arc.lock().unwrap();
@@ -549,15 +712,20 @@ async fn process_hops_for_asn_and_classification(
         .collect();
 
     let mut asn_info_results: HashMap<usize, Option<AsnInfo>> = HashMap::new();
-
-    if !no_asn {
+    
+    let resolver = if !no_asn {
         let resolver_instance = TokioResolver::builder_with_config(
             ResolverConfig::default(),
             TokioConnectionProvider::default(),
         )
         .build();
+        Some(Arc::new(resolver_instance))
+    } else {
+        None
+    };
 
-        let resolver = Arc::new(resolver_instance);
+    if !no_asn {
+        let resolver = resolver.as_ref().unwrap();
 
         let mut asn_lookup_futures = FuturesUnordered::new();
 
@@ -580,6 +748,36 @@ async fn process_hops_for_asn_and_classification(
     let mut classified_hops_final = Vec::new();
     let mut on_lan = true;
     let mut isp_asns: std::collections::HashSet<String> = std::collections::HashSet::new();
+    
+    // Initialize ISP ASNs with the ASN from public IP if available
+    // Skip this if the target IP is private/internal
+    let isp_asn_from_public_ip = if is_internal_ip(&target_ip) {
+        // No point in looking up public IP when tracing to a private IP
+        None
+    } else if let Some(ref resolver) = resolver {
+        // First, try to get the public IP and its ASN to identify the ISP
+        if let Ok(public_ip) = get_public_ip(Some(resolver)).await {
+            if let Some(public_asn_info) = lookup_asn(public_ip, resolver).await {
+                if public_asn_info.asn != "N/A" {
+                    eprintln!("Detected ISP from public IP {}: AS{} ({})", 
+                              public_ip, public_asn_info.asn, public_asn_info.name);
+                    Some(public_asn_info.asn.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    
+    if let Some(isp_asn) = isp_asn_from_public_ip {
+        isp_asns.insert(isp_asn);
+    }
 
     for (idx, raw_hop, _ipv4_addr_opt) in hops_to_enrich {
         let current_asn_info = asn_info_results.remove(&idx).flatten();
@@ -590,7 +788,7 @@ async fn process_hops_for_asn_and_classification(
                 IpAddr::V4(v4) => v4,
                 _ => Ipv4Addr::UNSPECIFIED,
             };
-            if ipv4_addr.is_loopback() || ipv4_addr.is_private() {
+            if is_internal_ip(&ipv4_addr) {
                 segment = HopSegment::Lan;
                 if !on_lan {
                     on_lan = true;
@@ -887,5 +1085,102 @@ mod tests {
         std::thread::sleep(Duration::from_millis(1));
         let elapsed = Instant::now().duration_since(probe.sent_at);
         assert!(elapsed > Duration::ZERO);
+    }
+
+    #[test]
+    fn test_cgnat_detection() {
+        // Test CGNAT range (100.64.0.0/10)
+        assert!(is_cgnat(&Ipv4Addr::new(100, 64, 0, 0)));
+        assert!(is_cgnat(&Ipv4Addr::new(100, 127, 255, 255)));
+        assert!(is_cgnat(&Ipv4Addr::new(100, 100, 0, 1)));
+        
+        // Test non-CGNAT addresses
+        assert!(!is_cgnat(&Ipv4Addr::new(100, 63, 255, 255)));
+        assert!(!is_cgnat(&Ipv4Addr::new(100, 128, 0, 0)));
+        assert!(!is_cgnat(&Ipv4Addr::new(10, 0, 0, 1)));
+        assert!(!is_cgnat(&Ipv4Addr::new(192, 168, 1, 1)));
+    }
+
+    #[test]
+    fn test_internal_ip_detection() {
+        // Test private IPs
+        assert!(is_internal_ip(&Ipv4Addr::new(10, 0, 0, 1)));
+        assert!(is_internal_ip(&Ipv4Addr::new(192, 168, 1, 1)));
+        assert!(is_internal_ip(&Ipv4Addr::new(172, 16, 0, 1)));
+        
+        // Test CGNAT IPs
+        assert!(is_internal_ip(&Ipv4Addr::new(100, 64, 0, 1)));
+        assert!(is_internal_ip(&Ipv4Addr::new(100, 127, 255, 254)));
+        
+        // Test loopback
+        assert!(is_internal_ip(&Ipv4Addr::new(127, 0, 0, 1)));
+        
+        // Test public IPs
+        assert!(!is_internal_ip(&Ipv4Addr::new(8, 8, 8, 8)));
+        assert!(!is_internal_ip(&Ipv4Addr::new(1, 1, 1, 1)));
+    }
+
+    #[test]
+    fn test_get_private_dns_resolvers() {
+        // Test with default resolver (system DNS)
+        let resolver_default = TokioResolver::builder_with_config(
+            ResolverConfig::default(),
+            TokioConnectionProvider::default(),
+        )
+        .build();
+        
+        // The result depends on the system configuration
+        // We just verify the function runs without panicking
+        let private_resolvers = get_private_dns_resolvers(&resolver_default);
+        
+        // The list may be empty or contain entries depending on system config
+        // We're just testing that the function works without panicking
+        let _ = private_resolvers.len();
+    }
+
+    #[tokio::test]
+    async fn test_get_public_ip_via_dns_single() {
+        // Test with a known private DNS resolver address
+        // This test may fail if 192.168.1.1 is not a valid DNS resolver
+        let resolver_addr = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 1), 53);
+        
+        // Test DNS lookup (may fail in test environments without this resolver)
+        let result = get_public_ip_via_dns_single(resolver_addr).await;
+        if result.is_ok() {
+            let ip = result.unwrap();
+            // Verify it's a valid public IP
+            assert!(!ip.is_private());
+            assert!(!ip.is_loopback());
+            assert!(!is_cgnat(&ip));
+        }
+        
+        // Also test that the function handles invalid resolvers gracefully
+        let invalid_resolver = SocketAddrV4::new(Ipv4Addr::new(192, 168, 255, 255), 53);
+        let _ = get_public_ip_via_dns_single(invalid_resolver).await;
+    }
+
+    #[tokio::test]
+    async fn test_get_public_ip_with_fallback() {
+        let resolver = TokioResolver::builder_with_config(
+            ResolverConfig::default(),
+            TokioConnectionProvider::default(),
+        )
+        .build();
+        
+        // Test with resolver (enables DNS fallback)
+        let result_with_resolver = get_public_ip(Some(&resolver)).await;
+        
+        // Test without resolver (HTTP only)
+        let result_without_resolver = get_public_ip(None).await;
+        
+        // At least one method should work in most environments
+        assert!(result_with_resolver.is_ok() || result_without_resolver.is_ok());
+        
+        if let Ok(ip) = result_with_resolver {
+            // Verify it's a valid public IP
+            assert!(!ip.is_private());
+            assert!(!ip.is_loopback());
+            assert!(!is_cgnat(&ip));
+        }
     }
 }
