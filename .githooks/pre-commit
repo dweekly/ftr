@@ -1,0 +1,29 @@
+#!/bin/sh
+# Pre-commit hook for rustfmt and clippy
+
+echo "Running pre-commit checks..."
+
+# Check if we're in a git repository
+if ! git rev-parse --git-dir > /dev/null 2>&1; then
+    echo "Error: Not in a git repository"
+    exit 1
+fi
+
+# Run rustfmt check
+echo "Checking code formatting with rustfmt..."
+if ! cargo fmt -- --check; then
+    echo "Error: Code formatting issues detected!"
+    echo "Please run 'cargo fmt' to fix formatting issues."
+    exit 1
+fi
+
+# Run clippy
+echo "Running clippy lints..."
+if ! cargo clippy -- -D warnings; then
+    echo "Error: Clippy warnings detected!"
+    echo "Please fix the clippy warnings before committing."
+    exit 1
+fi
+
+echo "All pre-commit checks passed!"
+exit 0
