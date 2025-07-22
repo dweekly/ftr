@@ -357,7 +357,16 @@ fn print_classified_hop_info(hop: &ClassifiedHopInfo) {
         format!("{:.3} ms", r.as_secs_f64() * 1000.0)
     });
 
-    let hostname_str = hop.hostname.as_deref().unwrap_or(&addr_str);
+    // Format hostname and address
+    let host_display = if let Some(hostname) = &hop.hostname {
+        if hop.addr.is_some() {
+            format!("{hostname} ({addr_str})")
+        } else {
+            hostname.clone()
+        }
+    } else {
+        addr_str.clone()
+    };
 
     // Format ASN info
     let asn_str = if let Some(asn_info) = &hop.asn_info {
@@ -372,7 +381,7 @@ fn print_classified_hop_info(hop: &ClassifiedHopInfo) {
 
     println!(
         "{:2} [{}] {} {}{}",
-        hop.ttl, hop.segment, hostname_str, rtt_str, asn_str
+        hop.ttl, hop.segment, host_display, rtt_str, asn_str
     );
 }
 
