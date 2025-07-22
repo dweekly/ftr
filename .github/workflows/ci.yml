@@ -5,6 +5,7 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,7 +17,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]  # Windows requires WinPcap/Npcap
-        rust: [stable, 1.87.0]  # Match local development version
+        rust: [stable, 1.80.0]  # Test on stable and MSRV
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
@@ -64,3 +65,56 @@ jobs:
       uses: codecov/codecov-action@v3
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  security-audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions-rust-lang/audit@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  unused-deps:
+    name: Check unused dependencies
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install cargo-machete
+      run: cargo install cargo-machete
+    - name: Check unused dependencies
+      run: cargo machete
+
+  outdated:
+    name: Check outdated dependencies
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Install cargo-outdated
+      run: cargo install cargo-outdated
+    - name: Check outdated dependencies
+      run: cargo outdated --exit-code 1 || echo "::warning::Outdated dependencies found"
+
+  doc:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Check documentation
+      run: cargo doc --no-deps --all-features
+      env:
+        RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    name: Check MSRV
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: 1.80.0
+    - name: Check MSRV
+      run: cargo check --all-features

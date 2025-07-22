@@ -27,3 +27,4 @@ target/
 tarpaulin-report.html
 cobertura.xml
 coverage.json
+coverage/
