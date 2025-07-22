@@ -154,7 +154,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
 
     fn set_ttl(&self, ttl: u8) -> Result<()> {
         self.socket
-            .set_ttl(ttl as u32)
+            .set_ttl_v4(ttl as u32)
             .context("Failed to set TTL")?;
         Ok(())
     }

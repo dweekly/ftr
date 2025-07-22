@@ -546,7 +546,7 @@ async fn main() -> Result<()> {
 
         let sender_task = tokio::spawn(async move {
             let sequence_number = ttl_val as u16;
-            if let Err(_e) = task_socket_arc.set_ttl(ttl_val as u32) {
+            if let Err(_e) = task_socket_arc.set_ttl_v4(ttl_val as u32) {
                 return;
             }
             let mut icmp_buf =
