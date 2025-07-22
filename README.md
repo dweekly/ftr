@@ -129,7 +129,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 
 ## Requirements
 
-- Rust 1.80.0 or later
+- Rust 1.82.0 or later
 - Windows: [Npcap](https://npcap.com/) or WinPcap installed
 
 ## Building from Source

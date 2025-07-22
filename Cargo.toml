@@ -10,7 +10,7 @@ homepage = "https://github.com/dweekly/ftr"
 readme = "README.md"
 keywords = ["traceroute", "icmp", "networking", "asn", "diagnostics"]
 categories = ["command-line-utilities", "network-programming"]
-rust-version = "1.80.0"
+rust-version = "1.82.0"
 
 [profile.release]
 lto = "fat"
