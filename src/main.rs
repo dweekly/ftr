@@ -61,10 +61,15 @@ struct Args {
 /// Represents ASN information for an IP address.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AsnInfo {
+    /// Autonomous System Number (e.g., "13335")
     pub asn: String,
+    /// IP prefix/CIDR block (e.g., "104.16.0.0/12")
     pub prefix: String,
+    /// Two-letter country code (e.g., "US")
     pub country_code: String,
+    /// Regional Internet Registry (e.g., "ARIN")
     pub registry: String,
+    /// AS name/organization (e.g., "CLOUDFLARENET")
     pub name: String,
 }
 
@@ -289,7 +294,7 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
                     .iter()
                     .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                     .collect::<String>();
-                let parts: Vec<&str> = record_str.split('|').map(|s| s.trim()).collect();
+                let parts: Vec<&str> = record_str.split('|').map(str::trim).collect();
                 if parts.len() >= 4 {
                     let asn_num_str = parts[0].to_string();
                     let prefix_str = parts[1].to_string();
@@ -304,9 +309,9 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
                                     .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
                                     .collect::<String>();
                                 let name_parts: Vec<&str> =
-                                    name_record_str.split('|').map(|s| s.trim()).collect();
+                                    name_record_str.split('|').map(str::trim).collect();
                                 if let Some(name_field) = name_parts.last() {
-                                    as_name = name_field.to_string();
+                                    as_name = (*name_field).to_string();
                                 }
                             }
                         }

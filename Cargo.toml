@@ -10,6 +10,7 @@ homepage = "https://github.com/dweekly/ftr"
 readme = "README.md"
 keywords = ["traceroute", "icmp", "networking", "asn", "diagnostics"]
 categories = ["command-line-utilities", "network-programming"]
+rust-version = "1.80.0"
 
 [profile.release]
 lto = "fat"
@@ -28,6 +29,33 @@ ipnet = "2.9"
 clap = { version = "4.4.8", features = ["derive"] }
 hickory-resolver = { version = "0.25", features = ["tokio"] }
 reqwest = { version = "0.11", default-features = false, features = ["rustls-tls"] }
+
+[lints.clippy]
+# Deny correctness issues (lower priority so specific lints can override)
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+
+# Warn on performance issues
+perf = { level = "warn", priority = -1 }
+
+# Warn on style issues (with exceptions)
+style = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+
+# Warn on selected pedantic lints
+needless_pass_by_value = "warn"
+redundant_closure_for_method_calls = "warn"
+inefficient_to_string = "warn"
+
+# Warn on unwrap/expect/panic in code
+# TODO: Fix unwrap usage and change these to "warn"
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "warn"
+
+[lints.rust]
+# Require documentation for public items
+missing_docs = "warn"
 
 [package.metadata.deb]
 section = "net"

@@ -11,7 +11,9 @@ pub mod udp;
 /// IP version to use for probing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpVersion {
+    /// IPv4
     V4,
+    /// IPv6
     V6,
 }
 
@@ -40,8 +42,11 @@ pub enum SocketMode {
 /// Combined probe configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProbeMode {
+    /// IP version to use (IPv4 or IPv6)
     pub ip_version: IpVersion,
+    /// Protocol to use for probing (ICMP, UDP, or TCP)
     pub protocol: ProbeProtocol,
+    /// Socket mode that determines permissions required
     pub socket_mode: SocketMode,
 }
 
