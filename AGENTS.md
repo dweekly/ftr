@@ -136,6 +136,7 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - **Update README.md** if the project definition or scope changes
 - **Run compliance checks before pushing** - use `.githooks/check-compliance.sh` to verify locally
 - **Use release checklist** - run `.githooks/release-checklist.sh` before creating releases
+- **NEVER check in untested code** - always verify scripts, configurations, and code changes work as expected before committing them
 
 ### Code Quality
 - **Always write tests alongside code** - ensure tests pass in the commit hook

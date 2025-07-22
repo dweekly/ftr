@@ -59,3 +59,6 @@ ENVIRONMENT.md
 *.ova
 *.ovf
 *.qcow2
+
+# ISO images for testing
+scripts/iso-images/
