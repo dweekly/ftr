@@ -1,8 +1,8 @@
 //! Socket abstraction layer for multi-protocol traceroute support
 
+use anyhow::Result;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
-use anyhow::Result;
 
 pub mod factory;
 pub mod icmp_v4;
@@ -118,16 +118,16 @@ pub struct ProbeResponse {
 pub trait ProbeSocket: Send + Sync {
     /// Get the mode this socket is operating in
     fn mode(&self) -> ProbeMode;
-    
+
     /// Set the TTL for outgoing packets
     fn set_ttl(&self, ttl: u8) -> Result<()>;
-    
+
     /// Send a probe to the target
     fn send_probe(&self, target: IpAddr, probe_info: ProbeInfo) -> Result<()>;
-    
+
     /// Try to receive a response with timeout
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>>;
-    
+
     /// Check if destination has been reached
     fn destination_reached(&self) -> bool;
 }
@@ -154,7 +154,7 @@ mod tests {
             socket_mode: SocketMode::Dgram,
         };
         assert_eq!(mode.description(), "Datagram ICMP IPv4");
-        
+
         let mode = ProbeMode {
             ip_version: IpVersion::V6,
             protocol: ProbeProtocol::Udp,

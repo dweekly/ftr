@@ -1,6 +1,9 @@
 //! IPv4 ICMP socket implementations
 
-use super::{IpVersion, ProbeInfo, ProbeMode, ProbeProtocol, ProbeResponse, ProbeSocket, ResponseType, SocketMode};
+use super::{
+    IpVersion, ProbeInfo, ProbeMode, ProbeProtocol, ProbeResponse, ProbeSocket, ResponseType,
+    SocketMode,
+};
 use anyhow::{Context, Result};
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
@@ -35,7 +38,7 @@ impl DgramIcmpV4Socket {
     pub fn new(socket: Socket2) -> Result<Self> {
         // Set socket options
         socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-        
+
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
             protocol: ProbeProtocol::Icmp,
@@ -52,7 +55,12 @@ impl DgramIcmpV4Socket {
     }
 
     /// Parse an ICMP response
-    fn parse_response(&self, packet_data: &[u8], from_addr: IpAddr, recv_time: Instant) -> Option<ProbeResponse> {
+    fn parse_response(
+        &self,
+        packet_data: &[u8],
+        from_addr: IpAddr,
+        recv_time: Instant,
+    ) -> Option<ProbeResponse> {
         // Parse outer IPv4 packet
         let outer_ipv4_packet = Ipv4Packet::new(packet_data)?;
         let icmp_data = outer_ipv4_packet.payload();
@@ -70,21 +78,26 @@ impl DgramIcmpV4Socket {
                 if original_datagram_bytes.len() < IPV4_HEADER_MIN_LEN_BYTES {
                     return None;
                 }
-                
+
                 let inner_ip_packet = Ipv4Packet::new(original_datagram_bytes)?;
                 let original_icmp_bytes = inner_ip_packet.payload();
-                
+
                 if original_icmp_bytes.len() < 8 {
                     return None;
                 }
 
                 // Extract identifier and sequence from original ICMP echo
                 let original_type = original_icmp_bytes[0];
-                let original_id = u16::from_be_bytes([original_icmp_bytes[4], original_icmp_bytes[5]]);
-                let original_seq = u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
+                let original_id =
+                    u16::from_be_bytes([original_icmp_bytes[4], original_icmp_bytes[5]]);
+                let original_seq =
+                    u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
 
-                if original_type == IcmpTypes::EchoRequest.0 && original_id == self.icmp_identifier {
-                    if let Some(probe_info) = self.active_probes.lock().unwrap().remove(&original_seq) {
+                if original_type == IcmpTypes::EchoRequest.0 && original_id == self.icmp_identifier
+                {
+                    if let Some(probe_info) =
+                        self.active_probes.lock().unwrap().remove(&original_seq)
+                    {
                         let response_type = match icmp_packet.get_icmp_type() {
                             IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
                             IcmpTypes::DestinationUnreachable => {
@@ -104,9 +117,15 @@ impl DgramIcmpV4Socket {
                 }
             }
             IcmpTypes::EchoReply => {
-                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet()) {
+                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet())
+                {
                     if echo_reply_pkt.get_identifier() == self.icmp_identifier {
-                        if let Some(probe_info) = self.active_probes.lock().unwrap().remove(&echo_reply_pkt.get_sequence_number()) {
+                        if let Some(probe_info) = self
+                            .active_probes
+                            .lock()
+                            .unwrap()
+                            .remove(&echo_reply_pkt.get_sequence_number())
+                        {
                             let rtt = recv_time.duration_since(probe_info.sent_at);
                             return Some(ProbeResponse {
                                 from_addr,
@@ -131,7 +150,8 @@ impl ProbeSocket for DgramIcmpV4Socket {
     }
 
     fn set_ttl(&self, ttl: u8) -> Result<()> {
-        self.socket.set_ttl(ttl as u32)
+        self.socket
+            .set_ttl(ttl as u32)
             .context("Failed to set TTL")?;
         Ok(())
     }
@@ -139,19 +159,22 @@ impl ProbeSocket for DgramIcmpV4Socket {
     fn send_probe(&self, target: IpAddr, probe_info: ProbeInfo) -> Result<()> {
         let target_v4 = match target {
             IpAddr::V4(v4) => v4,
-            IpAddr::V6(_) => return Err(anyhow::anyhow!("IPv6 target not supported by IPv4 socket")),
+            IpAddr::V6(_) => {
+                return Err(anyhow::anyhow!("IPv6 target not supported by IPv4 socket"))
+            }
         };
 
         // Build ICMP Echo Request packet
-        let mut icmp_buf = vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
+        let mut icmp_buf =
+            vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
         let mut echo_req_packet = MutableEchoRequestPacket::new(&mut icmp_buf)
             .ok_or_else(|| anyhow::anyhow!("Failed to create ICMP packet"))?;
-        
+
         echo_req_packet.set_icmp_type(IcmpTypes::EchoRequest);
         echo_req_packet.set_icmp_code(pnet::packet::icmp::IcmpCode(0));
         echo_req_packet.set_identifier(self.icmp_identifier);
         echo_req_packet.set_sequence_number(probe_info.sequence);
-        
+
         // Create payload with identifier and sequence for validation
         let payload_data = (self.icmp_identifier as u32) << 16 | (probe_info.sequence as u32);
         let payload_bytes = payload_data.to_be_bytes();
@@ -159,34 +182,39 @@ impl ProbeSocket for DgramIcmpV4Socket {
         let bytes_to_copy = payload_bytes.len().min(ICMP_ECHO_PAYLOAD_SIZE);
         final_payload[..bytes_to_copy].copy_from_slice(&payload_bytes[..bytes_to_copy]);
         echo_req_packet.set_payload(&final_payload);
-        
+
         // Calculate checksum
         let checksum = pnet_checksum(echo_req_packet.packet(), 1);
         echo_req_packet.set_checksum(checksum);
-        
+
         // Send the packet
         let target_addr = SocketAddr::V4(SocketAddrV4::new(target_v4, 0));
-        self.socket.send_to(echo_req_packet.packet(), &target_addr.into())
+        self.socket
+            .send_to(echo_req_packet.packet(), &target_addr.into())
             .context("Failed to send ICMP packet")?;
-        
+
         // Track the probe
-        self.active_probes.lock().unwrap().insert(probe_info.sequence, probe_info);
-        
+        self.active_probes
+            .lock()
+            .unwrap()
+            .insert(probe_info.sequence, probe_info);
+
         Ok(())
     }
 
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>> {
         let mut recv_buf = [MaybeUninit::uninit(); 1500];
         let deadline = Instant::now() + timeout;
-        
+
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(None);
             }
-            
-            self.socket.set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
-            
+
+            self.socket
+                .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
                     let recv_time = Instant::now();
@@ -194,22 +222,26 @@ impl ProbeSocket for DgramIcmpV4Socket {
                         Some(s) => IpAddr::V4(*s.ip()),
                         None => continue,
                     };
-                    
+
                     let initialized_part: &[MaybeUninit<u8>] = &recv_buf[..size];
-                    let packet_data: &[u8] = unsafe { 
-                        &*(initialized_part as *const [MaybeUninit<u8>] as *const [u8])
-                    };
-                    
+                    let packet_data: &[u8] =
+                        unsafe { &*(initialized_part as *const [MaybeUninit<u8>] as *const [u8]) };
+
                     if let Some(response) = self.parse_response(packet_data, from_addr, recv_time) {
                         // Check if destination reached
-                        if matches!(response.response_type, ResponseType::EchoReply | ResponseType::DestinationUnreachable(_)) {
+                        if matches!(
+                            response.response_type,
+                            ResponseType::EchoReply | ResponseType::DestinationUnreachable(_)
+                        ) {
                             *self.destination_reached.lock().unwrap() = true;
                         }
                         return Ok(Some(response));
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || 
-                         e.kind() == std::io::ErrorKind::TimedOut => {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
                     continue;
                 }
                 Err(e) => return Err(e.into()),
@@ -235,7 +267,7 @@ mod tests {
             protocol: ProbeProtocol::Icmp,
             socket_mode: SocketMode::Dgram,
         };
-        
+
         // Just verify the mode is constructed correctly
         assert_eq!(expected_mode.description(), "Datagram ICMP IPv4");
     }

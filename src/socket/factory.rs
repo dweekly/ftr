@@ -1,8 +1,8 @@
 //! Factory for creating probe sockets with automatic fallback
 
-use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
 use super::icmp_v4::DgramIcmpV4Socket;
 use super::udp::{UdpProbeSocket, UdpWithIcmpSocket};
+use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
@@ -83,36 +83,44 @@ pub fn create_probe_socket(
             match try_create_socket(mode) {
                 Ok(socket) => {
                     eprintln!("Using {} mode for traceroute", mode.description());
-                    
+
                     // Create the appropriate ProbeSocket implementation
                     match (mode.ip_version, mode.protocol, mode.socket_mode) {
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
                             // Bind the socket
                             let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
-                            socket.bind(&bind_addr.into())
+                            socket
+                                .bind(&bind_addr.into())
                                 .context("Failed to bind ICMP socket")?;
-                            
+
                             return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
                         }
                         (IpVersion::V4, ProbeProtocol::Udp, SocketMode::Dgram) => {
                             // Bind UDP socket
                             let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
-                            socket.bind(&bind_addr.into())
+                            socket
+                                .bind(&bind_addr.into())
                                 .context("Failed to bind UDP socket")?;
-                            
+
                             // Try to create a raw ICMP socket for receiving responses
-                            let icmp_socket = match Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)) {
+                            let icmp_socket = match Socket::new(
+                                Domain::IPV4,
+                                Type::RAW,
+                                Some(Protocol::ICMPV4),
+                            ) {
                                 Ok(s) => {
                                     let _ = s.bind(&bind_addr.into());
                                     Some(s)
                                 }
                                 Err(_) => {
-                                    eprintln!("Warning: Could not create raw ICMP socket for UDP mode");
+                                    eprintln!(
+                                        "Warning: Could not create raw ICMP socket for UDP mode"
+                                    );
                                     eprintln!("UDP traceroute will have limited functionality");
                                     None
                                 }
                             };
-                            
+
                             if icmp_socket.is_some() {
                                 return Ok(Box::new(UdpWithIcmpSocket::new(socket, icmp_socket)?));
                             } else {
@@ -121,7 +129,10 @@ pub fn create_probe_socket(
                         }
                         _ => {
                             // Other implementations not yet available
-                            return Err(anyhow!("Socket implementation for {} not yet available", mode.description()));
+                            return Err(anyhow!(
+                                "Socket implementation for {} not yet available",
+                                mode.description()
+                            ));
                         }
                     }
                 }
@@ -149,7 +160,7 @@ mod tests {
         // IPv4 ICMP DGRAM might succeed if we have permissions
         // or fail if we don't - both are valid outcomes
         let _ = create_probe_socket(ipv4, None);
-        
+
         // IPv6 not implemented yet
         assert!(create_probe_socket(ipv6, None).is_err());
     }
@@ -181,15 +192,15 @@ mod tests {
             let _ = try_create_socket(mode);
         }
     }
-    
+
     #[test]
     fn test_udp_fallback() {
         let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
-        
+
         // Try to create with UDP preference
         // This should succeed without special permissions
         let result = create_probe_socket(ipv4, Some(ProbeProtocol::Udp));
-        
+
         // UDP should work (though may have limited functionality without raw ICMP)
         if result.is_ok() {
             eprintln!("UDP socket created successfully");
