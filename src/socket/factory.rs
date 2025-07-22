@@ -105,6 +105,8 @@ pub fn create_probe_socket_with_mode(
 
             match try_create_socket(mode) {
                 Ok(socket) => {
+                    #[allow(unused_mut)]
+                    let mut socket = socket;
                     eprintln!("Using {} mode for traceroute", mode.description());
 
                     // Create the appropriate ProbeSocket implementation
