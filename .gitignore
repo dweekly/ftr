@@ -28,3 +28,19 @@ tarpaulin-report.html
 cobertura.xml
 coverage.json
 coverage/
+
+# Vagrant
+.vagrant/
+*.box
+
+# Backup files
+*.backup
+*_old.*
+
+# Test scripts
+ubuntu-ftr-test.sh
+
+# VM configuration files
+Vagrantfile.iso
+Vagrantfile.official
+packer/

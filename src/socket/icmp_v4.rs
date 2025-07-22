@@ -271,7 +271,7 @@ impl RawIcmpV4Socket {
     pub fn new(socket: Socket2) -> Result<Self> {
         // Set socket options
         socket.set_read_timeout(Some(Duration::from_millis(100)))?;
-        
+
         // Enable IP_HDRINCL to include IP header
         #[cfg(target_os = "linux")]
         {
@@ -287,7 +287,7 @@ impl RawIcmpV4Socket {
                 );
             }
         }
-        
+
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
             protocol: ProbeProtocol::Icmp,
@@ -304,13 +304,18 @@ impl RawIcmpV4Socket {
     }
 
     /// Build an IPv4 packet with ICMP payload
-    fn build_ipv4_packet(&self, target: std::net::Ipv4Addr, ttl: u8, icmp_payload: &[u8]) -> Vec<u8> {
-        use pnet::packet::ipv4::MutableIpv4Packet;
+    fn build_ipv4_packet(
+        &self,
+        target: std::net::Ipv4Addr,
+        ttl: u8,
+        icmp_payload: &[u8],
+    ) -> Vec<u8> {
         use pnet::packet::ip::IpNextHeaderProtocols;
-        
+        use pnet::packet::ipv4::MutableIpv4Packet;
+
         let total_len = IPV4_HEADER_MIN_LEN_BYTES + icmp_payload.len();
         let mut packet = vec![0u8; total_len];
-        
+
         if let Some(mut ipv4_packet) = MutableIpv4Packet::new(&mut packet) {
             ipv4_packet.set_version(4);
             ipv4_packet.set_header_length(5); // 5 * 4 = 20 bytes
@@ -324,20 +329,25 @@ impl RawIcmpV4Socket {
             ipv4_packet.set_next_level_protocol(IpNextHeaderProtocols::Icmp);
             ipv4_packet.set_source(std::net::Ipv4Addr::UNSPECIFIED); // Let kernel fill this
             ipv4_packet.set_destination(target);
-            
+
             // Copy ICMP payload
             ipv4_packet.set_payload(icmp_payload);
-            
+
             // Calculate IP checksum
             let checksum = pnet::packet::ipv4::checksum(&ipv4_packet.to_immutable());
             ipv4_packet.set_checksum(checksum);
         }
-        
+
         packet
     }
 
     /// Parse an ICMP response (same as DGRAM version)
-    fn parse_response(&self, packet_data: &[u8], from_addr: IpAddr, recv_time: Instant) -> Option<ProbeResponse> {
+    fn parse_response(
+        &self,
+        packet_data: &[u8],
+        from_addr: IpAddr,
+        recv_time: Instant,
+    ) -> Option<ProbeResponse> {
         // For raw sockets, we receive the full IP packet
         let ipv4_packet = Ipv4Packet::new(packet_data)?;
         let icmp_data = ipv4_packet.payload();
@@ -355,21 +365,29 @@ impl RawIcmpV4Socket {
                 if original_datagram_bytes.len() < IPV4_HEADER_MIN_LEN_BYTES {
                     return None;
                 }
-                
+
                 let inner_ip_packet = Ipv4Packet::new(original_datagram_bytes)?;
                 let original_icmp_bytes = inner_ip_packet.payload();
-                
+
                 if original_icmp_bytes.len() < 8 {
                     return None;
                 }
 
                 // Extract identifier and sequence from original ICMP echo
                 let original_type = original_icmp_bytes[0];
-                let original_id = u16::from_be_bytes([original_icmp_bytes[4], original_icmp_bytes[5]]);
-                let original_seq = u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
+                let original_id =
+                    u16::from_be_bytes([original_icmp_bytes[4], original_icmp_bytes[5]]);
+                let original_seq =
+                    u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
 
-                if original_type == IcmpTypes::EchoRequest.0 && original_id == self.icmp_identifier {
-                    if let Some(probe_info) = self.active_probes.lock().unwrap().remove(&original_seq) {
+                if original_type == IcmpTypes::EchoRequest.0 && original_id == self.icmp_identifier
+                {
+                    if let Some(probe_info) = self
+                        .active_probes
+                        .lock()
+                        .expect("mutex poisoned")
+                        .remove(&original_seq)
+                    {
                         let response_type = match icmp_packet.get_icmp_type() {
                             IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
                             IcmpTypes::DestinationUnreachable => {
@@ -389,9 +407,15 @@ impl RawIcmpV4Socket {
                 }
             }
             IcmpTypes::EchoReply => {
-                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet()) {
+                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet())
+                {
                     if echo_reply_pkt.get_identifier() == self.icmp_identifier {
-                        if let Some(probe_info) = self.active_probes.lock().unwrap().remove(&echo_reply_pkt.get_sequence_number()) {
+                        if let Some(probe_info) = self
+                            .active_probes
+                            .lock()
+                            .expect("mutex poisoned")
+                            .remove(&echo_reply_pkt.get_sequence_number())
+                        {
                             let rtt = recv_time.duration_since(probe_info.sent_at);
                             return Some(ProbeResponse {
                                 from_addr,
@@ -424,19 +448,22 @@ impl ProbeSocket for RawIcmpV4Socket {
     fn send_probe(&self, target: IpAddr, probe_info: ProbeInfo) -> Result<()> {
         let target_v4 = match target {
             IpAddr::V4(v4) => v4,
-            IpAddr::V6(_) => return Err(anyhow::anyhow!("IPv6 target not supported by IPv4 socket")),
+            IpAddr::V6(_) => {
+                return Err(anyhow::anyhow!("IPv6 target not supported by IPv4 socket"))
+            }
         };
 
         // Build ICMP Echo Request packet
-        let mut icmp_buf = vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
+        let mut icmp_buf =
+            vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
         let mut echo_req_packet = MutableEchoRequestPacket::new(&mut icmp_buf)
             .ok_or_else(|| anyhow::anyhow!("Failed to create ICMP packet"))?;
-        
+
         echo_req_packet.set_icmp_type(IcmpTypes::EchoRequest);
         echo_req_packet.set_icmp_code(pnet::packet::icmp::IcmpCode(0));
         echo_req_packet.set_identifier(self.icmp_identifier);
         echo_req_packet.set_sequence_number(probe_info.sequence);
-        
+
         // Create payload
         let payload_data = (self.icmp_identifier as u32) << 16 | (probe_info.sequence as u32);
         let payload_bytes = payload_data.to_be_bytes();
@@ -444,37 +471,42 @@ impl ProbeSocket for RawIcmpV4Socket {
         let bytes_to_copy = payload_bytes.len().min(ICMP_ECHO_PAYLOAD_SIZE);
         final_payload[..bytes_to_copy].copy_from_slice(&payload_bytes[..bytes_to_copy]);
         echo_req_packet.set_payload(&final_payload);
-        
+
         // Calculate checksum
         let checksum = pnet_checksum(echo_req_packet.packet(), 1);
         echo_req_packet.set_checksum(checksum);
-        
+
         // Build full IP packet
         let ip_packet = self.build_ipv4_packet(target_v4, probe_info.ttl, echo_req_packet.packet());
-        
+
         // Send the packet
         let target_addr = SocketAddr::V4(SocketAddrV4::new(target_v4, 0));
-        self.socket.send_to(&ip_packet, &target_addr.into())
+        self.socket
+            .send_to(&ip_packet, &target_addr.into())
             .context("Failed to send raw ICMP packet")?;
-        
+
         // Track the probe
-        self.active_probes.lock().unwrap().insert(probe_info.sequence, probe_info);
-        
+        self.active_probes
+            .lock()
+            .expect("mutex poisoned")
+            .insert(probe_info.sequence, probe_info);
+
         Ok(())
     }
 
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>> {
         let mut recv_buf = [MaybeUninit::uninit(); 1500];
         let deadline = Instant::now() + timeout;
-        
+
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(None);
             }
-            
-            self.socket.set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
-            
+
+            self.socket
+                .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
                     let recv_time = Instant::now();
@@ -482,22 +514,26 @@ impl ProbeSocket for RawIcmpV4Socket {
                         Some(s) => IpAddr::V4(*s.ip()),
                         None => continue,
                     };
-                    
+
                     let initialized_part: &[MaybeUninit<u8>] = &recv_buf[..size];
-                    let packet_data: &[u8] = unsafe { 
-                        &*(initialized_part as *const [MaybeUninit<u8>] as *const [u8])
-                    };
-                    
+                    let packet_data: &[u8] =
+                        unsafe { &*(initialized_part as *const [MaybeUninit<u8>] as *const [u8]) };
+
                     if let Some(response) = self.parse_response(packet_data, from_addr, recv_time) {
                         // Check if destination reached
-                        if matches!(response.response_type, ResponseType::EchoReply | ResponseType::DestinationUnreachable(_)) {
-                            *self.destination_reached.lock().unwrap() = true;
+                        if matches!(
+                            response.response_type,
+                            ResponseType::EchoReply | ResponseType::DestinationUnreachable(_)
+                        ) {
+                            *self.destination_reached.lock().expect("mutex poisoned") = true;
                         }
                         return Ok(Some(response));
                     }
                 }
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock || 
-                         e.kind() == std::io::ErrorKind::TimedOut => {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
                     continue;
                 }
                 Err(e) => return Err(e.into()),
@@ -506,7 +542,7 @@ impl ProbeSocket for RawIcmpV4Socket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self.destination_reached.lock().expect("mutex poisoned")
     }
 }
 
@@ -535,7 +571,7 @@ mod tests {
             protocol: ProbeProtocol::Icmp,
             socket_mode: SocketMode::Raw,
         };
-        
+
         assert_eq!(expected_mode.description(), "Raw ICMP IPv4");
     }
 }

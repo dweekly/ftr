@@ -20,6 +20,7 @@ path = "src/lib.rs"
 name = "ftr"
 path = "src/main.rs"
 
+
 [profile.release]
 lto = "fat"
 codegen-units = 1
