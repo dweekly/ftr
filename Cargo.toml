@@ -48,9 +48,8 @@ redundant_closure_for_method_calls = "warn"
 inefficient_to_string = "warn"
 
 # Warn on unwrap/expect/panic in code
-# TODO: Fix unwrap usage and change these to "warn"
-unwrap_used = "allow"
-expect_used = "allow"
+unwrap_used = "warn"
+expect_used = "allow"  # We use expect() for mutex locks which is acceptable
 panic = "warn"
 
 [lints.rust]

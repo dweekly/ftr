@@ -4,10 +4,10 @@ This file tracks ongoing and planned work for the ftr project.
 
 ## High Priority
 
-- [ ] Fix unwrap() usage warnings from clippy
-  - Replace `.unwrap()` calls on Mutex locks with proper error handling
-  - Consider using `.expect()` with descriptive messages for locks that should never fail
-  - Update Cargo.toml to re-enable `unwrap_used = "warn"` after fixes
+- [x] Fix unwrap() usage warnings from clippy
+  - Replaced all `.unwrap()` calls on Mutex locks with `.expect()` with descriptive messages
+  - Fixed non-mutex unwraps with proper error handling
+  - Re-enabled `unwrap_used = "warn"` in Cargo.toml
 
 ## Medium Priority
 

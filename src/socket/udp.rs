@@ -80,11 +80,11 @@ impl ProbeSocket for UdpProbeSocket {
         // Track the probe by both sequence and port
         self.active_probes
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(probe_info.sequence, probe_info.clone());
         self.port_to_probe
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(dest_port, probe_info);
 
         Ok(())
@@ -99,7 +99,7 @@ impl ProbeSocket for UdpProbeSocket {
 
         // Check if any active probes have timed out
         let now = Instant::now();
-        let mut active_probes = self.active_probes.lock().unwrap();
+        let mut active_probes = self.active_probes.lock().expect("mutex poisoned");
         let mut timed_out = Vec::new();
 
         for (seq, probe) in active_probes.iter() {
@@ -125,7 +125,7 @@ impl ProbeSocket for UdpProbeSocket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self.destination_reached.lock().expect("mutex poisoned")
     }
 }
 
@@ -197,11 +197,11 @@ impl ProbeSocket for UdpWithIcmpSocket {
 
         self.active_probes
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(probe_info.sequence, probe_info.clone());
         self.port_to_probe
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(dest_port, probe_info);
 
         Ok(())
@@ -223,7 +223,7 @@ impl ProbeSocket for UdpWithIcmpSocket {
         match self.udp_socket.recv(&mut buf) {
             Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
                 // This might indicate we reached the destination
-                *self.destination_reached.lock().unwrap() = true;
+                *self.destination_reached.lock().expect("mutex poisoned") = true;
             }
             _ => {}
         }
@@ -232,7 +232,7 @@ impl ProbeSocket for UdpWithIcmpSocket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self.destination_reached.lock().expect("mutex poisoned")
     }
 }
 

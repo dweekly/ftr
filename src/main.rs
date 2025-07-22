@@ -273,7 +273,7 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
 
     // Check cache first - look for any CIDR that contains this IP
     {
-        let cache = ASN_CACHE.lock().unwrap();
+        let cache = ASN_CACHE.lock().expect("ASN cache mutex poisoned");
         for (network, asn_info) in cache.iter() {
             if network.contains(&ip) {
                 return Some(asn_info.clone());
@@ -327,7 +327,7 @@ async fn lookup_asn(ip: Ipv4Addr, resolver: &TokioResolver) -> Option<AsnInfo> {
 
                     // Cache the result using the CIDR prefix
                     if let Ok(network) = prefix_str.parse::<Ipv4Net>() {
-                        let mut cache = ASN_CACHE.lock().unwrap();
+                        let mut cache = ASN_CACHE.lock().expect("ASN cache mutex poisoned");
                         cache.insert(network, asn_info.clone());
                     }
 
@@ -403,8 +403,12 @@ async fn main() -> Result<()> {
 
         loop {
             let (dest_reached, active_empty) = {
-                let dr_guard = destination_reached_clone_recv.lock().unwrap();
-                let ap_guard = active_probes_clone_recv.lock().unwrap();
+                let dr_guard = destination_reached_clone_recv
+                    .lock()
+                    .expect("destination_reached mutex poisoned");
+                let ap_guard = active_probes_clone_recv
+                    .lock()
+                    .expect("active_probes mutex poisoned");
                 (*dr_guard, ap_guard.is_empty())
             };
             if dest_reached && active_empty {
@@ -476,13 +480,15 @@ async fn main() -> Result<()> {
                             {
                                 matched_probe_opt = active_probes_clone_recv
                                     .lock()
-                                    .unwrap()
+                                    .expect("active_probes mutex poisoned")
                                     .remove(&original_seq);
                                 if matched_probe_opt.is_some()
                                     && icmp_type == IcmpTypes::DestinationUnreachable
                                     && received_from_ip == IpAddr::V4(actual_target_ip_for_receiver)
                                 {
-                                    *destination_reached_clone_recv.lock().unwrap() = true;
+                                    *destination_reached_clone_recv
+                                        .lock()
+                                        .expect("destination_reached mutex poisoned") = true;
                                 }
                             }
                         }
@@ -493,10 +499,12 @@ async fn main() -> Result<()> {
                                 if echo_reply_pkt.get_identifier() == icmp_identifier {
                                     matched_probe_opt = active_probes_clone_recv
                                         .lock()
-                                        .unwrap()
+                                        .expect("active_probes mutex poisoned")
                                         .remove(&echo_reply_pkt.get_sequence_number());
                                     if matched_probe_opt.is_some() {
-                                        *destination_reached_clone_recv.lock().unwrap() = true;
+                                        *destination_reached_clone_recv
+                                            .lock()
+                                            .expect("destination_reached mutex poisoned") = true;
                                     }
                                 }
                             }
@@ -514,7 +522,7 @@ async fn main() -> Result<()> {
                         };
                         results_clone_recv
                             .lock()
-                            .unwrap()
+                            .expect("results mutex poisoned")
                             .insert(probe_info.ttl, hop_info);
                     }
                 }
@@ -543,7 +551,13 @@ async fn main() -> Result<()> {
             }
             let mut icmp_buf =
                 vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
-            let mut echo_req_packet = MutableEchoRequestPacket::new(&mut icmp_buf).unwrap();
+            let mut echo_req_packet = match MutableEchoRequestPacket::new(&mut icmp_buf) {
+                Some(packet) => packet,
+                None => {
+                    eprintln!("Failed to create ICMP packet");
+                    return;
+                }
+            };
             echo_req_packet.set_icmp_type(IcmpTypes::EchoRequest);
             echo_req_packet.set_icmp_code(pnet::packet::icmp::IcmpCode(0));
             echo_req_packet.set_identifier(icmp_identifier);
@@ -560,14 +574,19 @@ async fn main() -> Result<()> {
             let sent_at = Instant::now();
             match task_socket_arc.send_to(echo_req_packet.packet(), &target_saddr.into()) {
                 Ok(_) => {
-                    task_active_probes.lock().unwrap().insert(
-                        sequence_number,
-                        SentProbe {
-                            ttl: ttl_val,
-                            sent_at,
-                        },
-                    );
-                    *task_probes_sent_count.lock().unwrap() += 1;
+                    task_active_probes
+                        .lock()
+                        .expect("active_probes mutex poisoned")
+                        .insert(
+                            sequence_number,
+                            SentProbe {
+                                ttl: ttl_val,
+                                sent_at,
+                            },
+                        );
+                    *task_probes_sent_count
+                        .lock()
+                        .expect("probes_sent_count mutex poisoned") += 1;
                 }
                 Err(_e) => {}
             }
@@ -584,14 +603,24 @@ async fn main() -> Result<()> {
 
     let overall_start_time = Instant::now();
     loop {
-        let dest_reached = *destination_reached.lock().unwrap();
-        let active_empty = active_probes.lock().unwrap().is_empty();
-        let total_probes_expected = *probes_sent_count.lock().unwrap();
-        let results_count = raw_results_map.lock().unwrap().len();
+        let dest_reached = *destination_reached
+            .lock()
+            .expect("destination_reached mutex poisoned");
+        let active_empty = active_probes
+            .lock()
+            .expect("active_probes mutex poisoned")
+            .is_empty();
+        let total_probes_expected = *probes_sent_count
+            .lock()
+            .expect("probes_sent_count mutex poisoned");
+        let results_count = raw_results_map
+            .lock()
+            .expect("results_map mutex poisoned")
+            .len();
 
         // Check if we have a complete path when destination is reached
         if dest_reached {
-            let results_guard = raw_results_map.lock().unwrap();
+            let results_guard = raw_results_map.lock().expect("results_map mutex poisoned");
             let mut have_complete_path = true;
 
             // Find the highest TTL that reached the destination
@@ -609,7 +638,11 @@ async fn main() -> Result<()> {
             for ttl in args.start_ttl..=dest_ttl {
                 if !results_guard.contains_key(&ttl) {
                     // Still waiting for this hop
-                    if active_probes.lock().unwrap().contains_key(&(ttl as u16)) {
+                    if active_probes
+                        .lock()
+                        .expect("active_probes mutex poisoned")
+                        .contains_key(&(ttl as u16))
+                    {
                         have_complete_path = false;
                         break;
                     }
@@ -637,8 +670,8 @@ async fn main() -> Result<()> {
 
     {
         // Final check for timed-out active probes
-        let mut active_probes_guard = active_probes.lock().unwrap();
-        let mut results_guard = raw_results_map.lock().unwrap(); // Using RawHopInfo
+        let mut active_probes_guard = active_probes.lock().expect("active_probes mutex poisoned");
+        let mut results_guard = raw_results_map.lock().expect("results_map mutex poisoned"); // Using RawHopInfo
         let now = Instant::now();
         active_probes_guard.retain(|_seq, probe| {
             if now.duration_since(probe.sent_at) > Duration::from_millis(args.probe_timeout_ms) {
@@ -688,7 +721,7 @@ async fn main() -> Result<()> {
         println!("\nTraceroute path (raw):");
         let destination_ip = IpAddr::V4(target_ipv4);
         for ttl_val in args.start_ttl..=effective_max_hops {
-            let results_guard = raw_results_map.lock().unwrap();
+            let results_guard = raw_results_map.lock().expect("results_map mutex poisoned");
             if let Some(raw_hop) = results_guard.get(&ttl_val) {
                 print_raw_hop_info(raw_hop);
                 // Stop printing once we reach the destination
@@ -719,7 +752,9 @@ async fn process_hops_for_asn_and_classification(
     no_rdns: bool,
 ) -> Result<Vec<ClassifiedHopInfo>> {
     let collected_hops_raw: Vec<RawHopInfo> = {
-        let guard = raw_results_map_arc.lock().unwrap();
+        let guard = raw_results_map_arc
+            .lock()
+            .expect("results_map mutex poisoned");
         (start_ttl..=max_ttl)
             .map(|ttl| {
                 guard.get(&ttl).cloned().unwrap_or(RawHopInfo {
@@ -760,8 +795,7 @@ async fn process_hops_for_asn_and_classification(
     // Perform ASN and rDNS lookups in parallel
     let mut rdns_results: HashMap<usize, Option<String>> = HashMap::new();
 
-    if resolver.is_some() {
-        let resolver = resolver.as_ref().unwrap();
+    if let Some(resolver) = resolver.as_ref() {
         let mut asn_futures = FuturesUnordered::new();
         let mut rdns_futures = FuturesUnordered::new();
 

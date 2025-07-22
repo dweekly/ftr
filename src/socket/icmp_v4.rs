@@ -95,8 +95,11 @@ impl DgramIcmpV4Socket {
 
                 if original_type == IcmpTypes::EchoRequest.0 && original_id == self.icmp_identifier
                 {
-                    if let Some(probe_info) =
-                        self.active_probes.lock().unwrap().remove(&original_seq)
+                    if let Some(probe_info) = self
+                        .active_probes
+                        .lock()
+                        .expect("mutex poisoned")
+                        .remove(&original_seq)
                     {
                         let response_type = match icmp_packet.get_icmp_type() {
                             IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
@@ -123,7 +126,7 @@ impl DgramIcmpV4Socket {
                         if let Some(probe_info) = self
                             .active_probes
                             .lock()
-                            .unwrap()
+                            .expect("mutex poisoned")
                             .remove(&echo_reply_pkt.get_sequence_number())
                         {
                             let rtt = recv_time.duration_since(probe_info.sent_at);
@@ -196,7 +199,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
         // Track the probe
         self.active_probes
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(probe_info.sequence, probe_info);
 
         Ok(())
@@ -233,7 +236,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
                             response.response_type,
                             ResponseType::EchoReply | ResponseType::DestinationUnreachable(_)
                         ) {
-                            *self.destination_reached.lock().unwrap() = true;
+                            *self.destination_reached.lock().expect("mutex poisoned") = true;
                         }
                         return Ok(Some(response));
                     }
@@ -250,7 +253,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self.destination_reached.lock().expect("mutex poisoned")
     }
 }
 
