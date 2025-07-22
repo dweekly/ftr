@@ -48,6 +48,9 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - Run tests: `cargo test`
 - Build project: `cargo build`
 - Run the binary: `sudo target/debug/ftr <hostname>`
+- Check full compliance: `.githooks/check-compliance.sh`
+- Release checklist: `.githooks/release-checklist.sh`
+- Install dev tools: `.githooks/install-tools.sh`
 
 ### Important Files
 - `Cargo.toml` - Dependencies and project metadata
@@ -84,6 +87,8 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - **Update TODO.md when completing work** - remove completed items
 - **Update CHANGELOG.md** for notable or user-facing changes
 - **Update README.md** if the project definition or scope changes
+- **Run compliance checks before pushing** - use `.githooks/check-compliance.sh` to verify locally
+- **Use release checklist** - run `.githooks/release-checklist.sh` before creating releases
 
 ### Code Quality
 - **Always write tests alongside code** - ensure tests pass in the commit hook

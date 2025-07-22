@@ -1,0 +1,104 @@
+#!/bin/sh
+# Pre-push hook for full compliance checks
+
+echo "Running pre-push compliance checks..."
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Track if any check fails
+FAILED=0
+
+# Function to run a check
+run_check() {
+    local name="$1"
+    local command="$2"
+    
+    printf "Checking %s... " "$name"
+    if eval "$command" > /dev/null 2>&1; then
+        printf "${GREEN}✓${NC}\n"
+    else
+        printf "${RED}✗${NC}\n"
+        echo "  Run '$command' to see details"
+        FAILED=1
+    fi
+}
+
+echo ""
+echo "=== RUST BEST PRACTICES COMPLIANCE CHECK ==="
+echo ""
+
+# Core checks (fast)
+run_check "code formatting" "cargo fmt -- --check"
+run_check "clippy lints" "cargo clippy -- -D warnings"
+run_check "tests" "cargo test"
+run_check "documentation" "cargo doc --no-deps --document-private-items"
+
+# Security and dependency checks (slower)
+echo ""
+echo "Running security and dependency checks..."
+
+# Check if cargo-audit is installed
+if command -v cargo-audit >/dev/null 2>&1; then
+    run_check "security vulnerabilities" "cargo audit"
+else
+    printf "${YELLOW}Warning: cargo-audit not installed. Run '.githooks/install-tools.sh'${NC}\n"
+fi
+
+# Check if cargo-machete is installed
+if command -v cargo-machete >/dev/null 2>&1; then
+    run_check "unused dependencies" "cargo machete"
+else
+    printf "${YELLOW}Warning: cargo-machete not installed. Run '.githooks/install-tools.sh'${NC}\n"
+fi
+
+# Check if cargo-outdated is installed
+if command -v cargo-outdated >/dev/null 2>&1; then
+    echo ""
+    echo "Checking for outdated dependencies..."
+    OUTDATED_COUNT=$(cargo outdated --depth 1 2>/dev/null | grep -E "^[a-zA-Z]" | tail -n +3 | wc -l | tr -d ' ')
+    if [ "$OUTDATED_COUNT" != "0" ] && [ "$OUTDATED_COUNT" != "" ]; then
+        printf "${YELLOW}Note: $OUTDATED_COUNT direct dependencies are outdated${NC}\n"
+        echo "  Run 'cargo outdated' to see details"
+    else
+        printf "${GREEN}All direct dependencies up to date${NC}\n"
+    fi
+else
+    printf "${YELLOW}Warning: cargo-outdated not installed. Run '.githooks/install-tools.sh'${NC}\n"
+fi
+
+# MSRV check
+echo ""
+echo "Checking MSRV compatibility..."
+MSRV=$(grep "rust-version" Cargo.toml | cut -d'"' -f2)
+if [ -n "$MSRV" ]; then
+    echo "MSRV is set to: $MSRV"
+else
+    printf "${YELLOW}Warning: No MSRV set in Cargo.toml${NC}\n"
+fi
+
+# Check for TODOs in code
+echo ""
+TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.rs" src/ 2>/dev/null | wc -l | tr -d ' ')
+if [ "$TODO_COUNT" -gt "0" ]; then
+    printf "${YELLOW}Note: Found $TODO_COUNT TODO/FIXME/HACK comments in code${NC}\n"
+    echo "  Run 'grep -r \"TODO\\|FIXME\\|HACK\\|XXX\" --include=\"*.rs\" src/' to see them"
+fi
+
+# Final result
+echo ""
+if [ $FAILED -eq 0 ]; then
+    printf "${GREEN}All pre-push checks passed!${NC}\n"
+    echo "Safe to push to remote repository."
+    exit 0
+else
+    printf "${RED}Pre-push checks failed!${NC}\n"
+    echo "Please fix the issues before pushing."
+    echo ""
+    echo "To bypass this check (NOT recommended for main branch):"
+    echo "  git push --no-verify"
+    exit 1
+fi
