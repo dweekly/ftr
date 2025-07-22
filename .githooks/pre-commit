@@ -25,5 +25,13 @@ if ! cargo clippy -- -D warnings; then
     exit 1
 fi
 
+# Run tests
+echo "Running tests..."
+if ! cargo test; then
+    echo "Error: Tests failed!"
+    echo "Please fix the failing tests before committing."
+    exit 1
+fi
+
 echo "All pre-commit checks passed!"
 exit 0

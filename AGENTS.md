@@ -69,7 +69,34 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - TCP mode is not yet implemented
 - Basic UDP socket (without ICMP reception) is non-functional and removed
 
-## Best Practices
+## Git Best Practices
+
+### File Operations
+- **Always use git commands for file operations**:
+  - Use `git mv` instead of deleting and recreating files
+  - Use `git rm` to remove files
+- **Never create test files or new versions of files directly** - create a branch for experiments and either discard or merge it
+- **Ensure the directory is git clean before committing** - no untracked files or directories should remain
+
+### Development Workflow
+- **Keep commits small and well-scoped** - each commit should do one thing
+- **Track work in TODO.md** - when new issues arise while working on something else, add them to TODO.md
+- **Update TODO.md when completing work** - remove completed items
+- **Update CHANGELOG.md** for notable or user-facing changes
+- **Update README.md** if the project definition or scope changes
+
+### Code Quality
+- **Always write tests alongside code** - ensure tests pass in the commit hook
+- **Avoid code duplication** - refactor common patterns
+- **After each commit, review for refactoring opportunities**
+- **Keep files small and modular** - each file should have a clear, single purpose
+- **Use consistent naming** - follow Rust naming conventions (snake_case for functions/variables, CamelCase for types)
+- **Comment complex logic** - make code easy to reason about
+
+### Tool Requests
+- **Feel free to ask for tools** - if you need tools like ripgrep to work more effectively, ask the user to install them
+
+## General Best Practices
 1. Always read files before editing them
 2. Check for existing patterns and follow them
 3. Run tests after making changes
