@@ -435,16 +435,6 @@ async fn main() -> Result<()> {
 
     let socket_arc: Arc<Box<dyn ProbeSocket>> = Arc::new(probe_socket);
 
-    // Inform users about UDP port selection
-    if matches!(socket_arc.mode().protocol, ProbeProtocol::Udp) {
-        eprintln!();
-        eprintln!(
-            "Note: Using UDP port 443 (HTTPS/QUIC) for better path visibility through firewalls."
-        );
-        eprintln!("      Traditional UDP traceroute ports (33434+) are often filtered by routers.");
-        eprintln!();
-    }
-
     // Spawn receiver task
     let recv_socket_clone = Arc::clone(&socket_arc);
     let results_clone_recv = Arc::clone(&raw_results_map);
