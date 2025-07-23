@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Factory pattern for automatic mode selection based on available permissions
 - Library interface (`lib.rs`) for programmatic use
 - Example program demonstrating socket abstraction
+- Multiple probes per TTL support with `-q/--queries` option
+  - Send multiple probes to discover all paths in load-balanced networks
+  - Matches behavior of system traceroute utilities
+  - Default remains 1 probe per hop for backward compatibility
 
 ### Fixed
 - UDP traceroute on Linux now properly shows multiple hops
