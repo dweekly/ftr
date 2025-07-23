@@ -79,7 +79,17 @@ pub fn create_probe_socket_with_mode(
     // Determine protocols to try
     let protocols = match preferred_protocol {
         Some(p) => vec![p],
-        None => vec![ProbeProtocol::Icmp, ProbeProtocol::Udp, ProbeProtocol::Tcp],
+        None => {
+            // On Linux, prefer UDP since it works without root via IP_RECVERR
+            #[cfg(target_os = "linux")]
+            {
+                vec![ProbeProtocol::Udp, ProbeProtocol::Icmp, ProbeProtocol::Tcp]
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                vec![ProbeProtocol::Icmp, ProbeProtocol::Udp, ProbeProtocol::Tcp]
+            }
+        }
     };
 
     let mut last_error = None;

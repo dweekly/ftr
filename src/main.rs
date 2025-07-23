@@ -536,16 +536,33 @@ async fn main() -> Result<()> {
 
         sequence += 1;
 
-        // For UDP with IP_RECVERR, wait a bit to ensure we receive the response
-        // before sending the next probe
-        if matches!(socket_arc.mode().protocol, ProbeProtocol::Udp) {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        } else if args.send_launch_interval_ms > 0 {
+        // Small delay between probes to avoid overwhelming the network
+        if args.send_launch_interval_ms > 0 {
             tokio::time::sleep(Duration::from_millis(args.send_launch_interval_ms)).await;
+        } else if matches!(socket_arc.mode().protocol, ProbeProtocol::Udp) {
+            // For UDP with IP_RECVERR, wait for response before sending next probe
+            // This ensures we receive all ICMP errors
+            let wait_start = Instant::now();
+            let probe_timeout = Duration::from_millis(200); // Longer timeout for ICMP errors
+
+            while wait_start.elapsed() < probe_timeout {
+                let _active_count = active_probes.lock().expect("mutex poisoned").len();
+                let results_count = raw_results_map.lock().expect("mutex poisoned").len();
+                if results_count >= ttl_val as usize {
+                    // We have a response for this TTL
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
     }
 
     // All probes sent
+
+    // For UDP, wait a bit to allow ICMP errors to be generated
+    if matches!(socket_arc.mode().protocol, ProbeProtocol::Udp) {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 
     // Wait for responses
     let overall_start_time = Instant::now();
