@@ -146,110 +146,6 @@ impl UdpRecvErrSocket {
 
         None
     }
-
-    /// Parse IP_RECVERR error from control messages
-    #[cfg(target_os = "linux")]
-    fn parse_error_message(&self, msg: &libc::msghdr, recv_time: Instant) -> Option<ProbeResponse> {
-        unsafe {
-            let mut cmsg: *const libc::cmsghdr = libc::CMSG_FIRSTHDR(msg);
-
-            while !cmsg.is_null() {
-                let cmsg_ref = &*cmsg;
-
-                // Looking for IP_RECVERR message
-                if cmsg_ref.cmsg_level == libc::IPPROTO_IP && cmsg_ref.cmsg_type == libc::IP_RECVERR
-                {
-                    // Get pointer to the error structure
-                    let err_ptr = libc::CMSG_DATA(cmsg) as *const SockExtendedErr;
-                    let sock_err = &*err_ptr;
-
-                    // Only interested in ICMP errors
-                    if sock_err.ee_origin != SO_EE_ORIGIN_ICMP {
-                        cmsg = libc::CMSG_NXTHDR(msg, cmsg);
-                        continue;
-                    }
-
-                    // Get the offending address (follows the SockExtendedErr structure)
-                    let addr_ptr = (err_ptr as *const u8).add(mem::size_of::<SockExtendedErr>())
-                        as *const libc::sockaddr_in;
-                    let offender_addr = &*addr_ptr;
-                    let from_addr = IpAddr::V4(std::net::Ipv4Addr::from(u32::from_be(
-                        offender_addr.sin_addr.s_addr,
-                    )));
-
-                    // For UDP traceroute with IP_RECVERR, the original packet is returned in the
-                    // iovec buffer, not in the control message. Let's check the iovec data.
-
-                    // The original packet should be in the iovec buffer
-                    let packet_data = if (*msg).msg_iovlen > 0 && !(*msg).msg_iov.is_null() {
-                        let iov = &*(*msg).msg_iov;
-                        std::slice::from_raw_parts(iov.iov_base as *const u8, iov.iov_len.min(128))
-                    } else {
-                        &[]
-                    };
-
-                    // Validate it looks like an IP packet
-                    if packet_data.len() >= 28 && (packet_data[0] >> 4) == 4 {
-                        // Extract IP header length
-                        let ip_header_len = ((packet_data[0] & 0x0F) as usize) * 4;
-
-                        if packet_data.len() >= ip_header_len + 8 {
-                            // Get UDP header
-                            let udp_header = &packet_data[ip_header_len..];
-                            let dest_port = u16::from_be_bytes([udp_header[2], udp_header[3]]);
-
-                            // Look up the probe by port
-                            // With separate sockets, we can't look up by port
-                            // This code path shouldn't be reached with our new design
-                            let probe_info: Option<ProbeInfo> = None;
-
-                            if let Some(probe_info) = probe_info {
-                                // Also remove from active probes
-                                self.active_probes
-                                    .lock()
-                                    .expect("mutex poisoned")
-                                    .remove(&probe_info.sequence);
-
-                                // Determine response type based on ICMP type/code
-                                let response_type = match sock_err.ee_type {
-                                    11 => ResponseType::TimeExceeded, // ICMP Time Exceeded
-                                    3 => {
-                                        // ICMP Destination Unreachable
-                                        if sock_err.ee_code == 3 {
-                                            // Port unreachable - we've reached the destination
-                                            *self
-                                                .destination_reached
-                                                .lock()
-                                                .expect("mutex poisoned") = true;
-                                            ResponseType::UdpPortUnreachable
-                                        } else {
-                                            ResponseType::DestinationUnreachable(sock_err.ee_code)
-                                        }
-                                    }
-                                    _ => ResponseType::DestinationUnreachable(sock_err.ee_code),
-                                };
-
-                                let rtt = recv_time.duration_since(probe_info.sent_at);
-                                return Some(ProbeResponse {
-                                    from_addr,
-                                    response_type,
-                                    probe_info,
-                                    rtt,
-                                });
-                            }
-                        }
-                    } else {
-                        // With separate sockets, this fallback is no longer needed
-                        // Each socket knows its own probe info
-                    }
-                }
-
-                cmsg = libc::CMSG_NXTHDR(msg, cmsg);
-            }
-        }
-
-        None
-    }
 }
 
 #[cfg(target_os = "linux")]
@@ -339,10 +235,10 @@ impl ProbeSocket for UdpRecvErrSocket {
         let deadline = Instant::now() + timeout;
         let mut buf = [0u8; 512];
         let mut control_buf = [0u8; 512];
-        let mut loop_count = 0;
+        let mut _loop_count = 0;
 
         loop {
-            loop_count += 1;
+            _loop_count += 1;
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Ok(None);

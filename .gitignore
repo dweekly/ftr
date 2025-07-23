@@ -44,3 +44,6 @@ ubuntu-ftr-test.sh
 Vagrantfile.iso
 Vagrantfile.official
 packer/
+
+# Environment-specific configuration (not for version control)
+ENVIRONMENT.md

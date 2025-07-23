@@ -53,6 +53,13 @@ struct Args {
     protocol: Option<ProtocolArg>,
     #[clap(long, value_enum, help = "Socket mode to use (raw, dgram)")]
     socket_mode: Option<SocketModeArg>,
+    #[clap(
+        short = 'q',
+        long,
+        default_value_t = 1,
+        help = "Number of probes per hop"
+    )]
+    queries: u8,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -511,36 +518,44 @@ async fn main() -> Result<()> {
             continue;
         }
 
-        // Create probe info
-        let probe_info = ProbeInfo {
-            ttl: ttl_val,
-            identifier: icmp_identifier,
-            sequence,
-            sent_at: Instant::now(),
-        };
+        // Send multiple probes for this TTL
+        for query_num in 0..args.queries {
+            // Create probe info
+            let probe_info = ProbeInfo {
+                ttl: ttl_val,
+                identifier: icmp_identifier,
+                sequence,
+                sent_at: Instant::now(),
+            };
 
-        // Track the probe
-        active_probes
-            .lock()
-            .expect("mutex poisoned")
-            .insert(sequence, probe_info.clone());
-
-        // Send the probe
-        if let Err(e) = socket_arc.send_probe(IpAddr::V4(target_ipv4), probe_info) {
-            eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
+            // Track the probe
             active_probes
                 .lock()
                 .expect("mutex poisoned")
-                .remove(&sequence);
+                .insert(sequence, probe_info.clone());
+
+            // Send the probe
+            if let Err(e) = socket_arc.send_probe(IpAddr::V4(target_ipv4), probe_info) {
+                eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
+                active_probes
+                    .lock()
+                    .expect("mutex poisoned")
+                    .remove(&sequence);
+            }
+
+            sequence += 1;
+
+            // Small delay between probes for the same TTL
+            if query_num < args.queries - 1 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
         }
 
-        sequence += 1;
-
-        // Small delay between probes to avoid overwhelming the network
+        // Small delay between different TTLs to avoid overwhelming the network
         if args.send_launch_interval_ms > 0 {
             tokio::time::sleep(Duration::from_millis(args.send_launch_interval_ms)).await;
         } else if matches!(socket_arc.mode().protocol, ProbeProtocol::Udp) {
-            // For UDP with IP_RECVERR, wait for response before sending next probe
+            // For UDP with IP_RECVERR, wait for response before sending next TTL
             // This ensures we receive all ICMP errors
             let wait_start = Instant::now();
             let probe_timeout = Duration::from_millis(200); // Longer timeout for ICMP errors
@@ -549,7 +564,7 @@ async fn main() -> Result<()> {
                 let _active_count = active_probes.lock().expect("mutex poisoned").len();
                 let results_count = raw_results_map.lock().expect("mutex poisoned").len();
                 if results_count >= ttl_val as usize {
-                    // We have a response for this TTL
+                    // We have at least one response for this TTL
                     break;
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
