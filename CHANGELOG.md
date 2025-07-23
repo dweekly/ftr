@@ -18,10 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Library interface (`lib.rs`) for programmatic use
 - Example program demonstrating socket abstraction
 
+### Fixed
+- UDP traceroute on Linux now properly shows multiple hops
+  - Uses connect() on UDP sockets matching system traceroute behavior
+  - Correctly handles recvmsg() returning 0 with valid control messages
+  - Ensures ICMP error responses are received for all probes
+
 ### Technical Improvements
 - Modular socket implementations in `src/socket/` directory
 - Trait-based socket abstraction for protocol independence
 - Enhanced UDP implementation with ICMP response parsing
+- Linux IP_RECVERR support for privilege-free UDP traceroute
 - Prepared groundwork for future protocol support (TCP, IPv6)
 
 ## [0.2.0] - 2025-01-21
