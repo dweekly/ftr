@@ -45,7 +45,8 @@ echo "Running security and dependency checks..."
 if command -v cargo-audit >/dev/null 2>&1; then
     run_check "security vulnerabilities" "cargo audit"
 else
-    printf "${YELLOW}Warning: cargo-audit not installed. Run '.githooks/install-tools.sh'${NC}\n"
+    printf "${RED}✗ cargo-audit is required for security checks. Run '.githooks/install-tools.sh'${NC}\n"
+    FAILED=1
 fi
 
 # Check if cargo-machete is installed
