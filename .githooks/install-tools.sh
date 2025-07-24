@@ -27,11 +27,25 @@ install_if_missing "cargo-audit" "cargo-audit"
 install_if_missing "cargo-outdated" "cargo-outdated"
 install_if_missing "cargo-machete" "cargo-machete"
 
+# Check for shellcheck
+echo ""
+if ! command -v shellcheck &> /dev/null; then
+    echo "shellcheck is not installed."
+    echo "To install shellcheck:"
+    echo "  - macOS: brew install shellcheck"
+    echo "  - Ubuntu/Debian: sudo apt-get install shellcheck"
+    echo "  - Fedora: sudo dnf install shellcheck"
+    echo "  - Arch: sudo pacman -S shellcheck"
+else
+    echo "shellcheck is already installed"
+fi
+
 echo ""
 echo "All recommended tools installed!"
 echo "You can now use:"
 echo "  - cargo audit      : Check for security vulnerabilities"
 echo "  - cargo outdated   : Check for outdated dependencies"
 echo "  - cargo machete    : Check for unused dependencies"
+echo "  - shellcheck       : Lint shell scripts for issues"
 echo ""
 echo "These tools are optional but recommended for maintaining code quality."

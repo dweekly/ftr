@@ -129,7 +129,17 @@ echo ""
 echo "4. Building release..."
 if cargo build --release; then
     echo -e "${GREEN}✓ Release build successful${NC}"
-    BINARY_SIZE=$(ls -lh target/release/ftr | awk '{print $5}')
+    BINARY_SIZE=$(stat -f%z target/release/ftr 2>/dev/null || stat -c%s target/release/ftr 2>/dev/null)
+    if [ -n "$BINARY_SIZE" ]; then
+        # Convert to human readable
+        if [ "$BINARY_SIZE" -ge 1048576 ]; then
+            BINARY_SIZE="$((BINARY_SIZE / 1048576))MB"
+        elif [ "$BINARY_SIZE" -ge 1024 ]; then
+            BINARY_SIZE="$((BINARY_SIZE / 1024))KB"
+        else
+            BINARY_SIZE="${BINARY_SIZE}B"
+        fi
+    fi
     echo "  Binary size: $BINARY_SIZE"
 else
     echo -e "${RED}✗ Release build failed${NC}"
@@ -142,16 +152,20 @@ echo "5. Dependency status..."
 if command_exists cargo-outdated; then
     OUTDATED=$(cargo outdated --format json 2>/dev/null | jq '.dependencies | map(select(.project != null)) | length' 2>/dev/null || echo "0")
     if [ "$OUTDATED" != "0" ]; then
-        echo -e "${YELLOW}Warning: $OUTDATED direct dependencies are outdated${NC}"
+        echo -e "${RED}✗ $OUTDATED direct dependencies are outdated${NC}"
         cargo outdated --depth 1
-        if ! confirm "Continue with outdated dependencies?"; then
-            exit 1
-        fi
+        echo ""
+        echo -e "${RED}Dependencies must be updated before release.${NC}"
+        echo "Run 'cargo update' to update compatible versions,"
+        echo "or manually update Cargo.toml for major version changes."
+        exit 1
     else
         echo -e "${GREEN}✓ All direct dependencies up to date${NC}"
     fi
 else
-    echo -e "${YELLOW}Cannot check (cargo-outdated not installed)${NC}"
+    echo -e "${RED}✗ cargo-outdated is required for releases${NC}"
+    echo "Install with: cargo install cargo-outdated"
+    exit 1
 fi
 
 # 6. Version check
@@ -188,7 +202,7 @@ if [ "$TODO_COUNT" -gt "0" ]; then
     if confirm "Show them?"; then
         grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.rs" src/ | head -10
         if [ "$TODO_COUNT" -gt "10" ]; then
-            echo "  ... and $(($TODO_COUNT - 10)) more"
+            echo "  ... and $((TODO_COUNT - 10)) more"
         fi
     fi
 fi

@@ -1,0 +1,11 @@
+# Vagrant files
+.vagrant/
+*.log
+*.box
+
+# SSH files
+ssh-to-vm.sh
+
+# Parallels VM files
+*.pvm
+*.pvs

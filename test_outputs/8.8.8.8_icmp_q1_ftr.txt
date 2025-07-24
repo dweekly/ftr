@@ -1,0 +1,23 @@
+ftr to 8.8.8.8 (8.8.8.8), 30 max hops, 1000ms probe timeout, 3000ms overall timeout (enrichment disabled)
+Raw ICMP mode requires root privileges, trying fallback...
+Using Datagram ICMP IPv4 mode for traceroute
+
+Traceroute path (raw):
+ 1 192.168.1.1 (0.427 ms)
+ 2 157.131.132.109 (0.807 ms)
+ 3 135.180.179.42 (4.773 ms)
+ 4 142.254.58.253 (1.957 ms)
+ 5 * * *
+ 6 * * *
+ 7 * * *
+ 8 * * *
+ 9 * * *
+10 * * *
+11 * * *
+12 * * *
+13 * * *
+14 75.101.33.185 (30.108 ms)
+15 142.250.160.160 (3.934 ms)
+16 192.178.87.169 (5.383 ms)
+17 142.251.228.83 (3.688 ms)
+18 8.8.8.8 (4.203 ms)

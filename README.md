@@ -151,6 +151,12 @@ sudo sysctl -w net.ipv4.ping_group_range="0 65535"
 ```bash
 git clone https://github.com/dweekly/ftr
 cd ftr
+
+# Install git hooks (IMPORTANT: prevents issues caught by CI)
+./.githooks/install-hooks.sh
+# OR configure git to use .githooks directory:
+# git config core.hooksPath .githooks
+
 cargo build --release
 ```
 

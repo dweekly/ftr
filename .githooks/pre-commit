@@ -49,5 +49,51 @@ fi
 #     exit 1
 # fi
 
+# Check shell scripts if shellcheck is available
+if command -v shellcheck >/dev/null 2>&1; then
+    echo "Checking shell scripts with shellcheck..."
+    SHELL_SCRIPTS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(sh|bash)$' || true)
+    if [ -n "$SHELL_SCRIPTS" ]; then
+        FAILED=0
+        for script in $SHELL_SCRIPTS; do
+            if [ -f "$script" ]; then
+                if ! shellcheck "$script"; then
+                    FAILED=1
+                fi
+            fi
+        done
+        if [ $FAILED -ne 0 ]; then
+            echo "Error: Shell script issues detected!"
+            echo "Please fix the shellcheck warnings before committing."
+            exit 1
+        fi
+    fi
+    
+    # Also check hook scripts themselves if they're being committed
+    HOOK_SCRIPTS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '^\.githooks/' | grep -v '\.md$' || true)
+    if [ -n "$HOOK_SCRIPTS" ]; then
+        FAILED=0
+        for script in $HOOK_SCRIPTS; do
+            if [ -f "$script" ] && [ -x "$script" ]; then
+                if ! shellcheck "$script"; then
+                    FAILED=1
+                fi
+            fi
+        done
+        if [ $FAILED -ne 0 ]; then
+            echo "Error: Hook script issues detected!"
+            echo "Please fix the shellcheck warnings before committing."
+            exit 1
+        fi
+    fi
+else
+    # Only warn if shell scripts are being committed
+    SHELL_SCRIPTS=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(sh|bash)$|^\.githooks/[^.]+$' | grep -v '\.md$' || true)
+    if [ -n "$SHELL_SCRIPTS" ]; then
+        echo "Warning: shellcheck not installed - shell scripts not linted"
+        echo "Install with: brew install shellcheck (macOS) or apt-get install shellcheck (Linux)"
+    fi
+fi
+
 echo "All pre-commit checks passed!"
 exit 0

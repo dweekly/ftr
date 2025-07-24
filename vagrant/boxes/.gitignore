@@ -1,0 +1,5 @@
+# Ignore all box files
+*.box
+
+# But keep this directory
+!.gitignore

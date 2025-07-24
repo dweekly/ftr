@@ -1,0 +1,51 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# This Vagrantfile uses the box built by Packer
+require_relative '../lib/base_config'
+
+Vagrant.configure("2") do |config|
+  # Use the Packer-built box
+  config.vm.box = "ftr-ubuntu-22.04"
+  config.vm.box_url = "../boxes/parallels-ubuntu-22.04.box"
+  
+  # VM identification
+  config.vm.hostname = "ftr-ubuntu-2204"
+  config.vm.define "ftr-ubuntu-2204"
+  
+  # Network configuration - Ubuntu uses .1
+  BaseConfig.configure_network(config, 1)
+  
+  # Provider configuration
+  config.vm.provider "parallels" do |prl|
+    prl.name = "ftr-ubuntu-22.04"
+  end
+  
+  # The box already has ftr user and basic setup from Packer
+  # Just need to ensure shared folder works
+  config.vm.provision "shell", inline: <<-SHELL
+    # Ensure shared folder mount point exists
+    sudo mkdir -p /media/psf
+    sudo chown ftr:ftr /media/psf || true
+    
+    # Ensure cargo env is sourced
+    grep -q "cargo/env" /home/ftr/.bashrc || echo 'source $HOME/.cargo/env' >> /home/ftr/.bashrc
+    
+    echo "Ubuntu 22.04 VM ready!"
+    echo "Project directory: /media/psf/ftr"
+  SHELL
+  
+  # Post-up message with IP discovery
+  config.vm.post_up_message = <<-MSG
+    Ubuntu 22.04 LTS Development VM is ready!
+    
+    To find the VM IP: ../manage-vms.sh status ubuntu-22.04
+    SSH access: vagrant ssh
+    Project: /media/psf/ftr
+    
+    First time setup:
+    1. Build the box: cd ../../packer && ./build-vm.sh ubuntu-22.04
+    2. Return here: cd ../vagrant/ubuntu-22.04
+    3. Start VM: vagrant up
+  MSG
+end

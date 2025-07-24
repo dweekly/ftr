@@ -2,6 +2,20 @@
 
 This document contains important guidelines and information for AI agents working with the ftr (Fast TRaceroute) codebase.
 
+## Initial Setup
+
+### Installing Git Hooks
+**IMPORTANT**: Git hooks must be installed to prevent issues that would fail in CI:
+```bash
+# Option 1: Install hooks via symlinks
+./.githooks/install-hooks.sh
+
+# Option 2: Configure git to use .githooks directory
+git config core.hooksPath .githooks
+```
+
+Without these hooks, code with formatting issues or clippy warnings can be committed and will fail in GitHub Actions CI.
+
 ## Critical Safety Rules
 
 ### Git Commands to NEVER Run
@@ -71,9 +85,11 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 
 ### Testing and Validation
 - Always run `cargo fmt` before committing
-- Always run `cargo clippy` before committing
+- Always run `cargo clippy -- -D warnings` before committing (this matches GitHub Actions CI)
 - Pre-commit hooks are configured in `.githooks/` - they run automatically
 - Always run `cargo audit` after adding new modules or dependencies to catch security vulnerabilities early
+- Always run `cargo outdated` before cutting a release to ensure dependencies are up to date
+- **IMPORTANT**: GitHub Actions uses `cargo clippy -- -D warnings` which treats all warnings as errors
 
 ### Platform-Specific Code
 - Use `#[cfg(target_os = "linux")]` for Linux-specific features
@@ -91,7 +107,7 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 ### Command References
 - Format code: `cargo fmt`
 - Check formatting: `cargo fmt -- --check`
-- Run linter: `cargo clippy`
+- Run linter: `cargo clippy -- -D warnings` (matches CI)
 - Run tests: `cargo test`
 - Build project: `cargo build`
 - Run the binary: `sudo target/debug/ftr <hostname>`
@@ -108,10 +124,12 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 
 ### Current Development Status
 - v0.2.0 - Released with basic functionality
-- v0.2.1 - In development on `feature/v0.2.1-socket-abstraction` branch
+- v0.2.1 - Released with:
   - Socket abstraction layer with automatic fallback
   - Multi-mode support (Raw ICMP, DGRAM ICMP, UDP)
   - Linux IP_RECVERR support for privilege-free UDP traceroute
+  - Multiple probes per TTL (-q/--queries option)
+  - Improved error handling and diagnostics
 
 ### Known Limitations
 - UDP mode requires either root privileges or Linux IP_RECVERR
@@ -148,6 +166,21 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 
 ### Tool Requests
 - **Feel free to ask for tools** - if you need tools like ripgrep to work more effectively, ask the user to install them
+
+### Release Process
+- **Before cutting any release**:
+  1. Run `.githooks/release-checklist.sh` to ensure all checks pass
+  2. Ensure `cargo outdated` shows all dependencies are up to date
+  3. Update CHANGELOG.md with release notes
+  4. Verify version number in Cargo.toml
+  5. Ensure all tests pass and no TODO/FIXME items are critical
+- **The release checklist script automatically**:
+  - Checks git status and branch
+  - Runs all compliance checks (format, clippy, tests, docs)
+  - Runs security audit
+  - Checks for outdated dependencies
+  - Builds release binary and reports size
+  - Validates CHANGELOG.md entries
 
 ## Virtual Machine Guidelines
 

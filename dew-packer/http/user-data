@@ -1,0 +1,32 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US
+  keyboard:
+    layout: us
+  network:
+    network:
+      version: 2
+      ethernets:
+        enp0s5:
+          dhcp4: true
+  storage:
+    layout:
+      name: direct
+  identity:
+    hostname: ubuntu-24-lts
+    username: ubuntu
+    password: "$6$WXedYSVeYPP7BKLt$YQB7bzijsX0IfxcFaCJtXhgleB2KkYRDBy9bAgDSYRu.5hFAjyHfqV2m..LvM7PLV4M5nzfKxjVFGze17a/ZJ1" # WiFi!
+  ssh:
+    install-server: true
+    allow-pw: true
+  user-data:
+    disable_root: false
+
+users:
+  - default
+  - name: ftr
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEZRx66V9VPodpfrJv1mkfJ+lEVF4/nYzBIZ6cof1tag ftr@ubuntu-vm # ftr_vm_key

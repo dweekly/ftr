@@ -28,8 +28,8 @@ for file in $FILES; do
         # Check for binary/archive file patterns
         for pattern in $BINARY_PATTERNS; do
             case "$file" in
-                $pattern)
-                    printf "${YELLOW}⚠ WARNING: Binary/archive file detected: %s${NC}\n" "$file"
+                "$pattern")
+                    printf "%b⚠ WARNING: Binary/archive file detected: %s%b\n" "${YELLOW}" "$file" "${NC}"
                     echo "  Consider if this file should be in version control"
                     HAS_WARNING=1
                     ;;
@@ -41,12 +41,12 @@ for file in $FILES; do
         if [ -n "$SIZE" ]; then
             if [ "$SIZE" -gt "$FAIL_SIZE" ]; then
                 SIZE_MB=$((SIZE / 1024 / 1024))
-                printf "${RED}✗ ERROR: File too large (${SIZE_MB}MB): %s${NC}\n" "$file"
+                printf "%b✗ ERROR: File too large (%sMB): %s%b\n" "${RED}" "${SIZE_MB}" "$file" "${NC}"
                 echo "  Files larger than 50MB must use Git LFS or be excluded from the repository"
                 HAS_ERROR=1
             elif [ "$SIZE" -gt "$WARN_SIZE" ]; then
                 SIZE_MB=$((SIZE / 1024 / 1024))
-                printf "${YELLOW}⚠ WARNING: Large file (${SIZE_MB}MB): %s${NC}\n" "$file"
+                printf "%b⚠ WARNING: Large file (%sMB): %s%b\n" "${YELLOW}" "${SIZE_MB}" "$file" "${NC}"
                 echo "  Consider using Git LFS for files larger than 10MB"
                 HAS_WARNING=1
             fi
@@ -56,7 +56,7 @@ done
 
 if [ "$HAS_ERROR" -eq 1 ]; then
     echo ""
-    echo "${RED}Commit blocked due to files exceeding 50MB limit.${NC}"
+    printf "%bCommit blocked due to files exceeding 50MB limit.%b\n" "${RED}" "${NC}"
     echo "Options:"
     echo "1. Use Git LFS: git lfs track '*.extension'"
     echo "2. Add to .gitignore if the file shouldn't be tracked"
@@ -64,10 +64,10 @@ if [ "$HAS_ERROR" -eq 1 ]; then
     exit 1
 elif [ "$HAS_WARNING" -eq 1 ]; then
     echo ""
-    echo "${YELLOW}Large files detected but within acceptable limits.${NC}"
+    printf "%bLarge files detected but within acceptable limits.%b\n" "${YELLOW}" "${NC}"
     echo "Consider using Git LFS for better performance."
 else
-    printf "${GREEN}✓ All file sizes OK${NC}\n"
+    printf "%b✓ All file sizes OK%b\n" "${GREEN}" "${NC}"
 fi
 
 exit 0
