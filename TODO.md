@@ -16,6 +16,7 @@ This file tracks planned work for the ftr project.
 
 - [x] Print detected public IP address in output (completed in v0.2.2)
 - [x] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]') (completed in v0.2.2)
+- [ ] Add structured JSON output option (--json) for programmatic use
 - [ ] Add verbose mode (-v) to show which protocol/socket mode is being used
 - [ ] Complete socket abstraction implementation
   - Add TCP mode support (TCP SYN packets)
