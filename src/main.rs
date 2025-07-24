@@ -286,7 +286,7 @@ async fn get_public_ip(_resolver: Option<&Arc<TokioResolver>>) -> Result<Ipv4Add
 }
 
 /// Detect ISP from public IP
-async fn detect_isp_from_public_ip() -> Option<(String, String)> {
+async fn detect_isp_from_public_ip() -> Option<(Ipv4Addr, String, String)> {
     let resolver = Arc::new(
         TokioResolver::builder_with_config(
             ResolverConfig::cloudflare(),
@@ -297,7 +297,7 @@ async fn detect_isp_from_public_ip() -> Option<(String, String)> {
 
     if let Ok(public_ip) = get_public_ip(Some(&resolver)).await {
         if let Some(asn_info) = lookup_asn(public_ip, &resolver).await {
-            return Some((asn_info.asn.clone(), asn_info.name.clone()));
+            return Some((public_ip, asn_info.asn.clone(), asn_info.name.clone()));
         }
     }
     None
@@ -352,13 +352,19 @@ fn print_raw_hop_info(hop: &RawHopInfo) {
             );
         }
         _ => {
-            println!("{:2} * * *", hop.ttl);
+            println!("{:2}", hop.ttl);
         }
     }
 }
 
 /// Print classified hop information with enrichment
 fn print_classified_hop_info(hop: &ClassifiedHopInfo) {
+    // For silent hops, use minimalist output
+    if hop.addr.is_none() {
+        println!("{:2}", hop.ttl);
+        return;
+    }
+
     let addr_str = hop.addr.map_or("*".to_string(), |a| a.to_string());
     let rtt_str = hop.rtt.map_or("*".to_string(), |r| {
         format!("{:.3} ms", r.as_secs_f64() * 1000.0)
@@ -676,8 +682,9 @@ async fn main() -> Result<()> {
         }
 
         // Detect and print ISP info
-        if let Some((isp_asn, isp_name)) = detect_isp_from_public_ip().await {
-            println!("\nDetected ISP: AS{isp_asn} ({isp_name})");
+        if let Some((public_ip, isp_asn, isp_name)) = detect_isp_from_public_ip().await {
+            println!("\nDetected public IP: {public_ip}");
+            println!("Detected ISP: AS{isp_asn} ({isp_name})");
         }
     } else {
         // Print raw results
@@ -687,7 +694,7 @@ async fn main() -> Result<()> {
             if let Some(raw_hop) = results_guard.get(&ttl_val) {
                 print_raw_hop_info(raw_hop);
             } else {
-                println!("{ttl_val:2} * * *");
+                println!("{ttl_val:2}");
             }
         }
     }

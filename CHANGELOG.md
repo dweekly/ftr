@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2025-07-24
+
+### Added
+- Display detected public IP address in output
+- Minimalist printing for silent hops (just TTL number instead of "* * *")
+
+### Changed
+- Improved user experience with cleaner output format
+- Silent hops now use minimal space to reduce visual clutter
+
 ## [0.2.1] - 2025-07-23
 
 ### Added
@@ -126,7 +136,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/dweekly/ftr/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/dweekly/ftr/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/dweekly/ftr/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/dweekly/ftr/compare/v0.1.1...v0.1.2

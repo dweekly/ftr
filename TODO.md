@@ -14,8 +14,8 @@ This file tracks planned work for the ftr project.
 
 ## Medium Priority
 
-- [ ] Print detected public IP address in output
-- [ ] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]')
+- [x] Print detected public IP address in output (completed in v0.2.2)
+- [x] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]') (completed in v0.2.2)
 - [ ] Add verbose mode (-v) to show which protocol/socket mode is being used
 - [ ] Complete socket abstraction implementation
   - Add TCP mode support (TCP SYN packets)
