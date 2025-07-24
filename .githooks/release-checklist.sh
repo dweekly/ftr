@@ -193,9 +193,29 @@ else
     echo -e "${YELLOW}Warning: CHANGELOG.md not found${NC}"
 fi
 
-# 8. TODO check
+# 8. Release notes check
 echo ""
-echo "8. Checking for TODOs..."
+echo "8. Checking release notes..."
+echo -e "${YELLOW}Please ensure you have prepared comprehensive release notes including:${NC}"
+echo "  - New features with descriptions"
+echo "  - Bug fixes"
+echo "  - Breaking changes (if any)"
+echo "  - Installation/upgrade instructions"
+echo "  - Acknowledgments"
+echo ""
+if ! confirm "Have you prepared release notes?"; then
+    echo -e "${RED}Please prepare release notes before continuing.${NC}"
+    echo "Example template:"
+    echo "  - Summary of the release"
+    echo "  - New Features section with details"
+    echo "  - Bug Fixes section"
+    echo "  - Installation instructions"
+    exit 1
+fi
+
+# 9. TODO check
+echo ""
+echo "9. Checking for TODOs..."
 TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.rs" src/ 2>/dev/null | wc -l | tr -d ' ')
 if [ "$TODO_COUNT" -gt "0" ]; then
     echo -e "${YELLOW}Found $TODO_COUNT TODO/FIXME/HACK comments${NC}"
@@ -207,7 +227,7 @@ if [ "$TODO_COUNT" -gt "0" ]; then
     fi
 fi
 
-# 9. Final confirmation
+# 10. Final confirmation
 echo ""
 echo -e "${BLUE}=== RELEASE SUMMARY ===${NC}"
 echo "  Version: $CURRENT_VERSION"
@@ -222,7 +242,8 @@ if confirm "Ready to create release?"; then
     echo "  2. Commit any final changes"
     echo "  3. Run: git tag -a v$CURRENT_VERSION -m \"Release v$CURRENT_VERSION\""
     echo "  4. Run: git push origin main --tags"
-    echo "  5. Create GitHub release"
+    echo "  5. Create GitHub release with comprehensive release notes"
+    echo "     gh release create v$CURRENT_VERSION --notes \"...\" "
     echo "  6. Run: cargo publish (if publishing to crates.io)"
 else
     echo "Release cancelled."

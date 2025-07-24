@@ -174,6 +174,13 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
   3. Update CHANGELOG.md with release notes
   4. Verify version number in Cargo.toml
   5. Ensure all tests pass and no TODO/FIXME items are critical
+  6. **Prepare comprehensive release notes** including:
+     - Summary of the release
+     - New features with detailed descriptions
+     - Bug fixes
+     - Breaking changes (if any)
+     - Installation/upgrade instructions
+     - Acknowledgments
 - **The release checklist script automatically**:
   - Checks git status and branch
   - Runs all compliance checks (format, clippy, tests, docs)
@@ -181,6 +188,12 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
   - Checks for outdated dependencies
   - Builds release binary and reports size
   - Validates CHANGELOG.md entries
+  - **Prompts for release notes confirmation** (added in v0.2.2)
+- **Creating the GitHub release**:
+  - Use `gh release edit` to add comprehensive notes after tag is pushed
+  - Include installation instructions for different platforms
+  - Highlight major features and improvements
+  - Provide clear upgrade path from previous versions
 
 ## Virtual Machine Guidelines
 
