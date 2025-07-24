@@ -1,6 +1,6 @@
 [package]
 name = "ftr"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["David Weekly <david@weekly.org>"]
 description = "A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection"
@@ -11,6 +11,15 @@ readme = "README.md"
 keywords = ["traceroute", "icmp", "networking", "asn", "diagnostics"]
 categories = ["command-line-utilities", "network-programming"]
 rust-version = "1.82.0"
+
+[lib]
+name = "ftr"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ftr"
+path = "src/main.rs"
+
 
 [profile.release]
 lto = "fat"
@@ -29,6 +38,10 @@ ipnet = "2.9"
 clap = { version = "4.5", features = ["derive"] }
 hickory-resolver = { version = "0.25", features = ["tokio"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rand = "0.8"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [lints.clippy]
 # Deny correctness issues (lower priority so specific lints can override)

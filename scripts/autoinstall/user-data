@@ -1,0 +1,43 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  
+  network:
+    network:
+      version: 2
+      ethernets:
+        enp0s5:
+          dhcp4: yes
+  
+  storage:
+    layout:
+      name: direct
+  
+  identity:
+    hostname: ftr-ubuntu
+    username: ftr
+    # Password is 'ftr' - mkpasswd -m sha-512
+    password: $6$rounds=4096$7nKmATiC9iM3$QGNbkNUYO0H5.7MjzRXQJn5uYXYJu.z1C0fi9gTjJwKjL3nPRQgFKUwT7GxXtGHhxB3XAB1hRzQgRrCALqGqt/
+  
+  ssh:
+    install-server: yes
+    authorized-keys:
+      - $(cat ~/.ssh/ftr-test-key.pub 2>/dev/null || echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC...")
+  
+  packages:
+    - build-essential
+    - git
+    - curl
+    - libpcap-dev
+    - net-tools
+    - iputils-ping
+    - traceroute
+  
+  late-commands:
+    # Enable passwordless sudo
+    - echo 'ftr ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ftr
+    # Install Rust
+    - curtin in-target --target=/target -- sudo -u ftr bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'

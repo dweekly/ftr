@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-07-23
+
+### Added
+- Socket abstraction layer for multi-protocol support
+  - Raw ICMP mode implementation (requires root/CAP_NET_RAW)
+  - DGRAM ICMP mode implementation (Linux, configurable ping group)
+  - UDP mode implementation with automatic fallback
+- Factory pattern for automatic mode selection based on available permissions
+- Library interface (`lib.rs`) for programmatic use
+- Example program demonstrating socket abstraction
+- Multiple probes per TTL support with `-q/--queries` option
+  - Send multiple probes to discover all paths in load-balanced networks
+  - Matches behavior of system traceroute utilities
+  - Default remains 1 probe per hop for backward compatibility
+- Linux IP_RECVERR support for privilege-free UDP traceroute
+- Comprehensive test scripts for comparing ftr with system traceroute
+- Enhanced pre-push hooks with mandatory security checks (`cargo audit`)
+
+### Fixed
+- UDP traceroute on Linux now properly shows multiple hops
+  - Uses connect() on UDP sockets matching system traceroute behavior
+  - Correctly handles recvmsg() returning 0 with valid control messages
+  - Ensures ICMP error responses are received for all probes
+- Fixed regression where traceroute continued displaying hops past the destination
+- Display both hostname and IP address in reverse DNS lookups
+- Socket errors now properly detected using OS error codes instead of string matching
+
+### Changed
+- Socket implementation refactored into modular architecture with factory pattern
+- UDP implementation now uses one socket per probe to avoid port collisions
+- Improved error handling with better error messages and suggested solutions
+- Removed noisy UDP port 443 notification from output
+
+### Technical Improvements
+- Modular socket implementations in `src/socket/` directory
+- Trait-based socket abstraction for protocol independence
+- Enhanced UDP implementation with ICMP response parsing
+- Documentation for UDP traceroute on Linux added to `docs/UDP_TRACEROUTE_LINUX.md`
+- Documentation for multi-mode probing added to `docs/MULTI_MODE.md`
+- Updated AGENTS.md with VM guidelines and shared directory information
+- Prepared groundwork for future protocol support (TCP, IPv6)
+
 ## [0.2.0] - 2025-01-21
 
 ### Added

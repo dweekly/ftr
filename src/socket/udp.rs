@@ -1,127 +1,314 @@
 //! UDP socket implementation for traceroute
 
 use super::{
-    IpVersion, ProbeInfo, ProbeMode, ProbeProtocol, ProbeResponse, ProbeSocket, SocketMode,
+    IpVersion, ProbeInfo, ProbeMode, ProbeProtocol, ProbeResponse, ProbeSocket, ResponseType,
+    SocketMode,
 };
 use anyhow::{Context, Result};
+use pnet::packet::icmp::{IcmpPacket, IcmpTypes};
+use pnet::packet::ipv4::Ipv4Packet;
+use pnet::packet::Packet;
 use socket2::Socket as Socket2;
 use std::collections::HashMap;
-use std::io::ErrorKind;
+use std::mem::MaybeUninit;
 use std::net::{IpAddr, SocketAddr, UdpSocket};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// Base port for UDP traceroute (traditional traceroute port)
-const UDP_BASE_PORT: u16 = 33434;
+#[cfg(target_os = "linux")]
+use std::mem;
 
-/// UDP socket for traceroute
-pub struct UdpProbeSocket {
-    socket: UdpSocket,
-    mode: ProbeMode,
-    active_probes: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
-    destination_reached: Arc<Mutex<bool>>,
-    /// Maps port numbers to probe info for matching responses
-    port_to_probe: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
+// Linux specific constants for IP_RECVERR
+#[cfg(target_os = "linux")]
+const SO_EE_ORIGIN_ICMP: u8 = 2;
+
+// sock_extended_err structure from Linux
+#[cfg(target_os = "linux")]
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct SockExtendedErr {
+    ee_errno: u32,
+    ee_origin: u8,
+    ee_type: u8,
+    ee_code: u8,
+    ee_pad: u8,
+    ee_info: u32,
+    ee_data: u32,
 }
 
-impl UdpProbeSocket {
-    /// Create a new UDP probe socket
-    pub fn new(socket: Socket2) -> Result<Self> {
-        // Convert to standard UdpSocket for easier use
-        let socket: UdpSocket = socket.into();
-        socket.set_nonblocking(true)?;
+// const UDP_BASE_PORT: u16 = 33434; // Unused - using fixed port 443 instead
 
+/// Alternative well-known ports that may work better through firewalls
+pub const UDP_PORT_DNS: u16 = 53;
+/// UDP port 443 (HTTPS/QUIC) - less likely to be filtered by routers
+pub const UDP_PORT_HTTPS: u16 = 443;
+
+// Note: Basic UDP socket without ICMP is non-functional for traceroute
+// Only UdpWithIcmpSocket below provides working UDP traceroute
+
+/// UDP socket using IP_RECVERR on Linux (no root required)
+#[cfg(target_os = "linux")]
+pub struct UdpRecvErrSocket {
+    mode: ProbeMode,
+    /// Maps sequence number to (socket, probe_info) for each active probe
+    active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
+    destination_reached: Arc<Mutex<bool>>,
+}
+
+#[cfg(target_os = "linux")]
+impl UdpRecvErrSocket {
+    /// Create a new UDP socket with IP_RECVERR enabled
+    pub fn new(_socket: Socket2) -> Result<Self> {
+        // We don't store a single socket anymore - each probe will create its own
         let mode = ProbeMode {
-            ip_version: IpVersion::V4, // TODO: detect from socket
+            ip_version: IpVersion::V4,
             protocol: ProbeProtocol::Udp,
             socket_mode: SocketMode::Dgram,
         };
 
-        Ok(UdpProbeSocket {
-            socket,
+        Ok(UdpRecvErrSocket {
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
-            port_to_probe: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
     /// Get the destination port for a given TTL
-    fn get_dest_port(ttl: u8) -> u16 {
-        UDP_BASE_PORT + ttl as u16
+    fn get_dest_port(_ttl: u8) -> u16 {
+        // Use port 443 (HTTPS/QUIC) which is less likely to be filtered
+        // Using the same port for all probes like system traceroute -p 443
+        UDP_PORT_HTTPS
+    }
+
+    /// Parse IP_RECVERR error from control messages with known probe info
+    #[cfg(target_os = "linux")]
+    fn parse_error_message_with_probe(
+        &self,
+        msg: &libc::msghdr,
+        recv_time: Instant,
+        probe_info: ProbeInfo,
+    ) -> Option<ProbeResponse> {
+        unsafe {
+            let mut cmsg: *const libc::cmsghdr = libc::CMSG_FIRSTHDR(msg);
+
+            while !cmsg.is_null() {
+                let cmsg_ref = &*cmsg;
+
+                // Looking for IP_RECVERR message
+                if cmsg_ref.cmsg_level == libc::IPPROTO_IP && cmsg_ref.cmsg_type == libc::IP_RECVERR
+                {
+                    // Get pointer to the error structure
+                    let err_ptr = libc::CMSG_DATA(cmsg) as *const SockExtendedErr;
+                    let sock_err = &*err_ptr;
+
+                    // Only interested in ICMP errors
+                    if sock_err.ee_origin != SO_EE_ORIGIN_ICMP {
+                        cmsg = libc::CMSG_NXTHDR(msg, cmsg);
+                        continue;
+                    }
+
+                    // Get the offending address (follows the SockExtendedErr structure)
+                    let addr_ptr = (err_ptr as *const u8).add(mem::size_of::<SockExtendedErr>())
+                        as *const libc::sockaddr_in;
+                    let offender_addr = &*addr_ptr;
+                    let from_addr = IpAddr::V4(std::net::Ipv4Addr::from(u32::from_be(
+                        offender_addr.sin_addr.s_addr,
+                    )));
+
+                    // Determine response type based on ICMP type/code
+                    let response_type = match sock_err.ee_type {
+                        11 => ResponseType::TimeExceeded, // ICMP Time Exceeded
+                        3 => {
+                            // ICMP Destination Unreachable
+                            if sock_err.ee_code == 3 {
+                                // Port unreachable - we've reached the destination
+                                *self.destination_reached.lock().expect("mutex poisoned") = true;
+                                ResponseType::UdpPortUnreachable
+                            } else {
+                                ResponseType::DestinationUnreachable(sock_err.ee_code)
+                            }
+                        }
+                        _ => ResponseType::DestinationUnreachable(sock_err.ee_code),
+                    };
+
+                    let rtt = recv_time.duration_since(probe_info.sent_at);
+                    return Some(ProbeResponse {
+                        from_addr,
+                        response_type,
+                        probe_info,
+                        rtt,
+                    });
+                }
+
+                cmsg = libc::CMSG_NXTHDR(msg, cmsg);
+            }
+        }
+
+        None
     }
 }
 
-impl ProbeSocket for UdpProbeSocket {
+#[cfg(target_os = "linux")]
+impl ProbeSocket for UdpRecvErrSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }
 
-    fn set_ttl(&self, ttl: u8) -> Result<()> {
-        self.socket
-            .set_ttl(ttl as u32)
-            .context("Failed to set TTL")?;
+    fn set_ttl(&self, _ttl: u8) -> Result<()> {
+        // TTL is set per-socket when we create it in send_probe
         Ok(())
     }
 
     fn send_probe(&self, target: IpAddr, probe_info: ProbeInfo) -> Result<()> {
-        // Calculate destination port based on TTL
+        use socket2::{Domain, Protocol, Socket as Socket2, Type};
+        use std::net::Ipv4Addr;
+        use std::os::unix::io::AsRawFd;
+
+        // Create a new socket for this probe
+        let socket = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .context("Failed to create UDP socket")?;
+
+        // Bind to an ephemeral port (0 = let OS choose)
+        let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
+        socket
+            .bind(&bind_addr.into())
+            .context("Failed to bind UDP socket")?;
+
+        // Enable IP_RECVERR to receive ICMP errors via MSG_ERRQUEUE
+        unsafe {
+            let enable: i32 = 1;
+            let ret = libc::setsockopt(
+                socket.as_raw_fd(),
+                libc::IPPROTO_IP,
+                libc::IP_RECVERR,
+                &enable as *const _ as *const libc::c_void,
+                std::mem::size_of::<i32>() as libc::socklen_t,
+            );
+            if ret != 0 {
+                return Err(anyhow::anyhow!("Failed to set IP_RECVERR"));
+            }
+        }
+
+        // Convert to UdpSocket and set non-blocking
+        let udp_socket: UdpSocket = socket.into();
+        udp_socket.set_nonblocking(true)?;
+
+        // Set TTL for this probe
+        udp_socket
+            .set_ttl(probe_info.ttl as u32)
+            .context("Failed to set TTL")?;
+
+        // Calculate destination port
         let dest_port = Self::get_dest_port(probe_info.ttl);
         let target_addr = SocketAddr::new(target, dest_port);
 
-        // Create a simple payload with probe identifier
-        let payload = probe_info.identifier.to_be_bytes();
+        // Connect the socket to the destination
+        // This is important for IP_RECVERR to work correctly
+        udp_socket
+            .connect(target_addr)
+            .context("Failed to connect UDP socket")?;
 
-        // Send UDP packet
-        self.socket
-            .send_to(&payload, target_addr)
+        // Create payload with identifier and sequence
+        let mut payload = Vec::with_capacity(32);
+        payload.extend_from_slice(&probe_info.identifier.to_be_bytes());
+        payload.extend_from_slice(&probe_info.sequence.to_be_bytes());
+        // Add some padding to make packet bigger (some routers ignore tiny packets)
+        payload.extend_from_slice(b"ftr-traceroute-probe-padding");
+
+        // Send UDP packet (no destination needed since we're connected)
+        udp_socket
+            .send(&payload)
             .context("Failed to send UDP packet")?;
 
-        // Track the probe by both sequence and port
+        // Store the socket and probe info
         self.active_probes
             .lock()
             .expect("mutex poisoned")
-            .insert(probe_info.sequence, probe_info.clone());
-        self.port_to_probe
-            .lock()
-            .expect("mutex poisoned")
-            .insert(dest_port, probe_info);
+            .insert(probe_info.sequence, (udp_socket, probe_info));
 
         Ok(())
     }
 
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>> {
+        use std::os::unix::io::AsRawFd;
+
         let deadline = Instant::now() + timeout;
+        let mut buf = [0u8; 512];
+        let mut control_buf = [0u8; 512];
+        let mut _loop_count = 0;
 
-        // For UDP traceroute, we expect ICMP Port Unreachable responses
-        // In this basic implementation, we'll try to use connected sockets
-        // to detect errors via socket errors
+        loop {
+            _loop_count += 1;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
 
-        // Check if any active probes have timed out
-        let now = Instant::now();
-        let mut active_probes = self.active_probes.lock().expect("mutex poisoned");
-        let mut timed_out = Vec::new();
+            // Get all active sockets
+            let sockets: Vec<(u16, UdpSocket, ProbeInfo)> = {
+                let guard = self.active_probes.lock().expect("mutex poisoned");
+                guard
+                    .iter()
+                    .map(|(seq, (socket, info))| (*seq, socket.try_clone().unwrap(), info.clone()))
+                    .collect()
+            };
 
-        for (seq, probe) in active_probes.iter() {
-            if now.duration_since(probe.sent_at) > timeout {
-                timed_out.push(*seq);
+            // Check each socket for responses
+            for (sequence, socket, probe_info) in sockets {
+                // Create msghdr for recvmsg with MSG_ERRQUEUE
+                let mut iovec = libc::iovec {
+                    iov_base: buf.as_mut_ptr() as *mut libc::c_void,
+                    iov_len: buf.len(),
+                };
+
+                let mut msg = libc::msghdr {
+                    msg_name: std::ptr::null_mut(),
+                    msg_namelen: 0,
+                    msg_iov: &mut iovec,
+                    msg_iovlen: 1,
+                    msg_control: control_buf.as_mut_ptr() as *mut libc::c_void,
+                    msg_controllen: control_buf.len(),
+                    msg_flags: 0,
+                };
+
+                // Try to receive from error queue
+                unsafe {
+                    let ret = libc::recvmsg(
+                        socket.as_raw_fd(),
+                        &mut msg,
+                        libc::MSG_ERRQUEUE | libc::MSG_DONTWAIT,
+                    );
+
+                    if ret >= 0 {
+                        // ret can be 0 when there's no data in iovec but control messages are present
+                        let recv_time = Instant::now();
+                        // Parse the error message with the known probe info
+                        if let Some(response) =
+                            self.parse_error_message_with_probe(&msg, recv_time, probe_info.clone())
+                        {
+                            // Remove from active probes
+                            self.active_probes
+                                .lock()
+                                .expect("mutex poisoned")
+                                .remove(&sequence);
+                            return Ok(Some(response));
+                        }
+                    } else if ret == -1 {
+                        let errno = std::io::Error::last_os_error();
+                        if errno.raw_os_error() == Some(libc::EAGAIN) {
+                            // No error available on this socket, continue to next
+                        }
+                    }
+                }
+            }
+
+            // Sleep briefly before next iteration
+            std::thread::sleep(Duration::from_millis(10));
+
+            if Instant::now() >= deadline {
+                return Ok(None);
             }
         }
-
-        for seq in timed_out {
-            active_probes.remove(&seq);
-        }
-
-        // In a real implementation, we would need a raw socket to receive ICMP messages
-        // For now, we'll simulate timeout behavior
-        if Instant::now() >= deadline {
-            return Ok(None);
-        }
-
-        // Sleep briefly to avoid busy waiting
-        std::thread::sleep(Duration::from_millis(10));
-
-        Ok(None)
     }
 
     fn destination_reached(&self) -> bool {
@@ -131,20 +318,17 @@ impl ProbeSocket for UdpProbeSocket {
 
 /// UDP socket with raw ICMP receiver for full UDP traceroute support
 pub struct UdpWithIcmpSocket {
-    udp_socket: UdpSocket,
     icmp_socket: Option<Socket2>, // Raw socket for receiving ICMP
     mode: ProbeMode,
-    active_probes: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
+    /// Maps sequence number to (socket, probe_info) for each active probe
+    active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
     destination_reached: Arc<Mutex<bool>>,
-    port_to_probe: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
 }
 
 impl UdpWithIcmpSocket {
     /// Create a new UDP socket with optional ICMP receiver
-    pub fn new(udp_socket: Socket2, icmp_socket: Option<Socket2>) -> Result<Self> {
-        let udp_socket: UdpSocket = udp_socket.into();
-        udp_socket.set_nonblocking(true)?;
-
+    pub fn new(_udp_socket: Socket2, icmp_socket: Option<Socket2>) -> Result<Self> {
+        // We don't store the UDP socket anymore - each probe will create its own
         if let Some(ref icmp) = icmp_socket {
             icmp.set_nonblocking(true)?;
         }
@@ -156,17 +340,110 @@ impl UdpWithIcmpSocket {
         };
 
         Ok(UdpWithIcmpSocket {
-            udp_socket,
             icmp_socket,
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
-            port_to_probe: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
-    fn get_dest_port(ttl: u8) -> u16 {
-        UDP_BASE_PORT + ttl as u16
+    fn get_dest_port(_ttl: u8) -> u16 {
+        // Use port 443 (HTTPS/QUIC) which is less likely to be filtered
+        UDP_PORT_HTTPS
+    }
+
+    /// Parse an ICMP response to our UDP probe
+    fn parse_icmp_response(
+        &self,
+        packet_data: &[u8],
+        from_addr: IpAddr,
+        recv_time: Instant,
+    ) -> Option<ProbeResponse> {
+        // Constants for ICMP parsing
+        const ICMP_ERROR_HEADER_LEN_BYTES: usize = 8;
+        const IPV4_HEADER_MIN_LEN_BYTES: usize = 20;
+        const UDP_HEADER_LEN_BYTES: usize = 8;
+
+        // Parse outer IPv4 packet
+        let ipv4_packet = Ipv4Packet::new(packet_data)?;
+        let icmp_data = ipv4_packet.payload();
+        let icmp_packet = IcmpPacket::new(icmp_data)?;
+
+        let original_datagram_bytes = if icmp_data.len() >= ICMP_ERROR_HEADER_LEN_BYTES {
+            &icmp_data[ICMP_ERROR_HEADER_LEN_BYTES..]
+        } else {
+            return None;
+        };
+
+        match icmp_packet.get_icmp_type() {
+            IcmpTypes::TimeExceeded | IcmpTypes::DestinationUnreachable => {
+                // Parse the original packet that triggered this response
+                if original_datagram_bytes.len() < IPV4_HEADER_MIN_LEN_BYTES {
+                    return None;
+                }
+
+                let inner_ip_packet = Ipv4Packet::new(original_datagram_bytes)?;
+                let original_udp_bytes = inner_ip_packet.payload();
+
+                if original_udp_bytes.len() < UDP_HEADER_LEN_BYTES {
+                    return None;
+                }
+
+                // Extract UDP port from original packet
+                let _dest_port = u16::from_be_bytes([original_udp_bytes[2], original_udp_bytes[3]]);
+
+                // Try to extract identifier and sequence from UDP payload
+                if original_udp_bytes.len() >= UDP_HEADER_LEN_BYTES + 4 {
+                    // Our payload starts after UDP header
+                    let udp_payload = &original_udp_bytes[UDP_HEADER_LEN_BYTES..];
+                    if udp_payload.len() >= 4 {
+                        // Extract identifier and sequence from our payload
+                        let identifier = u16::from_be_bytes([udp_payload[0], udp_payload[1]]);
+                        let sequence = u16::from_be_bytes([udp_payload[2], udp_payload[3]]);
+
+                        // Look up by sequence
+                        if let Some((_, probe_info)) = self
+                            .active_probes
+                            .lock()
+                            .expect("mutex poisoned")
+                            .remove(&sequence)
+                        {
+                            if probe_info.identifier == identifier {
+                                // Valid match
+                                let response_type = match icmp_packet.get_icmp_type() {
+                                    IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
+                                    IcmpTypes::DestinationUnreachable => {
+                                        let code = icmp_packet.get_icmp_code().0;
+                                        if code == 3 {
+                                            // Port unreachable - we've reached the destination
+                                            *self
+                                                .destination_reached
+                                                .lock()
+                                                .expect("mutex poisoned") = true;
+                                            ResponseType::UdpPortUnreachable
+                                        } else {
+                                            ResponseType::DestinationUnreachable(code)
+                                        }
+                                    }
+                                    _ => unreachable!(),
+                                };
+
+                                let rtt = recv_time.duration_since(probe_info.sent_at);
+                                return Some(ProbeResponse {
+                                    from_addr,
+                                    response_type,
+                                    probe_info,
+                                    rtt,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        None
     }
 }
 
@@ -175,60 +452,108 @@ impl ProbeSocket for UdpWithIcmpSocket {
         self.mode
     }
 
-    fn set_ttl(&self, ttl: u8) -> Result<()> {
-        self.udp_socket
-            .set_ttl(ttl as u32)
-            .context("Failed to set TTL")?;
+    fn set_ttl(&self, _ttl: u8) -> Result<()> {
+        // TTL is set per-socket when we create it in send_probe
         Ok(())
     }
 
     fn send_probe(&self, target: IpAddr, probe_info: ProbeInfo) -> Result<()> {
+        use socket2::{Domain, Protocol, Socket as Socket2, Type};
+        use std::net::Ipv4Addr;
+
+        // Create a new socket for this probe
+        let socket = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))
+            .context("Failed to create UDP socket")?;
+
+        // Bind to an ephemeral port (0 = let OS choose)
+        let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
+        socket
+            .bind(&bind_addr.into())
+            .context("Failed to bind UDP socket")?;
+
+        // Convert to UdpSocket and set non-blocking
+        let udp_socket: UdpSocket = socket.into();
+        udp_socket.set_nonblocking(true)?;
+
+        // Set TTL for this probe
+        udp_socket
+            .set_ttl(probe_info.ttl as u32)
+            .context("Failed to set TTL")?;
+
+        // Calculate destination port
         let dest_port = Self::get_dest_port(probe_info.ttl);
         let target_addr = SocketAddr::new(target, dest_port);
 
+        // Connect the socket to the destination
+        udp_socket
+            .connect(target_addr)
+            .context("Failed to connect UDP socket")?;
+
         // Create payload with identifier and sequence
-        let mut payload = Vec::with_capacity(4);
+        let mut payload = Vec::with_capacity(32);
         payload.extend_from_slice(&probe_info.identifier.to_be_bytes());
         payload.extend_from_slice(&probe_info.sequence.to_be_bytes());
+        // Add padding to match UdpRecvErrSocket
+        payload.extend_from_slice(b"ftr-traceroute-probe-padding");
 
-        self.udp_socket
-            .send_to(&payload, target_addr)
+        udp_socket
+            .send(&payload)
             .context("Failed to send UDP packet")?;
 
+        // Store the socket and probe info
         self.active_probes
             .lock()
             .expect("mutex poisoned")
-            .insert(probe_info.sequence, probe_info.clone());
-        self.port_to_probe
-            .lock()
-            .expect("mutex poisoned")
-            .insert(dest_port, probe_info);
+            .insert(probe_info.sequence, (udp_socket, probe_info));
 
         Ok(())
     }
 
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>> {
         if let Some(ref icmp_socket) = self.icmp_socket {
-            // TODO: Implement ICMP parsing for UDP responses
-            // This would parse ICMP Port Unreachable messages
-            // and match them to our sent probes
+            let mut recv_buf = [MaybeUninit::uninit(); 1500];
+            let deadline = Instant::now() + timeout;
 
-            // For now, return None
-            let _ = (icmp_socket, timeout);
-        }
+            loop {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if remaining.is_zero() {
+                    return Ok(None);
+                }
 
-        // Check for connection errors on the UDP socket
-        // This can sometimes indicate destination unreachable
-        let mut buf = [0u8; 1];
-        match self.udp_socket.recv(&mut buf) {
-            Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
-                // This might indicate we reached the destination
-                *self.destination_reached.lock().expect("mutex poisoned") = true;
+                icmp_socket.set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+
+                match icmp_socket.recv_from(&mut recv_buf) {
+                    Ok((size, socket_addr)) => {
+                        let recv_time = Instant::now();
+                        let from_addr = match socket_addr.as_socket_ipv4() {
+                            Some(s) => IpAddr::V4(*s.ip()),
+                            None => continue,
+                        };
+
+                        let initialized_part: &[MaybeUninit<u8>] = &recv_buf[..size];
+                        let packet_data: &[u8] = unsafe {
+                            &*(initialized_part as *const [MaybeUninit<u8>] as *const [u8])
+                        };
+
+                        if let Some(response) =
+                            self.parse_icmp_response(packet_data, from_addr, recv_time)
+                        {
+                            return Ok(Some(response));
+                        }
+                    }
+                    Err(e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                }
             }
-            _ => {}
+        } else {
+            // Without ICMP socket, we can't receive responses
+            Ok(None)
         }
-
-        Ok(None)
     }
 
     fn destination_reached(&self) -> bool {
@@ -242,9 +567,9 @@ mod tests {
 
     #[test]
     fn test_udp_port_calculation() {
-        assert_eq!(UdpProbeSocket::get_dest_port(1), 33435);
-        assert_eq!(UdpProbeSocket::get_dest_port(10), 33444);
-        assert_eq!(UdpProbeSocket::get_dest_port(30), 33464);
+        assert_eq!(UdpWithIcmpSocket::get_dest_port(1), UDP_PORT_HTTPS);
+        assert_eq!(UdpWithIcmpSocket::get_dest_port(10), UDP_PORT_HTTPS);
+        assert_eq!(UdpWithIcmpSocket::get_dest_port(30), UDP_PORT_HTTPS);
     }
 
     #[test]

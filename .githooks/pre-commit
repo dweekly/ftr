@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre-commit hook for rustfmt and clippy
+# Pre-commit hook for rustfmt, clippy, and file size checks
 
 echo "Running pre-commit checks..."
 
@@ -7,6 +7,21 @@ echo "Running pre-commit checks..."
 if ! git rev-parse --git-dir > /dev/null 2>&1; then
     echo "Error: Not in a git repository"
     exit 1
+fi
+
+# Get the git hooks directory
+HOOKS_DIR=$(git rev-parse --git-dir)/hooks
+if [ -f "$(git rev-parse --show-toplevel)/.githooks/check-file-size.sh" ]; then
+    HOOKS_DIR="$(git rev-parse --show-toplevel)/.githooks"
+fi
+
+# Check file sizes
+if [ -f "$HOOKS_DIR/check-file-size.sh" ]; then
+    if ! "$HOOKS_DIR/check-file-size.sh"; then
+        exit 1
+    fi
+else
+    echo "Warning: File size check script not found"
 fi
 
 # Run rustfmt check

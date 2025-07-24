@@ -28,3 +28,34 @@ tarpaulin-report.html
 cobertura.xml
 coverage.json
 coverage/
+
+# Vagrant
+.vagrant/
+*.box
+
+# Backup files
+*.backup
+*_old.*
+
+# Test scripts
+ubuntu-ftr-test.sh
+
+# VM configuration files
+Vagrantfile.iso
+Vagrantfile.official
+packer/
+
+# Environment-specific configuration (not for version control)
+ENVIRONMENT.md
+
+# Large files that should never be committed
+*.iso
+*.img
+*.dmg
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.ova
+*.ovf
+*.qcow2

@@ -10,6 +10,52 @@ This document contains important guidelines and information for AI agents workin
 - **NEVER run `git rebase -i`** - Interactive commands don't work in non-interactive environments.
 - **NEVER modify `.git/config`** - The user has specifically configured their git settings.
 
+## Environment Configuration
+
+### ENVIRONMENT.md
+Each development environment should have an `ENVIRONMENT.md` file that contains environment-specific configuration. This file is NOT checked into version control and is listed in `.gitignore`.
+
+If `ENVIRONMENT.md` doesn't exist, create it using the following schema:
+
+```markdown
+# Environment Configuration
+
+This file contains environment-specific configuration and is NOT checked into version control.
+
+## Host System
+- **OS**: [Operating system name and version]
+- **Platform**: [Platform identifier, e.g., darwin, linux, windows]
+- **Working Directory**: [Full path to project directory]
+- **Available Tools**: 
+  - [List of relevant tools and their versions]
+
+## Virtual Machines
+[For each VM, include:]
+
+### [VM Name]
+- **OS**: [Operating system and version]
+- **IP**: [IP address if applicable]
+- **Username**: [Username for SSH/access]
+- **SSH Key**: [Path to SSH key or access method]
+- **SSH Command**: [Complete SSH command to connect]
+- **Shared Directory**: [Any shared/mounted directories]
+- **Purpose**: [What this VM is used for]
+- **Status**: [Configured/Not yet configured]
+
+## Git Configuration
+- **Current Branch**: [Current git branch]
+- **Main Branch**: [Default branch for PRs]
+- **Remote**: [Remote repository location]
+
+## Project-Specific Notes
+[Any environment-specific notes, constraints, or configurations]
+```
+
+Always check for `ENVIRONMENT.md` when starting work and use it to understand:
+- How to access VMs for testing
+- What tools are available
+- Any environment-specific constraints
+
 ## Project-Specific Guidelines
 
 ### Socket Abstraction Architecture
@@ -27,6 +73,7 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - Always run `cargo fmt` before committing
 - Always run `cargo clippy` before committing
 - Pre-commit hooks are configured in `.githooks/` - they run automatically
+- Always run `cargo audit` after adding new modules or dependencies to catch security vulnerabilities early
 
 ### Platform-Specific Code
 - Use `#[cfg(target_os = "linux")]` for Linux-specific features
@@ -100,6 +147,19 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 
 ### Tool Requests
 - **Feel free to ask for tools** - if you need tools like ripgrep to work more effectively, ask the user to install them
+
+## Virtual Machine Guidelines
+
+### Shared Directory Access
+- **IMPORTANT**: The ftr directory is mounted at `/media/psf/ftr` in VMs - DO NOT copy files to/from the VM
+- The mounted directory is shared between host and VM, so any changes are immediately visible in both places
+- Access files directly from the mount point - no need for scp, rsync, or file copying
+- Example: To run tests on Linux VM, just `ssh -i ~/.ssh/ftr_vm_key ftr@<VM_IP> "cd /media/psf/ftr && ./scripts/test.sh"`
+
+### VM Development Workflow
+- Build on the target platform (e.g., build Linux binaries on Linux VM)
+- Use the shared mount to access source code and scripts
+- Results and outputs are immediately available on both host and VM
 
 ## General Best Practices
 1. Always read files before editing them

@@ -1,31 +1,29 @@
 # TODO List for ftr
 
-This file tracks ongoing and planned work for the ftr project.
+This file tracks planned work for the ftr project.
 
 ## High Priority
 
-- [x] Fix unwrap() usage warnings from clippy
-  - Replaced all `.unwrap()` calls on Mutex locks with `.expect()` with descriptive messages
-  - Fixed non-mutex unwraps with proper error handling
-  - Re-enabled `unwrap_used = "warn"` in Cargo.toml
+- [ ] Add FreeBSD support
+- [ ] Add OpenBSD support  
+- [ ] Add Windows support
+- [ ] Add missing tests for complex logic
+  - UDP socket error handling
+  - ICMP packet parsing edge cases
+  - ASN lookup failures
 
 ## Medium Priority
 
-- [ ] Update pre-commit hook to optionally run cargo-audit
-  - Add cargo-audit check (with option to skip for speed)
-  - Document how to install cargo-audit in README
-
+- [ ] Print detected public IP address in output
+- [ ] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]')
 - [ ] Complete socket abstraction implementation
-  - Add Raw ICMP socket implementation
-  - Add IPv6 support
   - Add TCP mode support
-  - Implement Linux IP_RECVERR for UDP mode
+  - Add IPv6 support
+- [ ] Integrate `cargo-machete` for unused-dependency detection
+  - Assess and remove truly unused dependencies
+  - Add to developer tooling installation script
 
 ## Low Priority
-
-- [ ] Consider adding cargo-machete for unused dependency detection
-  - Evaluate if we have any unused dependencies
-  - Add to optional development tools
 
 - [ ] Performance optimizations
   - Add benchmarks using criterion
@@ -34,17 +32,10 @@ This file tracks ongoing and planned work for the ftr project.
 
 ## Future Enhancements
 
-- [ ] Add integration tests
-- [ ] Add property-based testing for complex logic
-- [ ] Consider adding feature flags for optional functionality
-- [ ] Add GitHub Actions CI/CD pipeline
-- [ ] Add code coverage tracking
-- [ ] Consider supporting more platforms (Windows, BSD)
-
-## Completed
-- [x] Add Rust best practices documentation
-- [x] Set up stricter clippy lints
-- [x] Add pre-commit hooks for rustfmt and clippy
-- [x] Add missing documentation for public items
-- [x] Fix redundant closure warnings
-- [x] Fix inefficient to_string warnings
+- [ ] Add integration tests under `tests/` directory for end-to-end scenarios
+- [ ] Add property-based tests (e.g. via `proptest`) for parsing & classification logic
+- [ ] Define and expose Cargo feature flags for optional modules (async, dns, IPv6)
+- [ ] Enhance CI (GitHub Actions) to include security audit (`cargo audit`), fuzz testing, and coverage checks
+- [ ] Add code coverage reporting (via `cargo-tarpaulin` or `cargo-llvm-cov`)
+- [ ] Add benchmarking suite (Criterion) under `benches/` to track performance regressions
+- [ ] Add fuzz targets (e.g. using `cargo-fuzz`) for packet parsing components
