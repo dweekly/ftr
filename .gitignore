@@ -47,3 +47,15 @@ packer/
 
 # Environment-specific configuration (not for version control)
 ENVIRONMENT.md
+
+# Large files that should never be committed
+*.iso
+*.img
+*.dmg
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.ova
+*.ovf
+*.qcow2
