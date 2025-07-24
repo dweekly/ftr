@@ -4,15 +4,48 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]  # Trigger when a release is published (not just created)
   workflow_dispatch:
 
 permissions:
   contents: write  # Needed to create releases
 
 jobs:
+  # First, publish to crates.io (only when release is published, not on tag push)
+  publish-crate:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    # Only run when a release is published (ensures release notes are ready)
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check version matches tag
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          CARGO_VERSION=$(grep "^version" Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Error: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Publish to crates.io
+        run: cargo publish --token ${CARGO_REGISTRY_TOKEN}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   build-deb:
     name: Build Debian Package
     runs-on: ubuntu-latest
+    # Run on tag push to create draft release with .deb files
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         target:
@@ -72,7 +105,22 @@ jobs:
         with:
           files: |
             *.deb
-          draft: false
+          draft: true  # Create as draft so release notes can be edited
           prerelease: false
+          body: |
+            ## Installation
+
+            ### Debian/Ubuntu packages
+            Download the appropriate .deb file below for your architecture.
+
+            ### Other platforms
+            - macOS: `brew tap dweekly/ftr && brew install ftr`
+            - Cargo: `cargo install ftr` (available after this release is published)
+
+            ## Release Notes
+            Please see [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for detailed changes.
+
+            ---
+            *Note: This is a draft release. Please edit with proper release notes before publishing.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

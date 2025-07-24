@@ -18,28 +18,44 @@ This checklist should be followed when preparing a new release.
 
 ## Creating the Release
 
-1. **Create and push the tag**:
+1. **Ensure crates.io access** (first time only):
+   - Make sure you have a crates.io account
+   - Create an API token at https://crates.io/settings/tokens
+   - Add it as `CARGO_REGISTRY_TOKEN` secret in GitHub repository settings
+
+2. **Create and push the tag**:
    ```bash
    git tag -a v0.x.x -m "Release v0.x.x"
    git push origin v0.x.x
    ```
 
-2. **Wait for CI** - The GitHub Actions workflow will:
-   - Build binaries for multiple platforms
-   - Create .deb packages for amd64 and arm64
-   - Create a draft GitHub release with assets
+3. **Wait for CI to create draft release** - The workflow will:
+   - Build .deb packages for amd64 and arm64
+   - Create a DRAFT GitHub release with assets
+   - NOT publish to crates.io yet (waits for release publication)
 
-3. **Edit the GitHub release**:
+4. **Edit the draft release on GitHub**:
+   - Go to the releases page and find the draft
+   - Replace the placeholder text with actual release notes
    - Copy the relevant section from CHANGELOG.md
-   - Add any additional notes or highlights
-   - Publish the release
+   - Add any additional highlights or breaking changes
+   - Review everything carefully (this will be shown on crates.io!)
+   
+5. **Publish the release**:
+   - Click "Publish release" on GitHub
+   - This will trigger the crates.io publication
+   - The same release notes will be used for crates.io
 
 ## Post-release Steps
 
 - [ ] **Verify release assets** - Check that .deb files are attached
+- [ ] **Verify crates.io publication**:
+  - [ ] Check https://crates.io/crates/ftr
+  - [ ] Verify the README is displayed correctly
+  - [ ] Note: crates.io uses README.md from the git tag, not release notes
 - [ ] **Test installation methods**:
   - [ ] Homebrew: `brew update && brew upgrade ftr`
-  - [ ] Cargo: `cargo install ftr`
+  - [ ] Cargo: `cargo install ftr` (wait ~5 minutes for crates.io to update)
   - [ ] Debian package: Download and test .deb installation
 - [ ] **Update README** if needed (e.g., new installation instructions)
 - [ ] **Announce the release** (if applicable)

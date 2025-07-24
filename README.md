@@ -85,6 +85,8 @@ sudo dpkg -i ftr_<version>_arm64.deb
 cargo install ftr
 ```
 
+*Note: Cargo installation will be available once ftr is published to crates.io.*
+
 ## Usage
 
 Basic usage:
