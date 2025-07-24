@@ -57,8 +57,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-    - name: Install tarpaulin
-      run: cargo install cargo-tarpaulin
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin
     - name: Run coverage
       run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml --exclude-files "*/tests/*" --exclude-files "*/examples/*"
     - name: Upload coverage to Codecov
@@ -86,8 +87,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-    - name: Install cargo-machete
-      run: cargo install cargo-machete
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-machete
     - name: Check unused dependencies
       run: cargo machete
 
@@ -97,8 +99,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
-    - name: Install cargo-outdated
-      run: cargo install cargo-outdated
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-outdated
     - name: Check outdated dependencies
       run: cargo outdated --exit-code 1 || echo "::warning::Outdated dependencies found"
 
