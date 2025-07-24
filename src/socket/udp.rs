@@ -249,7 +249,13 @@ impl ProbeSocket for UdpRecvErrSocket {
                 let guard = self.active_probes.lock().expect("mutex poisoned");
                 guard
                     .iter()
-                    .map(|(seq, (socket, info))| (*seq, socket.try_clone().unwrap(), info.clone()))
+                    .map(|(seq, (socket, info))| {
+                        (
+                            *seq,
+                            socket.try_clone().expect("failed to clone socket"),
+                            info.clone(),
+                        )
+                    })
                     .collect()
             };
 
