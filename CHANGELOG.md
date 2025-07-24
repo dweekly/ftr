@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured JSON output with `--json` flag for programmatic use
 - Verbose mode with `-v/--verbose` flag to show socket mode details
 - Target port selection with `-p/--port` option for UDP mode (default 443)
+- Warning when port is specified for non-UDP protocols
+- Integration tests for CLI functionality
+- Input validation for start-ttl (must be >= 1) and probe-timeout-ms (must be > 0)
 
 ### Changed
 - Improved user experience with cleaner output format
@@ -23,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Socket mode selection now uses OS/protocol/privilege compatibility matrix
 - Better error messages specific to each operating system
 - Automatic selection of best available socket mode based on OS and privileges
+- Exit with error code 1 when hostname resolution fails
 
 ## [0.2.1] - 2025-07-23
 

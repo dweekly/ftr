@@ -443,13 +443,25 @@ fn print_classified_hop_info(hop: &ClassifiedHopInfo) {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
+
+    // Validate arguments
+    if args.start_ttl < 1 {
+        eprintln!("Error: start-ttl must be at least 1");
+        std::process::exit(1);
+    }
+
+    if args.probe_timeout_ms == 0 {
+        eprintln!("Error: probe-timeout-ms must be greater than 0");
+        std::process::exit(1);
+    }
+
     let effective_max_hops = args.max_hops;
 
     let target_ipv4 = match resolve_host(&args.host).await {
         Ok(ip) => ip,
         Err(e) => {
             eprintln!("Error resolving host {}: {}", args.host, e);
-            return Ok(());
+            std::process::exit(1);
         }
     };
 
@@ -496,6 +508,15 @@ async fn main() -> Result<()> {
     let destination_reached = Arc::new(Mutex::new(false));
 
     let socket_arc: Arc<Box<dyn ProbeSocket>> = Arc::new(probe_socket);
+
+    // Warn if port was specified but won't be used
+    if args.port != 443 && socket_arc.mode().protocol != ProbeProtocol::Udp {
+        eprintln!(
+            "Warning: Port {} specified but will be ignored for {} protocol",
+            args.port,
+            socket_arc.mode().protocol.description()
+        );
+    }
 
     // Spawn receiver task
     let recv_socket_clone = Arc::clone(&socket_arc);
