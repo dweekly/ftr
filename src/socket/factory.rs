@@ -515,10 +515,9 @@ pub fn create_probe_socket_with_port(
         } else {
             format!(
                 "Failed to create any probe socket. On Linux, you can:\n\
-                 1. Run with sudo: sudo {}\n\
+                 1. Run with sudo: sudo {cmd}\n\
                  2. Configure ping group: sudo sysctl -w net.ipv4.ping_group_range=\"0 65535\"\n\
-                 3. Use UDP mode which works without root via IP_RECVERR",
-                cmd
+                 3. Use UDP mode which works without root via IP_RECVERR"
             )
         };
 

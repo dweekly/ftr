@@ -93,14 +93,16 @@ impl UdpRecvErrSocket {
             let mut cmsg: *const libc::cmsghdr = libc::CMSG_FIRSTHDR(msg);
 
             while !cmsg.is_null() {
-                let cmsg_ref = &*cmsg;
+                // Read the cmsghdr structure using read_unaligned to handle potential alignment issues
+                let cmsg_data = std::ptr::read_unaligned(cmsg);
 
                 // Looking for IP_RECVERR message
-                if cmsg_ref.cmsg_level == libc::IPPROTO_IP && cmsg_ref.cmsg_type == libc::IP_RECVERR
+                if cmsg_data.cmsg_level == libc::IPPROTO_IP
+                    && cmsg_data.cmsg_type == libc::IP_RECVERR
                 {
                     // Get pointer to the error structure
                     let err_ptr = libc::CMSG_DATA(cmsg) as *const SockExtendedErr;
-                    let sock_err = &*err_ptr;
+                    let sock_err = std::ptr::read_unaligned(err_ptr);
 
                     // Only interested in ICMP errors
                     if sock_err.ee_origin != SO_EE_ORIGIN_ICMP {
@@ -111,7 +113,7 @@ impl UdpRecvErrSocket {
                     // Get the offending address (follows the SockExtendedErr structure)
                     let addr_ptr = (err_ptr as *const u8).add(mem::size_of::<SockExtendedErr>())
                         as *const libc::sockaddr_in;
-                    let offender_addr = &*addr_ptr;
+                    let offender_addr = std::ptr::read_unaligned(addr_ptr);
                     let from_addr = IpAddr::V4(std::net::Ipv4Addr::from(u32::from_be(
                         offender_addr.sin_addr.s_addr,
                     )));
