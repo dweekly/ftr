@@ -131,6 +131,13 @@ fn test_json_output_structure() {
         let json: serde_json::Value = serde_json::from_str(&stdout).expect("Invalid JSON");
 
         // Verify JSON structure
+        assert!(json["version"].is_string());
+        let version = json["version"].as_str().unwrap();
+        // Version should be in format X.Y.Z or X.Y.Z-UNRELEASED
+        assert!(version.chars().filter(|c| *c == '.').count() >= 2);
+        if cfg!(debug_assertions) {
+            assert!(version.ends_with("-UNRELEASED"));
+        }
         assert_eq!(json["target"].as_str().unwrap(), "127.0.0.1");
         assert_eq!(json["target_ip"].as_str().unwrap(), "127.0.0.1");
         assert!(json["hops"].is_array());

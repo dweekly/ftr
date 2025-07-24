@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Warning when port is specified for non-UDP protocols
 - Integration tests for CLI functionality
 - Input validation for start-ttl (must be >= 1) and probe-timeout-ms (must be > 0)
+- Version display with `--version` shows release version or dev version with "-UNRELEASED" suffix
+- Version field included in JSON output for programmatic version checking
 
 ### Changed
 - Improved user experience with cleaner output format

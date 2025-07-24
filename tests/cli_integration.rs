@@ -22,9 +22,16 @@ fn test_version_output() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
     cmd.arg("--version");
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("ftr"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // Should contain "ftr" followed by a version number
+    assert!(stdout.starts_with("ftr "));
+    // In debug builds, should contain -UNRELEASED
+    if cfg!(debug_assertions) {
+        assert!(stdout.contains("-UNRELEASED"));
+    }
 }
 
 #[test]

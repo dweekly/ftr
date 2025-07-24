@@ -31,6 +31,16 @@ const DEFAULT_OVERALL_TIMEOUT_MS: u64 = 3000;
 static ASN_CACHE: std::sync::LazyLock<std::sync::Mutex<HashMap<Ipv4Net, AsnInfo>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
+/// Get the version string for ftr
+fn get_version() -> &'static str {
+    // Check if this is a release build
+    if cfg!(debug_assertions) {
+        concat!(env!("CARGO_PKG_VERSION"), "-UNRELEASED")
+    } else {
+        env!("CARGO_PKG_VERSION")
+    }
+}
+
 /// Command-line arguments for the traceroute tool.
 #[derive(Parser, Debug)]
 #[clap(author, version, about = "Fast parallel ICMP traceroute with ASN lookup", long_about = None)]
@@ -143,6 +153,7 @@ struct JsonHop {
 /// JSON output structure for the entire traceroute result
 #[derive(Debug, Serialize, Deserialize)]
 struct JsonOutput {
+    version: String,
     target: String,
     target_ip: String,
     public_ip: Option<String>,
@@ -442,6 +453,12 @@ fn print_classified_hop_info(hop: &ClassifiedHopInfo) {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Check if user is asking for version explicitly
+    if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
+        println!("ftr {}", get_version());
+        std::process::exit(0);
+    }
+
     let args = Args::parse();
 
     // Validate arguments
@@ -741,6 +758,7 @@ async fn main() -> Result<()> {
     if args.json {
         // JSON output
         let mut json_output = JsonOutput {
+            version: get_version().to_string(),
             target: args.host.clone(),
             target_ip: target_ipv4.to_string(),
             public_ip: None,
