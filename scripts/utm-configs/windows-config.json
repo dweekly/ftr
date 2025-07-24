@@ -1,0 +1,18 @@
+{
+  "name": "ftr-windows",
+  "architecture": "x86_64",
+  "memory": 8192,
+  "cpuCount": 4,
+  "drives": [{
+    "size": 61440,
+    "interface": "virtio"
+  }],
+  "network": [{
+    "mode": "bridged",
+    "interface": "en0"
+  }],
+  "displays": [{
+    "width": 1920,
+    "height": 1080
+  }]
+}

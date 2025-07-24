@@ -634,6 +634,21 @@ async fn main() -> Result<()> {
     // Abort receiver
     receiver_handle.abort();
 
+    // Determine the actual max TTL to display (stop at destination)
+    let display_max_ttl = {
+        let results_guard = raw_results_map.lock().expect("mutex poisoned");
+        let mut dest_ttl = effective_max_hops;
+        for ttl in args.start_ttl..=effective_max_hops {
+            if let Some(hop) = results_guard.get(&ttl) {
+                if hop.addr == Some(IpAddr::V4(target_ipv4)) {
+                    dest_ttl = ttl;
+                    break;
+                }
+            }
+        }
+        dest_ttl
+    };
+
     // Process and display results
     if !args.no_enrich {
         println!(
@@ -647,7 +662,7 @@ async fn main() -> Result<()> {
 
         let final_classified_hops = process_hops_for_asn_and_classification(
             args.start_ttl,
-            effective_max_hops,
+            display_max_ttl,
             raw_results_map,
             args.no_enrich,
             target_ipv4,
@@ -668,7 +683,7 @@ async fn main() -> Result<()> {
         // Print raw results
         println!("\nTraceroute path (raw):");
         let results_guard = raw_results_map.lock().expect("mutex poisoned");
-        for ttl_val in args.start_ttl..=effective_max_hops {
+        for ttl_val in args.start_ttl..=display_max_ttl {
             if let Some(raw_hop) = results_guard.get(&ttl_val) {
                 print_raw_hop_info(raw_hop);
             } else {
