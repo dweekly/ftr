@@ -77,8 +77,7 @@ impl UdpRecvErrSocket {
     }
 
     /// Get the destination port for a given TTL
-    fn get_dest_port(&self, _ttl: u8) -> u16 {
-        // Use the configured port for all probes
+    fn get_dest_port(&self) -> u16 {
         self.dest_port
     }
 
@@ -201,7 +200,7 @@ impl ProbeSocket for UdpRecvErrSocket {
             .context("Failed to set TTL")?;
 
         // Calculate destination port
-        let dest_port = self.get_dest_port(probe_info.ttl);
+        let dest_port = self.get_dest_port();
         let target_addr = SocketAddr::new(target, dest_port);
 
         // Connect the socket to the destination
@@ -358,8 +357,7 @@ impl UdpWithIcmpSocket {
         })
     }
 
-    fn get_dest_port(&self, _ttl: u8) -> u16 {
-        // Use the configured port for all probes
+    fn get_dest_port(&self) -> u16 {
         self.dest_port
     }
 
@@ -492,7 +490,7 @@ impl ProbeSocket for UdpWithIcmpSocket {
             .context("Failed to set TTL")?;
 
         // Calculate destination port
-        let dest_port = self.get_dest_port(probe_info.ttl);
+        let dest_port = self.get_dest_port();
         let target_addr = SocketAddr::new(target, dest_port);
 
         // Connect the socket to the destination
