@@ -16,12 +16,12 @@ This file tracks planned work for the ftr project.
 
 - [ ] Print detected public IP address in output
 - [ ] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]')
+- [ ] Add verbose mode (-v) to show which protocol/socket mode is being used
 - [ ] Complete socket abstraction implementation
-  - Add TCP mode support
-  - Add IPv6 support
-- [ ] Integrate `cargo-machete` for unused-dependency detection
-  - Assess and remove truly unused dependencies
-  - Add to developer tooling installation script
+  - Add TCP mode support (TCP SYN packets)
+  - Add IPv6 support (ICMPv6, UDP6, TCP6)
+  - Full UDP response handling on non-Linux platforms
+  - Port selection option (-p/--port) for TCP/UDP
 
 ## Low Priority
 
@@ -35,7 +35,6 @@ This file tracks planned work for the ftr project.
 - [ ] Add integration tests under `tests/` directory for end-to-end scenarios
 - [ ] Add property-based tests (e.g. via `proptest`) for parsing & classification logic
 - [ ] Define and expose Cargo feature flags for optional modules (async, dns, IPv6)
-- [ ] Enhance CI (GitHub Actions) to include security audit (`cargo audit`), fuzz testing, and coverage checks
-- [ ] Add code coverage reporting (via `cargo-tarpaulin` or `cargo-llvm-cov`)
+- [ ] Add fuzz testing to CI pipeline
 - [ ] Add benchmarking suite (Criterion) under `benches/` to track performance regressions
 - [ ] Add fuzz targets (e.g. using `cargo-fuzz`) for packet parsing components
