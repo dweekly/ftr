@@ -15,6 +15,7 @@ use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;
 use ipnet::Ipv4Net;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
@@ -22,7 +23,7 @@ use std::time::{Duration, Instant};
 
 // Import from our library
 use ftr::socket::{ProbeInfo, ProbeSocket, ResponseType};
-use ftr::{create_probe_socket_with_mode, ProbeProtocol, SocketMode};
+use ftr::{ProbeProtocol, SocketMode};
 
 /// Default overall timeout for the entire traceroute operation if not all replies received.
 const DEFAULT_OVERALL_TIMEOUT_MS: u64 = 3000;
@@ -60,6 +61,10 @@ struct Args {
         help = "Number of probes per hop"
     )]
     queries: u8,
+    #[clap(long, help = "Output results in JSON format")]
+    json: bool,
+    #[clap(short, long, help = "Enable verbose output")]
+    verbose: bool,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -75,7 +80,7 @@ enum SocketModeArg {
 }
 
 /// Represents ASN information for an IP address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsnInfo {
     /// Autonomous System Number (e.g., "13335")
     pub asn: String,
@@ -98,7 +103,7 @@ struct RawHopInfo {
 }
 
 /// Classification of a hop's network segment.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 enum SegmentType {
     Lan,
     Isp,
@@ -115,6 +120,36 @@ impl std::fmt::Display for SegmentType {
             SegmentType::Unknown => write!(f, "UNKNOWN"),
         }
     }
+}
+
+/// JSON output structure for a single hop
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonHop {
+    ttl: u8,
+    segment: Option<SegmentType>,
+    address: Option<String>,
+    hostname: Option<String>,
+    asn_info: Option<AsnInfo>,
+    rtt_ms: Option<f64>,
+}
+
+/// JSON output structure for the entire traceroute result
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonOutput {
+    target: String,
+    target_ip: String,
+    public_ip: Option<String>,
+    isp: Option<JsonIsp>,
+    hops: Vec<JsonHop>,
+    protocol: String,
+    socket_mode: String,
+}
+
+/// JSON output structure for ISP information
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonIsp {
+    asn: String,
+    name: String,
 }
 
 /// Final hop information with ASN data and classification.
@@ -411,19 +446,21 @@ async fn main() -> Result<()> {
         }
     };
 
-    println!(
-        "ftr to {} ({}), {} max hops, {}ms probe timeout, {}ms overall timeout{}",
-        args.host,
-        target_ipv4,
-        effective_max_hops,
-        args.probe_timeout_ms,
-        args.overall_timeout_ms,
-        if args.no_enrich {
-            " (enrichment disabled)"
-        } else {
-            ""
-        }
-    );
+    if !args.json {
+        println!(
+            "ftr to {} ({}), {} max hops, {}ms probe timeout, {}ms overall timeout{}",
+            args.host,
+            target_ipv4,
+            effective_max_hops,
+            args.probe_timeout_ms,
+            args.overall_timeout_ms,
+            if args.no_enrich {
+                " (enrichment disabled)"
+            } else {
+                ""
+            }
+        );
+    }
 
     let icmp_identifier = std::process::id() as u16;
 
@@ -439,8 +476,12 @@ async fn main() -> Result<()> {
     });
 
     // Create socket using the abstraction layer
-    let probe_socket =
-        create_probe_socket_with_mode(IpAddr::V4(target_ipv4), preferred_protocol, preferred_mode)?;
+    let probe_socket = ftr::socket::factory::create_probe_socket_with_options(
+        IpAddr::V4(target_ipv4),
+        preferred_protocol,
+        preferred_mode,
+        args.verbose,
+    )?;
 
     let raw_results_map: Arc<Mutex<HashMap<u8, RawHopInfo>>> = Arc::new(Mutex::new(HashMap::new()));
     let active_probes: Arc<Mutex<HashMap<u16, ProbeInfo>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -655,46 +696,133 @@ async fn main() -> Result<()> {
         dest_ttl
     };
 
+    // Get protocol and mode info for output
+    let protocol_str = match socket_arc.mode().protocol {
+        ProbeProtocol::Icmp => "ICMP",
+        ProbeProtocol::Udp => "UDP",
+        ProbeProtocol::Tcp => "TCP",
+    };
+    let mode_str = match socket_arc.mode().socket_mode {
+        SocketMode::Raw => "Raw",
+        SocketMode::Dgram => "Dgram",
+        SocketMode::Stream => "Stream",
+    };
+
     // Process and display results
-    if !args.no_enrich {
-        println!(
-            "\nPerforming ASN lookups{} and classifying segments...",
-            if args.no_rdns {
-                ""
-            } else {
-                ", reverse DNS lookups"
+    if args.json {
+        // JSON output
+        let mut json_output = JsonOutput {
+            target: args.host.clone(),
+            target_ip: target_ipv4.to_string(),
+            public_ip: None,
+            isp: None,
+            hops: Vec::new(),
+            protocol: protocol_str.to_string(),
+            socket_mode: mode_str.to_string(),
+        };
+
+        if !args.no_enrich {
+            // Enriched output with ASN lookups
+            let final_classified_hops = process_hops_for_asn_and_classification(
+                args.start_ttl,
+                display_max_ttl,
+                raw_results_map.clone(),
+                args.no_enrich,
+                target_ipv4,
+                args.no_rdns,
+            )
+            .await?;
+
+            // Convert to JSON hops
+            for hop_info in &final_classified_hops {
+                json_output.hops.push(JsonHop {
+                    ttl: hop_info.ttl,
+                    segment: Some(hop_info.segment.clone()),
+                    address: hop_info.addr.map(|a| a.to_string()),
+                    hostname: hop_info.hostname.clone(),
+                    asn_info: hop_info.asn_info.clone(),
+                    rtt_ms: hop_info.rtt.map(|r| r.as_secs_f64() * 1000.0),
+                });
             }
-        );
 
-        let final_classified_hops = process_hops_for_asn_and_classification(
-            args.start_ttl,
-            display_max_ttl,
-            raw_results_map,
-            args.no_enrich,
-            target_ipv4,
-            args.no_rdns,
-        )
-        .await?;
-
-        // Print enriched results
-        for hop_info in &final_classified_hops {
-            print_classified_hop_info(hop_info);
+            // Detect ISP info
+            if let Some((public_ip, isp_asn, isp_name)) = detect_isp_from_public_ip().await {
+                json_output.public_ip = Some(public_ip.to_string());
+                json_output.isp = Some(JsonIsp {
+                    asn: isp_asn,
+                    name: isp_name,
+                });
+            }
+        } else {
+            // Raw results for JSON
+            let results_guard = raw_results_map.lock().expect("mutex poisoned");
+            for ttl_val in args.start_ttl..=display_max_ttl {
+                if let Some(raw_hop) = results_guard.get(&ttl_val) {
+                    json_output.hops.push(JsonHop {
+                        ttl: raw_hop.ttl,
+                        segment: None,
+                        address: raw_hop.addr.map(|a| a.to_string()),
+                        hostname: None,
+                        asn_info: None,
+                        rtt_ms: raw_hop.rtt.map(|r| r.as_secs_f64() * 1000.0),
+                    });
+                } else {
+                    json_output.hops.push(JsonHop {
+                        ttl: ttl_val,
+                        segment: None,
+                        address: None,
+                        hostname: None,
+                        asn_info: None,
+                        rtt_ms: None,
+                    });
+                }
+            }
         }
 
-        // Detect and print ISP info
-        if let Some((public_ip, isp_asn, isp_name)) = detect_isp_from_public_ip().await {
-            println!("\nDetected public IP: {public_ip}");
-            println!("Detected ISP: AS{isp_asn} ({isp_name})");
-        }
+        // Print JSON output
+        println!("{}", serde_json::to_string_pretty(&json_output)?);
     } else {
-        // Print raw results
-        println!("\nTraceroute path (raw):");
-        let results_guard = raw_results_map.lock().expect("mutex poisoned");
-        for ttl_val in args.start_ttl..=display_max_ttl {
-            if let Some(raw_hop) = results_guard.get(&ttl_val) {
-                print_raw_hop_info(raw_hop);
-            } else {
-                println!("{ttl_val:2}");
+        // Traditional text output
+        if !args.no_enrich {
+            println!(
+                "\nPerforming ASN lookups{} and classifying segments...",
+                if args.no_rdns {
+                    ""
+                } else {
+                    ", reverse DNS lookups"
+                }
+            );
+
+            let final_classified_hops = process_hops_for_asn_and_classification(
+                args.start_ttl,
+                display_max_ttl,
+                raw_results_map,
+                args.no_enrich,
+                target_ipv4,
+                args.no_rdns,
+            )
+            .await?;
+
+            // Print enriched results
+            for hop_info in &final_classified_hops {
+                print_classified_hop_info(hop_info);
+            }
+
+            // Detect and print ISP info
+            if let Some((public_ip, isp_asn, isp_name)) = detect_isp_from_public_ip().await {
+                println!("\nDetected public IP: {public_ip}");
+                println!("Detected ISP: AS{isp_asn} ({isp_name})");
+            }
+        } else {
+            // Print raw results
+            println!("\nTraceroute path (raw):");
+            let results_guard = raw_results_map.lock().expect("mutex poisoned");
+            for ttl_val in args.start_ttl..=display_max_ttl {
+                if let Some(raw_hop) = results_guard.get(&ttl_val) {
+                    print_raw_hop_info(raw_hop);
+                } else {
+                    println!("{ttl_val:2}");
+                }
             }
         }
     }

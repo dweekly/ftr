@@ -71,6 +71,16 @@ pub fn create_probe_socket_with_mode(
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
 ) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_options(target, preferred_protocol, preferred_mode, false)
+}
+
+/// Creates a probe socket with the specified options including verbose output.
+pub fn create_probe_socket_with_options(
+    target: IpAddr,
+    preferred_protocol: Option<ProbeProtocol>,
+    preferred_mode: Option<SocketMode>,
+    verbose: bool,
+) -> Result<Box<dyn ProbeSocket>> {
     let ip_version = match target {
         IpAddr::V4(_) => IpVersion::V4,
         IpAddr::V6(_) => IpVersion::V6,
@@ -117,7 +127,9 @@ pub fn create_probe_socket_with_mode(
                 Ok(socket) => {
                     #[allow(unused_mut)]
                     let mut socket = socket;
-                    eprintln!("Using {} mode for traceroute", mode.description());
+                    if verbose {
+                        eprintln!("Using {} mode for traceroute", mode.description());
+                    }
 
                     // Create the appropriate ProbeSocket implementation
                     match (mode.ip_version, mode.protocol, mode.socket_mode) {
@@ -145,7 +157,9 @@ pub fn create_probe_socket_with_mode(
                             #[cfg(target_os = "linux")]
                             {
                                 if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket) {
-                                    eprintln!("Using UDP with IP_RECVERR (no root required)");
+                                    if verbose {
+                                        eprintln!("Using UDP with IP_RECVERR (no root required)");
+                                    }
                                     return Ok(Box::new(recv_err_sock));
                                 }
                                 // If IP_RECVERR fails, we need to recreate the socket
@@ -233,7 +247,7 @@ pub fn create_probe_socket_with_mode(
                                      Try running with sudo: sudo {}", 
                                     std::env::args().collect::<Vec<_>>().join(" ")
                                 ));
-                            } else {
+                            } else if verbose {
                                 eprintln!(
                                     "Raw {} mode requires root privileges, trying fallback...",
                                     match protocol {

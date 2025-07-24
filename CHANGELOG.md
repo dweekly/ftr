@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Display detected public IP address in output
 - Minimalist printing for silent hops (just TTL number instead of "* * *")
+- Structured JSON output with `--json` flag for programmatic use
+- Verbose mode with `-v/--verbose` flag to show socket mode details
 
 ### Changed
 - Improved user experience with cleaner output format
 - Silent hops now use minimal space to reduce visual clutter
+- Socket mode selection messages now only shown in verbose mode
 
 ## [0.2.1] - 2025-07-23
 

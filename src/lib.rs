@@ -10,5 +10,7 @@ pub mod traceroute;
 mod tests;
 
 // Re-export core types for library users
-pub use socket::factory::{create_probe_socket, create_probe_socket_with_mode};
+pub use socket::factory::{
+    create_probe_socket, create_probe_socket_with_mode, create_probe_socket_with_options,
+};
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
