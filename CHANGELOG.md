@@ -49,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated AGENTS.md with VM guidelines and shared directory information
 - Prepared groundwork for future protocol support (TCP, IPv6)
 
-## [0.2.0] - 2025-01-21
+## [0.2.0] - 2025-07-21
 
 ### Added
 - ISP detection via public IP address lookup
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Traceroute no longer waits for full timeout when tracing to local network addresses
 - Improved ISP detection accuracy in various network configurations
 
-## [0.1.2] - 2025-01-06
+## [0.1.2] - 2025-07-06
 
 ### Added
 - APT repository installation instructions for Debian/Ubuntu users
@@ -93,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added comprehensive Ubuntu/Debian installation instructions via APT repository
 - Created RELEASE_CHECKLIST.md for maintaining release quality
 
-## [0.1.1] - 2025-01-06
+## [0.1.1] - 2025-07-06
 
 ### Added
 - Automated Debian/Ubuntu packaging with .deb files for amd64 and arm64
@@ -107,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Removed outdated manual APT repository setup documentation
 
-## [0.1.0] - 2025-01-06
+## [0.1.0] - 2025-07-06
 
 ### Added
 - Initial release of ftr (Fast TraceRoute)
@@ -126,7 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/dweekly/ftr/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/dweekly/ftr/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/dweekly/ftr/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/dweekly/ftr/compare/v0.1.0...v0.1.1
