@@ -53,12 +53,14 @@ pub struct UdpRecvErrSocket {
     /// Maps sequence number to (socket, probe_info) for each active probe
     active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
     destination_reached: Arc<Mutex<bool>>,
+    /// The destination port to use for UDP probes
+    dest_port: u16,
 }
 
 #[cfg(target_os = "linux")]
 impl UdpRecvErrSocket {
     /// Create a new UDP socket with IP_RECVERR enabled
-    pub fn new(_socket: Socket2) -> Result<Self> {
+    pub fn new(_socket: Socket2, port: u16) -> Result<Self> {
         // We don't store a single socket anymore - each probe will create its own
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
@@ -70,14 +72,14 @@ impl UdpRecvErrSocket {
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
+            dest_port: port,
         })
     }
 
     /// Get the destination port for a given TTL
-    fn get_dest_port(_ttl: u8) -> u16 {
-        // Use port 443 (HTTPS/QUIC) which is less likely to be filtered
-        // Using the same port for all probes like system traceroute -p 443
-        UDP_PORT_HTTPS
+    fn get_dest_port(&self, _ttl: u8) -> u16 {
+        // Use the configured port for all probes
+        self.dest_port
     }
 
     /// Parse IP_RECVERR error from control messages with known probe info
@@ -199,7 +201,7 @@ impl ProbeSocket for UdpRecvErrSocket {
             .context("Failed to set TTL")?;
 
         // Calculate destination port
-        let dest_port = Self::get_dest_port(probe_info.ttl);
+        let dest_port = self.get_dest_port(probe_info.ttl);
         let target_addr = SocketAddr::new(target, dest_port);
 
         // Connect the socket to the destination
@@ -329,11 +331,13 @@ pub struct UdpWithIcmpSocket {
     /// Maps sequence number to (socket, probe_info) for each active probe
     active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
     destination_reached: Arc<Mutex<bool>>,
+    /// The destination port to use for UDP probes
+    dest_port: u16,
 }
 
 impl UdpWithIcmpSocket {
     /// Create a new UDP socket with optional ICMP receiver
-    pub fn new(_udp_socket: Socket2, icmp_socket: Option<Socket2>) -> Result<Self> {
+    pub fn new(_udp_socket: Socket2, icmp_socket: Option<Socket2>, port: u16) -> Result<Self> {
         // We don't store the UDP socket anymore - each probe will create its own
         if let Some(ref icmp) = icmp_socket {
             icmp.set_nonblocking(true)?;
@@ -350,12 +354,13 @@ impl UdpWithIcmpSocket {
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
+            dest_port: port,
         })
     }
 
-    fn get_dest_port(_ttl: u8) -> u16 {
-        // Use port 443 (HTTPS/QUIC) which is less likely to be filtered
-        UDP_PORT_HTTPS
+    fn get_dest_port(&self, _ttl: u8) -> u16 {
+        // Use the configured port for all probes
+        self.dest_port
     }
 
     /// Parse an ICMP response to our UDP probe
@@ -487,7 +492,7 @@ impl ProbeSocket for UdpWithIcmpSocket {
             .context("Failed to set TTL")?;
 
         // Calculate destination port
-        let dest_port = Self::get_dest_port(probe_info.ttl);
+        let dest_port = self.get_dest_port(probe_info.ttl);
         let target_addr = SocketAddr::new(target, dest_port);
 
         // Connect the socket to the destination
@@ -570,12 +575,19 @@ impl ProbeSocket for UdpWithIcmpSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use socket2::{Domain, Protocol, Socket as Socket2, Type};
 
     #[test]
-    fn test_udp_port_calculation() {
-        assert_eq!(UdpWithIcmpSocket::get_dest_port(1), UDP_PORT_HTTPS);
-        assert_eq!(UdpWithIcmpSocket::get_dest_port(10), UDP_PORT_HTTPS);
-        assert_eq!(UdpWithIcmpSocket::get_dest_port(30), UDP_PORT_HTTPS);
+    fn test_udp_port_configuration() {
+        // Test that we can create sockets with different ports
+        let socket1 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+        let socket2 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+
+        let udp_socket1 = UdpWithIcmpSocket::new(socket1, None, 53).unwrap();
+        let udp_socket2 = UdpWithIcmpSocket::new(socket2, None, 443).unwrap();
+
+        assert_eq!(udp_socket1.get_dest_port(), 53);
+        assert_eq!(udp_socket2.get_dest_port(), 443);
     }
 
     #[test]

@@ -65,6 +65,13 @@ struct Args {
     json: bool,
     #[clap(short, long, help = "Enable verbose output")]
     verbose: bool,
+    #[clap(
+        short,
+        long,
+        help = "Target port for UDP/TCP modes",
+        default_value_t = 443
+    )]
+    port: u16,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -476,11 +483,12 @@ async fn main() -> Result<()> {
     });
 
     // Create socket using the abstraction layer
-    let probe_socket = ftr::socket::factory::create_probe_socket_with_options(
+    let probe_socket = ftr::socket::factory::create_probe_socket_with_port(
         IpAddr::V4(target_ipv4),
         preferred_protocol,
         preferred_mode,
         args.verbose,
+        args.port,
     )?;
 
     let raw_results_map: Arc<Mutex<HashMap<u8, RawHopInfo>>> = Arc::new(Mutex::new(HashMap::new()));

@@ -197,6 +197,17 @@ pub fn create_probe_socket_with_options(
     preferred_mode: Option<SocketMode>,
     verbose: bool,
 ) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_port(target, preferred_protocol, preferred_mode, verbose, 443)
+}
+
+/// Creates a probe socket with the specified options including port selection.
+pub fn create_probe_socket_with_port(
+    target: IpAddr,
+    preferred_protocol: Option<ProbeProtocol>,
+    preferred_mode: Option<SocketMode>,
+    verbose: bool,
+    port: u16,
+) -> Result<Box<dyn ProbeSocket>> {
     let ip_version = match target {
         IpAddr::V4(_) => IpVersion::V4,
         IpAddr::V6(_) => IpVersion::V6,
@@ -355,7 +366,7 @@ pub fn create_probe_socket_with_options(
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
                             {
-                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket) {
+                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket, port) {
                                     if verbose {
                                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                                     }
@@ -395,7 +406,11 @@ pub fn create_probe_socket_with_options(
                             };
 
                             if icmp_socket.is_some() {
-                                return Ok(Box::new(UdpWithIcmpSocket::new(socket, icmp_socket)?));
+                                return Ok(Box::new(UdpWithIcmpSocket::new(
+                                    socket,
+                                    icmp_socket,
+                                    port,
+                                )?));
                             } else {
                                 // UDP without ICMP receive capability is not functional
                                 let error_msg = if cfg!(target_os = "linux") {

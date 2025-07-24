@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Minimalist printing for silent hops (just TTL number instead of "* * *")
 - Structured JSON output with `--json` flag for programmatic use
 - Verbose mode with `-v/--verbose` flag to show socket mode details
+- Target port selection with `-p/--port` option for UDP mode (default 443)
 
 ### Changed
 - Improved user experience with cleaner output format
