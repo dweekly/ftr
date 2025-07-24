@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write  # Needed to create releases
+
 jobs:
   build-deb:
     name: Build Debian Package
