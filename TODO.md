@@ -4,27 +4,26 @@ This file tracks ongoing and planned work for the ftr project.
 
 ## High Priority
 
-- [x] Fix unwrap() usage warnings from clippy
-  - Replaced all `.unwrap()` calls on Mutex locks with `.expect()` with descriptive messages
-  - Fixed non-mutex unwraps with proper error handling
-  - Re-enabled `unwrap_used = "warn"` in Cargo.toml
+- [ ] Add FreeBSD support
+- [ ] Add OpenBSD support  
+- [ ] Add Windows support
+- [ ] Add missing tests for complex logic
+  - UDP socket error handling
+  - ICMP packet parsing edge cases
+  - ASN lookup failures
 
 ## Medium Priority
 
-- [x] Enforce mandatory `cargo audit` in pre-push hook
-- [x] Update AGENTS.md to remind agents to run `cargo audit` when adding new modules/dependencies
-
+- [ ] Print detected public IP address in output
+- [ ] Use minimalist printing for silent hops (spaces instead of '[UNKNOWN]')
 - [ ] Complete socket abstraction implementation
-  - Add Raw ICMP socket implementation
-  - Add IPv6 support
   - Add TCP mode support
-  - Implement Linux IP_RECVERR for UDP mode
-
-## Low Priority
-
+  - Add IPv6 support
 - [ ] Integrate `cargo-machete` for unused-dependency detection
   - Assess and remove truly unused dependencies
   - Add to developer tooling installation script
+
+## Low Priority
 
 - [ ] Performance optimizations
   - Add benchmarks using criterion
@@ -40,7 +39,6 @@ This file tracks ongoing and planned work for the ftr project.
 - [ ] Add code coverage reporting (via `cargo-tarpaulin` or `cargo-llvm-cov`)
 - [ ] Add benchmarking suite (Criterion) under `benches/` to track performance regressions
 - [ ] Add fuzz targets (e.g. using `cargo-fuzz`) for packet parsing components
-- [ ] Consider official support for additional platforms (Windows, BSD)
 
 ## Completed
 - [x] Add Rust best practices documentation
@@ -50,3 +48,12 @@ This file tracks ongoing and planned work for the ftr project.
 - [x] Add missing documentation for public items
 - [x] Fix redundant closure warnings
 - [x] Fix inefficient to_string warnings
+- [x] Fix unwrap() usage warnings from clippy
+- [x] Implement socket abstraction layer
+- [x] Add Raw ICMP socket implementation
+- [x] Add DGRAM ICMP socket implementation (Linux)
+- [x] Add UDP with ICMP socket implementation
+- [x] Implement Linux IP_RECVERR for UDP mode
+- [x] Fix UDP traceroute on Linux
+- [x] Implement multiple probes per TTL (-q option)
+- [x] Fix regression where traceroute continued past destination
