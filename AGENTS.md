@@ -147,6 +147,9 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - **Ensure the directory is git clean before committing** - no untracked files or directories should remain
 
 ### Development Workflow
+- **Always work on feature branches** - never commit new features directly to main
+  - Create branches like `feature/v0.2.2` or `feature/json-output`
+  - Merge to main only when feature is complete and tested
 - **Keep commits small and well-scoped** - each commit should do one thing
 - **Track work in TODO.md** - when new issues arise while working on something else, add them to TODO.md
 - **Update TODO.md when completing work** - remove completed items
