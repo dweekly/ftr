@@ -148,6 +148,19 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 ### Tool Requests
 - **Feel free to ask for tools** - if you need tools like ripgrep to work more effectively, ask the user to install them
 
+## Virtual Machine Guidelines
+
+### Shared Directory Access
+- **IMPORTANT**: The ftr directory is mounted at `/media/psf/ftr` in VMs - DO NOT copy files to/from the VM
+- The mounted directory is shared between host and VM, so any changes are immediately visible in both places
+- Access files directly from the mount point - no need for scp, rsync, or file copying
+- Example: To run tests on Linux VM, just `ssh -i ~/.ssh/ftr_vm_key ftr@<VM_IP> "cd /media/psf/ftr && ./scripts/test.sh"`
+
+### VM Development Workflow
+- Build on the target platform (e.g., build Linux binaries on Linux VM)
+- Use the shared mount to access source code and scripts
+- Results and outputs are immediately available on both host and VM
+
 ## General Best Practices
 1. Always read files before editing them
 2. Check for existing patterns and follow them

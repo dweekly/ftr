@@ -1,6 +1,6 @@
 # TODO List for ftr
 
-This file tracks ongoing and planned work for the ftr project.
+This file tracks planned work for the ftr project.
 
 ## High Priority
 
@@ -39,21 +39,3 @@ This file tracks ongoing and planned work for the ftr project.
 - [ ] Add code coverage reporting (via `cargo-tarpaulin` or `cargo-llvm-cov`)
 - [ ] Add benchmarking suite (Criterion) under `benches/` to track performance regressions
 - [ ] Add fuzz targets (e.g. using `cargo-fuzz`) for packet parsing components
-
-## Completed
-- [x] Add Rust best practices documentation
-- [x] Set up stricter clippy lints
-- [x] Add pre-commit hooks for rustfmt and clippy
-- [x] Enforce cargo audit in pre-push hook and update AGENTS.md accordingly
-- [x] Add missing documentation for public items
-- [x] Fix redundant closure warnings
-- [x] Fix inefficient to_string warnings
-- [x] Fix unwrap() usage warnings from clippy
-- [x] Implement socket abstraction layer
-- [x] Add Raw ICMP socket implementation
-- [x] Add DGRAM ICMP socket implementation (Linux)
-- [x] Add UDP with ICMP socket implementation
-- [x] Implement Linux IP_RECVERR for UDP mode
-- [x] Fix UDP traceroute on Linux
-- [x] Implement multiple probes per TTL (-q option)
-- [x] Fix regression where traceroute continued past destination
