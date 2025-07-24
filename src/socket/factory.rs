@@ -13,6 +13,122 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddrV4};
 const EPERM: i32 = 1; // Operation not permitted
 const EACCES: i32 = 13; // Permission denied
 
+/// Check if running as root
+fn is_root() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        unsafe { libc::geteuid() == 0 }
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        // For other Unix systems, check if we can create a raw socket
+        // This is a heuristic since we don't have libc on non-Linux
+        Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        // On Windows, check if we can create a raw ICMP socket
+        Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)).is_ok()
+    }
+}
+
+/// Represents the compatibility of a socket mode on a given OS
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Compatibility {
+    /// Works without any special privileges
+    Works,
+    /// Requires root/administrator privileges
+    RequiresRoot,
+    /// Not supported on this OS
+    NotSupported,
+}
+
+/// Get the compatibility of a socket mode for the current OS
+fn get_compatibility(protocol: ProbeProtocol, socket_mode: SocketMode) -> Compatibility {
+    use Compatibility::*;
+
+    #[cfg(target_os = "linux")]
+    {
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => Works, // Requires ping group
+            (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Udp, SocketMode::Dgram) => Works, // Works with IP_RECVERR
+            (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => Works,
+            (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Udp, SocketMode::Dgram) => RequiresRoot, // Needs raw ICMP receive
+            (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+
+    #[cfg(target_os = "freebsd")]
+    {
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => Works,
+            (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Udp, SocketMode::Dgram) => RequiresRoot, // Needs raw ICMP receive
+            (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+
+    #[cfg(target_os = "openbsd")]
+    {
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => NotSupported, // OpenBSD doesn't have DGRAM ICMP
+            (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Udp, SocketMode::Dgram) => RequiresRoot, // Needs raw ICMP receive
+            (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => Works, // Windows allows raw ICMP
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => NotSupported,
+            (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Udp, SocketMode::Dgram) => RequiresRoot, // Needs raw ICMP receive
+            (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "windows"
+    )))]
+    {
+        // Unknown OS - be conservative
+        match (protocol, socket_mode) {
+            (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
+            (ProbeProtocol::Tcp, SocketMode::Stream) => Works,
+            _ => NotSupported,
+        }
+    }
+}
+
 /// Try to create a socket with the specified configuration
 fn try_create_socket(mode: ProbeMode) -> Result<Socket, std::io::Error> {
     let domain = match mode.ip_version {
@@ -86,34 +202,117 @@ pub fn create_probe_socket_with_options(
         IpAddr::V6(_) => IpVersion::V6,
     };
 
+    let running_as_root = is_root();
+    let user_specified_protocol = preferred_protocol.is_some();
+    let user_specified_mode = preferred_mode.is_some();
+
+    // If user specified both protocol and mode, validate compatibility first
+    if let (Some(protocol), Some(socket_mode)) = (preferred_protocol, preferred_mode) {
+        let compatibility = get_compatibility(protocol, socket_mode);
+        match compatibility {
+            Compatibility::NotSupported => {
+                return Err(anyhow!(
+                    "{} mode is not supported for {} protocol on {}",
+                    socket_mode.description(),
+                    protocol.description(),
+                    std::env::consts::OS
+                ));
+            }
+            Compatibility::RequiresRoot if !running_as_root => {
+                return Err(anyhow!(
+                    "{} mode for {} protocol requires root privileges on {}. Try running with sudo.",
+                    socket_mode.description(),
+                    protocol.description(),
+                    std::env::consts::OS
+                ));
+            }
+            _ => {} // Works or RequiresRoot with root - proceed
+        }
+    }
+
     // Determine protocols to try
     let protocols = match preferred_protocol {
         Some(p) => vec![p],
         None => {
-            // On Linux, prefer UDP since it works without root via IP_RECVERR
-            #[cfg(target_os = "linux")]
-            {
-                vec![ProbeProtocol::Udp, ProbeProtocol::Icmp, ProbeProtocol::Tcp]
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
+            // Order protocols by preference based on OS and privileges
+            if running_as_root {
+                // With root, prefer ICMP for best results
                 vec![ProbeProtocol::Icmp, ProbeProtocol::Udp, ProbeProtocol::Tcp]
+            } else {
+                // Without root, prefer protocols that work unprivileged
+                #[cfg(target_os = "linux")]
+                {
+                    // Linux: UDP works without root via IP_RECVERR
+                    vec![ProbeProtocol::Udp, ProbeProtocol::Icmp, ProbeProtocol::Tcp]
+                }
+                #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+                {
+                    // macOS/FreeBSD: DGRAM ICMP works without root
+                    vec![ProbeProtocol::Icmp, ProbeProtocol::Tcp, ProbeProtocol::Udp]
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    // Windows: Raw ICMP works without admin
+                    vec![ProbeProtocol::Icmp, ProbeProtocol::Tcp, ProbeProtocol::Udp]
+                }
+                #[cfg(not(any(
+                    target_os = "linux",
+                    target_os = "macos",
+                    target_os = "freebsd",
+                    target_os = "windows"
+                )))]
+                {
+                    // Unknown OS: try TCP first as it's most likely to work
+                    vec![ProbeProtocol::Tcp, ProbeProtocol::Icmp, ProbeProtocol::Udp]
+                }
             }
         }
     };
 
     let mut last_error = None;
-    let user_specified_mode = preferred_mode.is_some();
 
     for protocol in protocols {
-        // Try socket modes in order of preference (most capable first)
+        // Determine socket modes to try based on compatibility
         let socket_modes = match preferred_mode {
             Some(mode) => vec![mode], // User specified a mode, only try that one
-            None => match protocol {
-                ProbeProtocol::Icmp => vec![SocketMode::Raw, SocketMode::Dgram],
-                ProbeProtocol::Udp => vec![SocketMode::Dgram],
-                ProbeProtocol::Tcp => vec![SocketMode::Raw, SocketMode::Stream],
-            },
+            None => {
+                // Get all possible modes for this protocol and filter by compatibility
+                let possible_modes = match protocol {
+                    ProbeProtocol::Icmp => vec![SocketMode::Raw, SocketMode::Dgram],
+                    ProbeProtocol::Udp => vec![SocketMode::Dgram, SocketMode::Raw],
+                    ProbeProtocol::Tcp => vec![SocketMode::Stream, SocketMode::Raw],
+                };
+
+                let mut compatible_modes = Vec::new();
+                for mode in possible_modes {
+                    match get_compatibility(protocol, mode) {
+                        Compatibility::Works => compatible_modes.push(mode),
+                        Compatibility::RequiresRoot if running_as_root => {
+                            compatible_modes.push(mode)
+                        }
+                        _ => {} // Skip NotSupported or RequiresRoot without root
+                    }
+                }
+
+                // If no compatible modes, skip this protocol
+                if compatible_modes.is_empty() {
+                    if verbose && user_specified_protocol {
+                        eprintln!(
+                            "No compatible socket modes for {} protocol on {} {}",
+                            protocol.description(),
+                            std::env::consts::OS,
+                            if running_as_root {
+                                "(running as root)"
+                            } else {
+                                "(non-root)"
+                            }
+                        );
+                    }
+                    continue;
+                }
+
+                compatible_modes
+            }
         };
 
         for socket_mode in socket_modes {
@@ -288,16 +487,58 @@ pub fn create_probe_socket_with_options(
     if user_specified_mode {
         Err(last_error.unwrap_or_else(|| anyhow!("Failed to create requested socket mode")))
     } else {
-        Err(anyhow!(
-            "Failed to create any probe socket. All modes require elevated privileges:\n\
-             - Raw ICMP: Requires root or CAP_NET_RAW capability\n\
-             - DGRAM ICMP: Requires root or configured ping_group_range (Linux)\n\
-             - UDP: Requires root (needs raw ICMP socket for responses)\n\n\
-             Solutions:\n\
-             1. Run with sudo: sudo {}\n\
-             2. On Linux, configure ping group: sudo sysctl -w net.ipv4.ping_group_range=\"0 65535\"",
-            std::env::args().collect::<Vec<_>>().join(" ")
-        ))
+        // Build OS-specific error message
+        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        let os_name = std::env::consts::OS;
+        let running_as_root = is_root();
+
+        let cmd = std::env::args().collect::<Vec<_>>().join(" ");
+
+        #[cfg(target_os = "linux")]
+        let error_msg = if running_as_root {
+            "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
+        } else {
+            format!(
+                "Failed to create any probe socket. On Linux, you can:\n\
+                 1. Run with sudo: sudo {}\n\
+                 2. Configure ping group: sudo sysctl -w net.ipv4.ping_group_range=\"0 65535\"\n\
+                 3. Use UDP mode which works without root via IP_RECVERR",
+                cmd
+            )
+        };
+
+        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        let error_msg = if running_as_root {
+            "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
+        } else {
+            format!(
+                "Failed to create any probe socket. On {os_name}, DGRAM ICMP mode works without root.\n\
+                 If it's not working, try running with sudo: sudo {cmd}"
+            )
+        };
+
+        #[cfg(target_os = "openbsd")]
+        let error_msg = if running_as_root {
+            "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
+        } else {
+            format!(
+                "Failed to create any probe socket. On OpenBSD, raw sockets require root.\n\
+                 Run with doas/sudo: doas {} or sudo {}",
+                cmd, cmd
+            )
+        };
+
+        #[cfg(target_os = "windows")]
+        let error_msg = "Failed to create any probe socket. On Windows, ensure you have administrator privileges.".to_string();
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "freebsd", target_os = "openbsd", target_os = "windows")))]
+        let error_msg = format!(
+            "Failed to create any probe socket. This operating system may require root privileges.\n\
+             Try running with sudo: sudo {}",
+            cmd
+        );
+
+        Err(anyhow!(error_msg))
     }
 }
 

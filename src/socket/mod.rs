@@ -28,6 +28,17 @@ pub enum ProbeProtocol {
     Tcp,
 }
 
+impl ProbeProtocol {
+    /// Get a human-readable description
+    pub fn description(&self) -> &'static str {
+        match self {
+            ProbeProtocol::Icmp => "ICMP",
+            ProbeProtocol::Udp => "UDP",
+            ProbeProtocol::Tcp => "TCP",
+        }
+    }
+}
+
 /// Socket mode (affects permissions required)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketMode {
@@ -37,6 +48,17 @@ pub enum SocketMode {
     Dgram,
     /// Stream socket (TCP only) - no special permissions
     Stream,
+}
+
+impl SocketMode {
+    /// Get a human-readable description
+    pub fn description(&self) -> &'static str {
+        match self {
+            SocketMode::Raw => "Raw",
+            SocketMode::Dgram => "Datagram",
+            SocketMode::Stream => "Stream",
+        }
+    }
 }
 
 /// Combined probe configuration

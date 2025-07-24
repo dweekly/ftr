@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved user experience with cleaner output format
 - Silent hops now use minimal space to reduce visual clutter
 - Socket mode selection messages now only shown in verbose mode
+- Socket mode selection now uses OS/protocol/privilege compatibility matrix
+- Better error messages specific to each operating system
+- Automatic selection of best available socket mode based on OS and privileges
 
 ## [0.2.1] - 2025-07-23
 
