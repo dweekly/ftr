@@ -60,11 +60,16 @@ jobs:
     - name: Install tarpaulin
       run: cargo install cargo-tarpaulin
     - name: Run coverage
-      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
-    - name: Upload coverage reports
-      uses: codecov/codecov-action@v3
-      env:
-        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml --exclude-files "*/tests/*" --exclude-files "*/examples/*"
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        files: ./cobertura.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: true
+        verbose: true
 
   security-audit:
     name: Security audit
