@@ -59,7 +59,20 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Cache cargo-deb
+        id: cache-cargo-deb
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deb
+          key: ${{ runner.os }}-cargo-deb-2.7.0
+
       - name: Install cargo-deb
+        if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
         run: cargo install cargo-deb --version 2.7.0
 
       - name: Install cross-compilation tools for ARM64
@@ -79,7 +92,12 @@ jobs:
 
       - name: Build .deb package
         run: |
-          cargo deb --target ${{ matrix.target }} --no-build
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            # For cross-compilation, disable stripping to avoid strip format errors
+            cargo deb --target ${{ matrix.target }} --no-build --no-strip
+          else
+            cargo deb --target ${{ matrix.target }} --no-build
+          fi
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
