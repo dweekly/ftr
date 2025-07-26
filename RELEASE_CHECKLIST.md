@@ -53,6 +53,12 @@ This checklist should be followed when preparing a new release.
   - [ ] Check https://crates.io/crates/ftr
   - [ ] Verify the README is displayed correctly
   - [ ] Note: crates.io uses README.md from the git tag, not release notes
+- [ ] **Update Homebrew tap**:
+  - [ ] Check https://github.com/dweekly/homebrew-ftr/blob/main/ftr.rb
+  - [ ] Update version, URL, and SHA256 in ftr.rb
+  - [ ] URL format: `https://github.com/dweekly/ftr/archive/refs/tags/vX.Y.Z.tar.gz`
+  - [ ] Get SHA256: `curl -sL https://github.com/dweekly/ftr/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256`
+  - [ ] Commit and push to homebrew-ftr repository
 - [ ] **Test installation methods**:
   - [ ] Homebrew: `brew update && brew upgrade ftr`
   - [ ] Cargo: `cargo install ftr` (wait ~5 minutes for crates.io to update)

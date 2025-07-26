@@ -5,8 +5,12 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 pub mod factory;
+#[cfg(not(target_os = "windows"))]
 pub mod icmp_v4;
+#[cfg(not(target_os = "windows"))]
 pub mod udp;
+#[cfg(target_os = "windows")]
+pub mod windows;
 
 /// IP version to use for probing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
