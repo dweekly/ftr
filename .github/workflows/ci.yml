@@ -16,7 +16,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]  # Windows requires WinPcap/Npcap
+        os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable, 1.82.0]  # Test on stable and MSRV
     steps:
     - uses: actions/checkout@v4

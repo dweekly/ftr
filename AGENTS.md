@@ -26,6 +26,37 @@ Without these hooks, code with formatting issues or clippy warnings can be commi
 
 ## Environment Configuration
 
+### Building on Windows with Parallels Mount
+When building on Windows where the source directory is a Parallels mount (e.g., Y:\), you MUST use the `--target-dir` flag to specify a local Windows directory for the build artifacts. The Parallels filesystem doesn't handle temporary file operations correctly, causing "The parameter is incorrect. (os error 87)" errors.
+
+**Correct build command:**
+```bash
+cargo build --target-dir C:/temp/ftr-target
+```
+
+**Important notes:**
+- Use forward slashes (/) not backslashes (\) in the path - they work on Windows and avoid escaping issues
+- The `--target-dir` flag must be used directly with cargo; setting CARGO_TARGET_DIR environment variable doesn't work reliably
+- DO NOT create .cargo/config.toml in the shared directory as it would affect macOS builds
+- The built executable will be at: `C:/temp/ftr-target/debug/ftr.exe`
+
+**Alternative methods that also work:**
+
+From PowerShell directly:
+```powershell
+$env:CARGO_TARGET_DIR="C:\temp\ftr-target"; cargo build
+```
+
+From bash calling PowerShell:
+```bash
+powershell -Command '$env:CARGO_TARGET_DIR="C:\temp\ftr-target"; cargo build'
+```
+
+**What doesn't work:**
+- `set CARGO_TARGET_DIR=C:\temp\ftr-target && cargo build` - environment variable not picked up by cargo in same command
+- `cmd /c "set CARGO_TARGET_DIR=C:\temp\ftr-target && cargo build"` - variable doesn't persist to cargo
+- Using backslashes in paths with --target-dir flag - causes parsing issues
+
 ### ENVIRONMENT.md
 Each development environment should have an `ENVIRONMENT.md` file that contains environment-specific configuration. This file is NOT checked into version control and is listed in `.gitignore`.
 

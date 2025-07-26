@@ -1,40 +1,33 @@
 //! Windows-specific socket implementations using Windows ICMP API
 
-use std::io;
-use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use std::sync::OnceLock;
 use std::collections::HashMap;
 use std::ffi::c_void;
+use std::io;
 use std::mem;
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::OnceLock;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use windows_sys::Win32::Networking::WinSock::{
-    WSADATA, WSAStartup
-};
+use windows_sys::Win32::Foundation::{GetLastError, ERROR_INSUFFICIENT_BUFFER, HANDLE};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    IcmpCreateFile, IcmpCloseHandle, IcmpSendEcho,
-    IP_OPTION_INFORMATION, IP_SUCCESS,
-    IP_DEST_NET_UNREACHABLE, IP_DEST_HOST_UNREACHABLE,
-    IP_DEST_PROT_UNREACHABLE, IP_DEST_PORT_UNREACHABLE,
-    IP_TTL_EXPIRED_TRANSIT,
-    ICMP_ECHO_REPLY
+    IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho, ICMP_ECHO_REPLY, IP_DEST_HOST_UNREACHABLE,
+    IP_DEST_NET_UNREACHABLE, IP_DEST_PORT_UNREACHABLE, IP_DEST_PROT_UNREACHABLE,
+    IP_OPTION_INFORMATION, IP_SUCCESS, IP_TTL_EXPIRED_TRANSIT,
 };
-use windows_sys::Win32::Foundation::{HANDLE, ERROR_INSUFFICIENT_BUFFER, GetLastError};
+use windows_sys::Win32::Networking::WinSock::{WSAStartup, WSADATA};
 
 // Global flag to track if Winsock has been initialized
 static WINSOCK_INIT: OnceLock<()> = OnceLock::new();
 
 /// Initialize Winsock once for the entire process
 fn ensure_winsock_initialized() -> io::Result<()> {
-    WINSOCK_INIT.get_or_init(|| {
-        unsafe {
-            let mut wsadata: WSADATA = std::mem::zeroed();
-            let result = WSAStartup(0x0202, &mut wsadata);
-            if result != 0 {
-                panic!("Failed to initialize Winsock: {}", result);
-            }
+    WINSOCK_INIT.get_or_init(|| unsafe {
+        let mut wsadata: WSADATA = std::mem::zeroed();
+        let result = WSAStartup(0x0202, &mut wsadata);
+        if result != 0 {
+            panic!("Failed to initialize Winsock: {}", result);
         }
     });
     Ok(())
@@ -58,7 +51,6 @@ pub struct WindowsIcmpSocket {
     destination_reached: Arc<Mutex<bool>>,
     current_ttl: Arc<Mutex<u8>>,
     pending_probes: Arc<Mutex<HashMap<u16, (ProbeInfo, Ipv4Addr)>>>,
-    next_sequence: Arc<Mutex<u16>>,
 }
 
 impl WindowsIcmpSocket {
@@ -83,7 +75,6 @@ impl WindowsIcmpSocket {
             destination_reached: Arc::new(Mutex::new(false)),
             current_ttl: Arc::new(Mutex::new(1)),
             pending_probes: Arc::new(Mutex::new(HashMap::new())),
-            next_sequence: Arc::new(Mutex::new(1)),
         })
     }
 }
@@ -117,7 +108,10 @@ impl ProbeSocket for WindowsIcmpSocket {
         };
 
         // Store the probe info for later when we call recv_response
-        self.pending_probes.lock().unwrap().insert(probe_info.sequence, (probe_info, target_v4));
+        self.pending_probes
+            .lock()
+            .unwrap()
+            .insert(probe_info.sequence, (probe_info, target_v4));
         Ok(())
     }
 
@@ -135,7 +129,7 @@ impl ProbeSocket for WindowsIcmpSocket {
 
         // Create send data
         let send_data = vec![0u8; ICMP_ECHO_PAYLOAD_SIZE];
-        
+
         // Create IP options for TTL
         let mut ip_options = IP_OPTION_INFORMATION {
             Ttl: probe_info.ttl,
@@ -151,9 +145,9 @@ impl ProbeSocket for WindowsIcmpSocket {
 
         // Convert target address
         let dest_addr = u32::from_ne_bytes(target.octets());
-        
+
         let send_start = Instant::now();
-        
+
         // Send ICMP echo request and wait for reply
         let result = unsafe {
             IcmpSendEcho(
@@ -181,10 +175,10 @@ impl ProbeSocket for WindowsIcmpSocket {
         // Parse the reply
         let reply = unsafe { &*(reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         let rtt = send_start.elapsed();
-        
+
         // Convert reply address to IpAddr
         let from_addr = IpAddr::V4(Ipv4Addr::from(reply.Address.to_be()));
-        
+
         // Determine response type based on status
         let response_type = match reply.Status {
             IP_SUCCESS => {
@@ -219,7 +213,6 @@ impl ProbeSocket for WindowsIcmpSocket {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
-    use std::time::Duration;
 
     #[test]
     #[cfg(target_os = "windows")]
@@ -259,7 +252,7 @@ mod tests {
             sequence: 1,
             sent_at: Instant::now(),
         };
-        
+
         // send_probe just stores the probe, doesn't actually send yet
         assert!(socket.send_probe(target, probe_info).is_ok());
     }
@@ -275,7 +268,7 @@ mod tests {
             sequence: 1,
             sent_at: Instant::now(),
         };
-        
+
         let result = socket.send_probe(target, probe_info);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("IPv6"));

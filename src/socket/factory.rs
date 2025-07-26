@@ -391,6 +391,12 @@ pub fn create_probe_socket_with_port(
                                 .bind(&bind_addr.into())
                                 .context("Failed to bind UDP socket")?;
 
+                            #[cfg(target_os = "windows")]
+                            {
+                                let _ = port; // Suppress unused warning on Windows
+                                return Err(anyhow!("UDP mode not yet implemented on Windows"));
+                            }
+
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
                             {
@@ -416,52 +422,52 @@ pub fn create_probe_socket_with_port(
                             }
 
                             // Try to create a raw ICMP socket for receiving responses
-                            let icmp_socket = match Socket::new(
-                                Domain::IPV4,
-                                Type::RAW,
-                                Some(Protocol::ICMPV4),
-                            ) {
-                                Ok(s) => {
-                                    let _ = s.bind(&bind_addr.into());
-                                    Some(s)
-                                }
-                                Err(_) => {
-                                    eprintln!(
-                                        "Warning: Could not create raw ICMP socket for UDP mode"
-                                    );
-                                    None
-                                }
-                            };
-
-                            if icmp_socket.is_some() {
-                                #[cfg(not(target_os = "windows"))]
-                                return Ok(Box::new(UdpWithIcmpSocket::new(
-                                    socket,
-                                    icmp_socket,
-                                    port,
-                                )?));
-                                #[cfg(target_os = "windows")]
-                                return Err(anyhow!("UDP mode not yet implemented on Windows"));
-                            } else {
-                                // UDP without ICMP receive capability is not functional
-                                let error_msg = if cfg!(target_os = "linux") {
-                                    "UDP mode failed to enable IP_RECVERR and couldn't create raw ICMP socket.\n\
-                                     On Linux, UDP traceroute should work without root via IP_RECVERR.\n\
-                                     This might be a kernel configuration issue."
-                                } else {
-                                    "UDP mode requires root privileges to create a raw ICMP socket for receiving responses.\n\
-                                     Without raw ICMP capability, UDP traceroute cannot function.\n\
-                                     Try running with sudo: sudo {}"
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                let icmp_socket = match Socket::new(
+                                    Domain::IPV4,
+                                    Type::RAW,
+                                    Some(Protocol::ICMPV4),
+                                ) {
+                                    Ok(s) => {
+                                        let _ = s.bind(&bind_addr.into());
+                                        Some(s)
+                                    }
+                                    Err(_) => {
+                                        eprintln!(
+                                            "Warning: Could not create raw ICMP socket for UDP mode"
+                                        );
+                                        None
+                                    }
                                 };
 
-                                if user_specified_mode {
-                                    let args = std::env::args().collect::<Vec<_>>().join(" ");
-                                    return Err(anyhow!("{}", error_msg.replace("{}", &args)));
+                                if icmp_socket.is_some() {
+                                    return Ok(Box::new(UdpWithIcmpSocket::new(
+                                        socket,
+                                        icmp_socket,
+                                        port,
+                                    )?));
                                 } else {
-                                    // Don't return a non-functional socket in automatic mode
-                                    return Err(anyhow!(
-                                        "UDP mode requires ICMP reception capability"
-                                    ));
+                                    // UDP without ICMP receive capability is not functional
+                                    let error_msg = if cfg!(target_os = "linux") {
+                                        "UDP mode failed to enable IP_RECVERR and couldn't create raw ICMP socket.\n\
+                                         On Linux, UDP traceroute should work without root via IP_RECVERR.\n\
+                                         This might be a kernel configuration issue."
+                                    } else {
+                                        "UDP mode requires root privileges to create a raw ICMP socket for receiving responses.\n\
+                                         Without raw ICMP capability, UDP traceroute cannot function.\n\
+                                         Try running with sudo: sudo {}"
+                                    };
+
+                                    if user_specified_mode {
+                                        let args = std::env::args().collect::<Vec<_>>().join(" ");
+                                        return Err(anyhow!("{}", error_msg.replace("{}", &args)));
+                                    } else {
+                                        // Don't return a non-functional socket in automatic mode
+                                        return Err(anyhow!(
+                                            "UDP mode requires ICMP reception capability"
+                                        ));
+                                    }
                                 }
                             }
                         }
