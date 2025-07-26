@@ -17,17 +17,37 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 - **CGNAT aware** - Properly handles Carrier Grade NAT (100.64.0.0/10)
 - **Early exit optimization** - Completes instantly when destination is reached
 - **Minimal dependencies** - Built with efficiency in mind
-- **Cross-platform** - Works on Linux, macOS, and Windows (requires Npcap on Windows)
+- **Cross-platform** - Works on Linux, macOS, and Windows
 
 ## Installation
 
-### Using Homebrew
+### Windows
+
+#### Installation Options
+
+**Option 1: Download Pre-built Binary** (when available)
+- Download the latest Windows binary from the [releases page](https://github.com/dweekly/ftr/releases/latest)
+- Extract and add to your PATH, or run directly
+
+**Option 2: Build from Source**
+```bash
+git clone https://github.com/dweekly/ftr
+cd ftr
+cargo build --release
+# The binary will be at target/release/ftr.exe
+```
+
+### macOS
+
+#### Using Homebrew
 
 ```bash
 brew tap dweekly/ftr && brew install ftr
 ```
 
-### Using APT Repository (Debian/Ubuntu)
+### Linux
+
+#### Using APT Repository (Debian/Ubuntu)
 
 If you are on a Debian-based Linux distribution (like Ubuntu, Debian, Mint, etc.), you can install ftr using our APT repository for easy installation and updates.
 
@@ -132,9 +152,11 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 
 ## Requirements
 
-- Rust 1.82.0 or later
-- Root privileges or configured ping_group_range (Linux) for traceroute functionality
-- Windows: [Npcap](https://npcap.com/) or WinPcap installed
+- Rust 1.82.0 or later (for building from source)
+- Platform-specific requirements:
+  - **Linux**: Root privileges or configured ping_group_range for ICMP functionality
+  - **macOS**: Root privileges may be required for raw socket access
+  - **Windows**: No additional requirements (uses native Windows ICMP API)
 
 ### Privilege Requirements
 

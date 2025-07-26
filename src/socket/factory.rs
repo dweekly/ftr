@@ -1,9 +1,13 @@
 //! Factory for creating probe sockets with automatic fallback
 
+#[cfg(not(target_os = "windows"))]
 use super::icmp_v4::{DgramIcmpV4Socket, RawIcmpV4Socket};
 #[cfg(target_os = "linux")]
 use super::udp::UdpRecvErrSocket;
+#[cfg(not(target_os = "windows"))]
 use super::udp::UdpWithIcmpSocket;
+#[cfg(target_os = "windows")]
+use super::windows::WindowsIcmpSocket;
 use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
@@ -25,10 +29,18 @@ fn is_root() -> bool {
         // This is a heuristic since we don't have libc on non-Linux
         Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)).is_ok()
     }
-    #[cfg(not(unix))]
+    #[cfg(target_os = "windows")]
     {
-        // On Windows, check if we can create a raw ICMP socket
+        // On Windows, check if we're running as Administrator
+        // We do this by trying to create a raw socket, which requires admin privileges
+        // Note: Windows allows raw ICMP sockets without admin in some cases (e.g., Windows 10+)
+        // but for consistency and other raw socket types, we check this way
         Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)).is_ok()
+    }
+    #[cfg(not(any(unix, target_os = "windows")))]
+    {
+        // Unknown platform, assume not root
+        false
     }
 }
 
@@ -344,17 +356,33 @@ pub fn create_probe_socket_with_port(
                     // Create the appropriate ProbeSocket implementation
                     match (mode.ip_version, mode.protocol, mode.socket_mode) {
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
-                            // Raw socket doesn't need explicit binding
-                            return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
+                            #[cfg(target_os = "windows")]
+                            {
+                                // On Windows, use our Windows-specific implementation
+                                return Ok(Box::new(WindowsIcmpSocket::new()?));
+                            }
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                // Raw socket doesn't need explicit binding
+                                return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
+                            }
                         }
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
-                            // Bind the socket
-                            let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
-                            socket
-                                .bind(&bind_addr.into())
-                                .context("Failed to bind ICMP socket")?;
+                            #[cfg(target_os = "windows")]
+                            {
+                                // Windows doesn't support DGRAM ICMP
+                                return Err(anyhow!("DGRAM ICMP not supported on Windows"));
+                            }
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                // Bind the socket
+                                let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+                                socket
+                                    .bind(&bind_addr.into())
+                                    .context("Failed to bind ICMP socket")?;
 
-                            return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                            }
                         }
                         (IpVersion::V4, ProbeProtocol::Udp, SocketMode::Dgram) => {
                             // Bind UDP socket
@@ -362,6 +390,12 @@ pub fn create_probe_socket_with_port(
                             socket
                                 .bind(&bind_addr.into())
                                 .context("Failed to bind UDP socket")?;
+
+                            #[cfg(target_os = "windows")]
+                            {
+                                let _ = port; // Suppress unused warning on Windows
+                                return Err(anyhow!("UDP mode not yet implemented on Windows"));
+                            }
 
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
@@ -388,49 +422,52 @@ pub fn create_probe_socket_with_port(
                             }
 
                             // Try to create a raw ICMP socket for receiving responses
-                            let icmp_socket = match Socket::new(
-                                Domain::IPV4,
-                                Type::RAW,
-                                Some(Protocol::ICMPV4),
-                            ) {
-                                Ok(s) => {
-                                    let _ = s.bind(&bind_addr.into());
-                                    Some(s)
-                                }
-                                Err(_) => {
-                                    eprintln!(
-                                        "Warning: Could not create raw ICMP socket for UDP mode"
-                                    );
-                                    None
-                                }
-                            };
-
-                            if icmp_socket.is_some() {
-                                return Ok(Box::new(UdpWithIcmpSocket::new(
-                                    socket,
-                                    icmp_socket,
-                                    port,
-                                )?));
-                            } else {
-                                // UDP without ICMP receive capability is not functional
-                                let error_msg = if cfg!(target_os = "linux") {
-                                    "UDP mode failed to enable IP_RECVERR and couldn't create raw ICMP socket.\n\
-                                     On Linux, UDP traceroute should work without root via IP_RECVERR.\n\
-                                     This might be a kernel configuration issue."
-                                } else {
-                                    "UDP mode requires root privileges to create a raw ICMP socket for receiving responses.\n\
-                                     Without raw ICMP capability, UDP traceroute cannot function.\n\
-                                     Try running with sudo: sudo {}"
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                let icmp_socket = match Socket::new(
+                                    Domain::IPV4,
+                                    Type::RAW,
+                                    Some(Protocol::ICMPV4),
+                                ) {
+                                    Ok(s) => {
+                                        let _ = s.bind(&bind_addr.into());
+                                        Some(s)
+                                    }
+                                    Err(_) => {
+                                        eprintln!(
+                                            "Warning: Could not create raw ICMP socket for UDP mode"
+                                        );
+                                        None
+                                    }
                                 };
 
-                                if user_specified_mode {
-                                    let args = std::env::args().collect::<Vec<_>>().join(" ");
-                                    return Err(anyhow!("{}", error_msg.replace("{}", &args)));
+                                if icmp_socket.is_some() {
+                                    return Ok(Box::new(UdpWithIcmpSocket::new(
+                                        socket,
+                                        icmp_socket,
+                                        port,
+                                    )?));
                                 } else {
-                                    // Don't return a non-functional socket in automatic mode
-                                    return Err(anyhow!(
-                                        "UDP mode requires ICMP reception capability"
-                                    ));
+                                    // UDP without ICMP receive capability is not functional
+                                    let error_msg = if cfg!(target_os = "linux") {
+                                        "UDP mode failed to enable IP_RECVERR and couldn't create raw ICMP socket.\n\
+                                         On Linux, UDP traceroute should work without root via IP_RECVERR.\n\
+                                         This might be a kernel configuration issue."
+                                    } else {
+                                        "UDP mode requires root privileges to create a raw ICMP socket for receiving responses.\n\
+                                         Without raw ICMP capability, UDP traceroute cannot function.\n\
+                                         Try running with sudo: sudo {}"
+                                    };
+
+                                    if user_specified_mode {
+                                        let args = std::env::args().collect::<Vec<_>>().join(" ");
+                                        return Err(anyhow!("{}", error_msg.replace("{}", &args)));
+                                    } else {
+                                        // Don't return a non-functional socket in automatic mode
+                                        return Err(anyhow!(
+                                            "UDP mode requires ICMP reception capability"
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -505,8 +542,10 @@ pub fn create_probe_socket_with_port(
         // Build OS-specific error message
         #[cfg(any(target_os = "macos", target_os = "freebsd"))]
         let os_name = std::env::consts::OS;
+        #[allow(unused_variables)]
         let running_as_root = is_root();
 
+        #[allow(unused_variables)]
         let cmd = std::env::args().collect::<Vec<_>>().join(" ");
 
         #[cfg(target_os = "linux")]

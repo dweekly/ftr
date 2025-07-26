@@ -105,9 +105,64 @@ jobs:
           name: ftr-deb-${{ matrix.target }}
           path: target/${{ matrix.target }}/debian/*.deb
 
+  build-windows:
+    name: Build Windows Binary
+    runs-on: windows-latest
+    # Run on tag push to create draft release with Windows binaries
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Create archive
+        shell: pwsh
+        run: |
+          $target = "${{ matrix.target }}"
+          $version = "${env:GITHUB_REF}" -replace "refs/tags/v", ""
+          $archiveName = "ftr-${version}-${target}.zip"
+          
+          # Create a directory for the archive contents
+          New-Item -ItemType Directory -Force -Path "archive"
+          
+          # Copy the binary
+          Copy-Item "target\${target}\release\ftr.exe" "archive\"
+          
+          # Copy README and LICENSE
+          Copy-Item "README.md" "archive\"
+          Copy-Item "LICENSE" "archive\"
+          
+          # Create the zip archive
+          Compress-Archive -Path "archive\*" -DestinationPath $archiveName
+          
+          # Output the archive name for the upload step
+          echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ftr-windows-${{ matrix.target }}
+          path: ${{ env.ARCHIVE_NAME }}
+
   create-release:
     name: Create Release
-    needs: build-deb
+    needs: [build-deb, build-windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +170,7 @@ jobs:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: ftr-deb-*
+          pattern: ftr-*
           merge-multiple: true
 
       - name: Create Release
@@ -123,13 +178,23 @@ jobs:
         with:
           files: |
             *.deb
+            *.zip
           draft: true  # Create as draft so release notes can be edited
           prerelease: false
           body: |
             ## Installation
 
+            ### Windows
+            Download the appropriate .zip file below for your architecture:
+            - `ftr-*-x86_64-pc-windows-msvc.zip` for 64-bit Intel/AMD
+            - `ftr-*-aarch64-pc-windows-msvc.zip` for ARM64
+
+            Extract the archive and add the directory to your PATH, or run `ftr.exe` directly.
+
             ### Debian/Ubuntu packages
-            Download the appropriate .deb file below for your architecture.
+            Download the appropriate .deb file below for your architecture:
+            - `ftr_*_amd64.deb` for 64-bit Intel/AMD
+            - `ftr_*_arm64.deb` for ARM64
 
             ### Other platforms
             - macOS: `brew tap dweekly/ftr && brew install ftr`

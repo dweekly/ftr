@@ -183,14 +183,17 @@ fn test_socket_mode_compatibility() {
 
     let output = cmd.output().unwrap();
 
-    // Should either work (if root) or fail with permission error
+    // Should either work (if root/admin) or fail with appropriate error
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(
             stderr.contains("requires root")
                 || stderr.contains("Permission denied")
-                || stderr.contains("Failed to create"),
-            "Expected permission-related error"
+                || stderr.contains("Failed to create")
+                || stderr.contains("not yet implemented on Windows")
+                || stderr.contains("not yet available"),
+            "Expected permission-related error or not implemented message, got: {}",
+            stderr
         );
     }
 }

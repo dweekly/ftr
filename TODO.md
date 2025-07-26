@@ -6,7 +6,7 @@ This file tracks planned work for the ftr project.
 
 - [ ] Add FreeBSD support
 - [ ] Add OpenBSD support  
-- [ ] Add Windows support
+- [x] Add Windows support (completed in v0.2.3)
 - [ ] Add missing tests for complex logic
   - UDP socket error handling
   - ICMP packet parsing edge cases
@@ -23,6 +23,11 @@ This file tracks planned work for the ftr project.
   - Add IPv6 support (ICMPv6, UDP6, TCP6)
   - Full UDP response handling on non-Linux platforms
   - Port selection option (-p/--port) for TCP/UDP
+- [ ] Windows-specific improvements
+  - Add UDP mode support for Windows
+  - Add Windows-specific integration tests
+  - Create MSI installer for Windows
+  - Test on Windows 10 (currently tested on Windows 11)
 
 ## Low Priority
 
