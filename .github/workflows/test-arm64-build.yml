@@ -1,0 +1,59 @@
+name: Test ARM64 Debian Build
+
+on:
+  push:
+    branches: [ hotfix/v0.2.3-arm64-build ]
+  workflow_dispatch:
+
+jobs:
+  test-arm64-build:
+    name: Test ARM64 Debian Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-unknown-linux-gnu
+
+      - name: Cache cargo-deb
+        id: cache-cargo-deb
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-deb
+          key: ${{ runner.os }}-cargo-deb-2.7.0
+
+      - name: Install cargo-deb
+        if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
+        run: cargo install cargo-deb --version 2.7.0
+
+      - name: Install cross-compilation tools for ARM64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config libssl-dev
+
+      - name: Build release binary
+        run: |
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+          export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+          cargo build --release --target aarch64-unknown-linux-gnu
+
+      - name: Build .deb package
+        run: |
+          # For cross-compilation, disable stripping to avoid strip format errors
+          cargo deb --target aarch64-unknown-linux-gnu --no-build --no-strip
+
+      - name: Upload .deb package
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-arm64-package
+          path: target/aarch64-unknown-linux-gnu/debian/*.deb
+          if-no-files-found: error
