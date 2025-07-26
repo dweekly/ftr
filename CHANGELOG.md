@@ -11,7 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Windows support (Windows 10/11, including ARM64)
-- Windows socket implementation using Winsock2 and Npcap
+  - Windows ICMP socket implementation using Windows ICMP API (IcmpCreateFile/IcmpSendEcho)
+  - Automatic Winsock initialization with thread-safe OnceLock pattern
+  - Windows-specific error handling and status code mapping
+  - Build script for Npcap SDK integration
+  - Support for both x64 and ARM64 Windows architectures
+- Windows-specific tests for socket functionality
 
 ## [0.2.2] - 2025-07-24
 
