@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.4] - TBD
+## [0.2.4] - 2025-01-27
 
 ### Added
 - FreeBSD support (FreeBSD 13.x and 14.x)
