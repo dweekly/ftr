@@ -67,21 +67,15 @@ jobs:
       - name: Prepare aptly directories and data
         run: |
           mkdir -p ~/.aptly/db ~/.aptly/public
-          echo "Downloading existing aptly database (if any)..."
-          rclone sync ":s3:${R2_BUCKET_NAME}/_aptly_db/" ~/.aptly/db/ --create-empty-src-dirs || echo "No existing aptly DB found or error syncing, proceeding..."
           
-          # Only download metadata files, not the actual .deb packages
-          echo "Downloading existing repository metadata..."
-          mkdir -p ~/.aptly/public/dists ~/.aptly/public/pool
+          # For now, start fresh each time to avoid corruption issues
+          # TODO: Implement proper state recovery once we have a stable APT repo
+          echo "Starting with fresh aptly database..."
           
-          # Download only the metadata structure (dists directory)
-          rclone sync ":s3:${R2_BUCKET_NAME}/dists/" ~/.aptly/public/dists/ --create-empty-src-dirs || echo "No existing dists found"
+          # Ensure aptly config exists
+          echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
+          echo "Created aptly.conf"
           
-          # Ensure aptly config exists, create a basic one if not
-          if [ ! -f ~/.aptly.conf ]; then
-            echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
-            echo "Created default aptly.conf"
-          fi
           aptly version # Verify aptly is working
 
       - name: Download release assets
@@ -115,14 +109,9 @@ jobs:
         env:
           APTLY_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }} # Pass GPG passphrase to aptly
         run: |
-          # Create local repo if it doesn't exist
-          if ! aptly repo show -with-packages "${APT_REPO_NAME}"; then
-            echo "Creating aptly local repo: ${APT_REPO_NAME}"
-            # Create repo with support for multiple architectures
-            aptly repo create -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${APT_REPO_NAME}"
-          else
-            echo "Aptly local repo ${APT_REPO_NAME} already exists."
-          fi
+          # Create local repo (fresh start)
+          echo "Creating aptly local repo: ${APT_REPO_NAME}"
+          aptly repo create -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${APT_REPO_NAME}"
 
           echo "Adding packages to ${APT_REPO_NAME}..."
           # Add all downloaded .deb files
@@ -136,19 +125,13 @@ jobs:
           aptly snapshot create "${SNAPSHOT_NAME}" from repo "${APT_REPO_NAME}"
 
           echo "Publishing snapshot..."
-          # Check if publication exists - empty prefix is shown as '.' in aptly publish list
-          PUBLISH_PREFIX="${APT_REPO_PREFIX:-.}"
+          # Since we're starting fresh, always create new publication
+          echo "Publishing snapshot ${SNAPSHOT_NAME} for ${APT_DISTRIBUTION}"
           
-          if ! aptly publish list -raw | grep -q "^${PUBLISH_PREFIX} ${APT_DISTRIBUTION}"; then
-             echo "Publishing new snapshot ${SNAPSHOT_NAME} for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}'"
-             if [ -z "${APT_REPO_PREFIX}" ]; then
-                aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}"
-             else
-                aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
-             fi
+          if [ -z "${APT_REPO_PREFIX}" ]; then
+             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}"
           else
-             echo "Switching existing publication for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}' to snapshot ${SNAPSHOT_NAME}"
-             aptly publish switch -gpg-key="${GPG_KEY_ID}" -component="${APT_COMPONENT}" "${APT_DISTRIBUTION}" "${APT_REPO_PREFIX}" "${SNAPSHOT_NAME}"
+             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
           fi
           
           # Cleanup old snapshots (optional, keep last 5 for example)
@@ -186,7 +169,9 @@ jobs:
             rclone copy ~/.aptly/public/networkweather.noarmor.gpg ":s3:${R2_BUCKET_NAME}/" --progress
           fi
 
-      - name: Sync aptly database back to R2
+      - name: Upload repository metadata to R2
         run: |
-          echo "Syncing ~/.aptly/db/ to R2 bucket ${R2_BUCKET_NAME}/_aptly_db/..."
-          rclone sync ~/.aptly/db/ ":s3:${R2_BUCKET_NAME}/_aptly_db/" --create-empty-src-dirs --progress --verbose
+          # For now, we don't sync the database back since we start fresh each time
+          # This avoids corruption issues
+          echo "APT repository published successfully!"
+          echo "Users can now install packages from: https://apt.networkweather.com/"
