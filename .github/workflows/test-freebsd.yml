@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        version: ['14.1', '13.4']
+        version: ['14.0', '13.3']
     steps:
     - uses: actions/checkout@v4
     
@@ -32,20 +32,24 @@ jobs:
         prepare: |
           echo "=== Preparing FreeBSD ${{ matrix.version }} environment ==="
           
-          # Update package database
-          pkg update -f
+          # Set environment variable to ignore OS version mismatch
+          export IGNORE_OSVERSION=yes
+          
+          # Update package database with IGNORE_OSVERSION
+          echo "Updating package database..."
+          env IGNORE_OSVERSION=yes pkg update -f || true
           
           # Install build dependencies
           echo "Installing build dependencies..."
-          pkg install -y rust openssl perl5 pkgconf
+          env IGNORE_OSVERSION=yes pkg install -y rust openssl perl5 pkgconf
           
           # Install runtime dependencies
           echo "Installing runtime dependencies..."
-          pkg install -y ca_root_nss
+          env IGNORE_OSVERSION=yes pkg install -y ca_root_nss
           
           # Install test utilities
           echo "Installing test utilities..."
-          pkg install -y jq
+          env IGNORE_OSVERSION=yes pkg install -y jq
           
         run: |
           echo "=== FreeBSD Test Suite ==="
