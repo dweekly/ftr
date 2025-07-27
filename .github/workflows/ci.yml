@@ -144,6 +144,8 @@ jobs:
       with:
         release: ${{ matrix.version }}
         usesh: true
+        # Note: vmactions/freebsd-vm runs as root user by default
+        # sudo is not installed, so we conditionally use it only when not root
         prepare: |
           # Set environment variable to ignore OS version mismatch
           export IGNORE_OSVERSION=yes
@@ -199,12 +201,25 @@ jobs:
           
           # Test with root (only basic tests due to CI limitations)
           echo "Testing with root privileges..."
-          sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          if [ "$(id -u)" = "0" ]; then
+            # Already root, no sudo needed
+            ./target/release/ftr --max-hops 3 127.0.0.1
+          else
+            sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          fi
           
           # Test JSON output
           echo "Testing JSON output..."
-          sudo ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+          if [ "$(id -u)" = "0" ]; then
+            ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+          else
+            sudo ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+          fi
           
           # Test verbose mode
           echo "Testing verbose mode..."
-          sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep "Using Raw ICMP"
+          if [ "$(id -u)" = "0" ]; then
+            ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep "Using Raw ICMP"
+          else
+            sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep "Using Raw ICMP"
+          fi

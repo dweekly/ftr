@@ -256,7 +256,10 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 - Must use `scp`, `rsync`, or `tar` to transfer files
 - Example workflow:
   ```bash
-  # Create tarball and copy to FreeBSD
+  # Using rsync (preferred if available)
+  rsync -avz --exclude target --exclude .git -e "ssh -i ~/.ssh/ftr_vm_key" . ftr@192.168.53.178:~/ftr/
+  
+  # Or using tar
   tar -czf /tmp/ftr-latest.tar.gz --exclude target --exclude .git .
   scp -i ~/.ssh/ftr_vm_key /tmp/ftr-latest.tar.gz ftr@192.168.53.178:~/
   ssh -i ~/.ssh/ftr_vm_key ftr@192.168.53.178 'cd ~/ && tar -xzf ftr-latest.tar.gz -C ~/ftr/'
@@ -264,6 +267,12 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
   # Run tests on FreeBSD
   ssh -i ~/.ssh/ftr_vm_key ftr@192.168.53.178 'cd ~/ftr && cargo test --all'
   ```
+
+### CI Environment Notes
+- **GitHub Actions FreeBSD runner runs as root**: The vmactions/freebsd-vm action runs as root user
+  - Non-root error tests need to check if running as root first
+  - sudo is not installed by default on the FreeBSD CI runner
+  - CI scripts should use conditional logic: if root, run directly; otherwise use sudo
 
 ## General Best Practices
 1. Always read files before editing them

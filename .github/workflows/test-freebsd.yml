@@ -127,12 +127,21 @@ jobs:
           
           # Basic localhost test
           echo "Testing localhost traceroute..."
-          sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          if [ "$(id -u)" = "0" ]; then
+            ./target/release/ftr --max-hops 3 127.0.0.1
+          else
+            sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          fi
           echo "✓ Localhost traceroute works"
           
           # Test verbose mode
           echo "Testing verbose mode..."
-          if sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep -q "Using Raw ICMP IPv4 mode"; then
+          if [ "$(id -u)" = "0" ]; then
+            VERBOSE_OUTPUT=$(./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1)
+          else
+            VERBOSE_OUTPUT=$(sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1)
+          fi
+          if echo "$VERBOSE_OUTPUT" | grep -q "Using Raw ICMP IPv4 mode"; then
             echo "✓ Verbose mode shows correct socket type"
           else
             echo "✗ Verbose mode output incorrect"
@@ -141,7 +150,11 @@ jobs:
           
           # Test JSON output
           echo "Testing JSON output..."
-          JSON_OUTPUT=$(sudo ./target/release/ftr --json --max-hops 1 127.0.0.1)
+          if [ "$(id -u)" = "0" ]; then
+            JSON_OUTPUT=$(./target/release/ftr --json --max-hops 1 127.0.0.1)
+          else
+            JSON_OUTPUT=$(sudo ./target/release/ftr --json --max-hops 1 127.0.0.1)
+          fi
           if echo "$JSON_OUTPUT" | jq -e '.protocol == "ICMP" and .socket_mode == "Raw"' > /dev/null; then
             echo "✓ JSON output correct"
           else
@@ -152,7 +165,12 @@ jobs:
           
           # Test enrichment features (if network available)
           echo "Testing enrichment features..."
-          if sudo ./target/release/ftr --max-hops 3 8.8.8.8 2>&1 | grep -q "Detected public IP"; then
+          if [ "$(id -u)" = "0" ]; then
+            ENRICHMENT_OUTPUT=$(./target/release/ftr --max-hops 3 8.8.8.8 2>&1)
+          else
+            ENRICHMENT_OUTPUT=$(sudo ./target/release/ftr --max-hops 3 8.8.8.8 2>&1)
+          fi
+          if echo "$ENRICHMENT_OUTPUT" | grep -q "Detected public IP"; then
             echo "✓ Public IP detection works"
           else
             echo "⚠ Public IP detection may have failed (network issue?)"
