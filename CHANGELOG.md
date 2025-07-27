@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- OpenBSD support (testing and compatibility verification)
+
 ## [0.2.4] - 2025-01-27
 
 ### Added
