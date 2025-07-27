@@ -56,6 +56,10 @@ windows-sys = { version = "0.60", features = ["Win32_NetworkManagement_IpHelper"
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
+serde_json = "1.0"
+
+[target.'cfg(target_os = "freebsd")'.dev-dependencies]
+libc = "0.2"
 
 [lints.clippy]
 # Deny correctness issues (lower priority so specific lints can override)

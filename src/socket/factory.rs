@@ -707,4 +707,78 @@ mod tests {
             eprintln!("UDP socket creation failed (may be due to test environment)");
         }
     }
+
+    #[test]
+    fn test_has_non_root_capability() {
+        let has_capability = has_non_root_capability();
+
+        #[cfg(target_os = "linux")]
+        assert!(has_capability, "Linux should have non-root capability");
+
+        #[cfg(target_os = "macos")]
+        assert!(has_capability, "macOS should have non-root capability");
+
+        #[cfg(target_os = "windows")]
+        assert!(has_capability, "Windows should have non-root capability");
+
+        #[cfg(target_os = "freebsd")]
+        assert!(
+            !has_capability,
+            "FreeBSD should NOT have non-root capability"
+        );
+
+        #[cfg(target_os = "openbsd")]
+        assert!(
+            !has_capability,
+            "OpenBSD should NOT have non-root capability"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "freebsd")]
+    fn test_freebsd_dgram_icmp_not_supported() {
+        // Test that DGRAM ICMP is marked as NotSupported on FreeBSD
+        let compat = get_compatibility(ProbeProtocol::Icmp, SocketMode::Dgram);
+        assert_eq!(compat, Compatibility::NotSupported);
+    }
+
+    #[test]
+    #[cfg(target_os = "freebsd")]
+    fn test_freebsd_raw_icmp_requires_root() {
+        // Test that Raw ICMP requires root on FreeBSD
+        let compat = get_compatibility(ProbeProtocol::Icmp, SocketMode::Raw);
+        assert_eq!(compat, Compatibility::RequiresRoot);
+    }
+
+    #[test]
+    #[cfg(target_os = "freebsd")]
+    fn test_freebsd_tcp_stream_works() {
+        // Test that TCP Stream mode works without root on FreeBSD
+        let compat = get_compatibility(ProbeProtocol::Tcp, SocketMode::Stream);
+        assert_eq!(compat, Compatibility::Works);
+    }
+
+    #[test]
+    #[cfg(target_os = "freebsd")]
+    fn test_freebsd_socket_creation_error() {
+        if is_root() {
+            eprintln!("Skipping non-root error test - running as root");
+            return;
+        }
+
+        let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+
+        // Try to create with DGRAM ICMP specifically
+        let result =
+            create_probe_socket_with_mode(ipv4, Some(ProbeProtocol::Icmp), Some(SocketMode::Dgram));
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("not supported"),
+            "Expected 'not supported' error for DGRAM ICMP on FreeBSD, got: {}",
+            err_str
+        );
+    }
 }
