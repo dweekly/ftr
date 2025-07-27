@@ -772,13 +772,14 @@ mod tests {
         let result =
             create_probe_socket_with_mode(ipv4, Some(ProbeProtocol::Icmp), Some(SocketMode::Dgram));
 
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        let err_str = err.to_string();
-        assert!(
-            err_str.contains("not supported"),
-            "Expected 'not supported' error for DGRAM ICMP on FreeBSD, got: {}",
-            err_str
-        );
+        assert!(result.is_err(), "Expected error for DGRAM ICMP on FreeBSD");
+        if let Err(err) = result {
+            let err_str = err.to_string();
+            assert!(
+                err_str.contains("not supported"),
+                "Expected 'not supported' error for DGRAM ICMP on FreeBSD, got: {}",
+                err_str
+            );
+        }
     }
 }
