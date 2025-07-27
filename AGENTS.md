@@ -239,8 +239,31 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 
 ### VM Development Workflow
 - Build on the target platform (e.g., build Linux binaries on Linux VM)
-- Use the shared mount to access source code and scripts
+- Use the shared mount to access source code and scripts (except FreeBSD - see note below)
 - Results and outputs are immediately available on both host and VM
+
+### Platform-Specific Testing
+- **CRITICAL**: Always test platform-specific code on the target VM before pushing
+- Platform-specific tests (e.g., `#[cfg(target_os = "freebsd")]`) are NOT compiled or run on other platforms
+- Before pushing changes that include platform-specific code:
+  1. Copy/sync the code to the target VM
+  2. Run `cargo test --all` on the VM
+  3. Verify the specific functionality works as expected
+- Example: FreeBSD-specific tests will only compile and run on FreeBSD, not on macOS/Linux
+
+### FreeBSD VM Special Notes
+- **No Parallels Tools support**: FreeBSD VMs do not have shared directory support
+- Must use `scp`, `rsync`, or `tar` to transfer files
+- Example workflow:
+  ```bash
+  # Create tarball and copy to FreeBSD
+  tar -czf /tmp/ftr-latest.tar.gz --exclude target --exclude .git .
+  scp -i ~/.ssh/ftr_vm_key /tmp/ftr-latest.tar.gz ftr@192.168.53.178:~/
+  ssh -i ~/.ssh/ftr_vm_key ftr@192.168.53.178 'cd ~/ && tar -xzf ftr-latest.tar.gz -C ~/ftr/'
+  
+  # Run tests on FreeBSD
+  ssh -i ~/.ssh/ftr_vm_key ftr@192.168.53.178 'cd ~/ftr && cargo test --all'
+  ```
 
 ## General Best Practices
 1. Always read files before editing them
