@@ -3,7 +3,6 @@
 [![Crates.io](https://img.shields.io/crates/v/ftr.svg)](https://crates.io/crates/ftr)
 [![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/ftr/blob/main/LICENSE)
 [![CI](https://github.com/dweekly/ftr/workflows/CI/badge.svg)](https://github.com/dweekly/ftr/actions)
-[![FreeBSD](https://github.com/dweekly/ftr/actions/workflows/test-freebsd.yml/badge.svg)](https://github.com/dweekly/ftr/actions/workflows/test-freebsd.yml)
 [![codecov](https://codecov.io/gh/dweekly/ftr/graph/badge.svg)](https://codecov.io/gh/dweekly/ftr)
 
 A fast, parallel ICMP traceroute implementation with ASN lookup.
