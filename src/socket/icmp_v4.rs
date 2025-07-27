@@ -273,7 +273,7 @@ impl RawIcmpV4Socket {
         socket.set_read_timeout(Some(Duration::from_millis(100)))?;
 
         // Enable IP_HDRINCL to include IP header
-        #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
         {
             use std::os::unix::io::AsRawFd;
             unsafe {

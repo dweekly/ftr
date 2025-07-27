@@ -24,6 +24,18 @@ Without these hooks, code with formatting issues or clippy warnings can be commi
 - **NEVER run `git rebase -i`** - Interactive commands don't work in non-interactive environments.
 - **NEVER modify `.git/config`** - The user has specifically configured their git settings.
 
+### File and Data Operations to NEVER Perform
+- **NEVER delete files without explicit user approval** - This includes:
+  - Local files on any system
+  - Remote files (S3, R2, cloud storage, servers)
+  - Database records
+  - Any data that cannot be easily recovered
+- **When testing APIs or permissions**:
+  - Only use read operations (list, get, describe)
+  - Create test files with clearly temporary names (e.g., `test-temp-can-delete-*.txt`)
+  - Never delete existing files "just to test" delete permissions
+  - Always ask for permission before any destructive operation
+
 ## Environment Configuration
 
 ### Building on Windows with Parallels Mount
