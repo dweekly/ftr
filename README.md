@@ -17,7 +17,7 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 - **CGNAT aware** - Properly handles Carrier Grade NAT (100.64.0.0/10)
 - **Early exit optimization** - Completes instantly when destination is reached
 - **Minimal dependencies** - Built with efficiency in mind
-- **Cross-platform** - Works on Linux, macOS, Windows, and FreeBSD
+- **Cross-platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
 
 ## Installation
 
@@ -147,6 +147,53 @@ sudo chmod u+s /usr/local/bin/ftr
 ftr google.com
 ```
 
+### OpenBSD
+
+#### Using pkg_add
+
+```bash
+# Install from OpenBSD ports (when available)
+pkg_add ftr
+```
+
+#### Building from Source
+
+**Build Dependencies:**
+```bash
+# Required for building
+pkg_add rust git
+
+# Optional but recommended
+pkg_add rsync jq
+```
+
+**Build and Install:**
+```bash
+# Clone and build
+git clone https://github.com/dweekly/ftr
+cd ftr
+cargo build --release
+
+# Install the binary
+doas cp target/release/ftr /usr/local/bin/
+```
+
+**Important Notes:**
+- OpenBSD requires **root privileges** for all traceroute operations (no unprivileged ICMP support)
+- Works identically to FreeBSD - requires root/doas for all operations
+
+**Usage on OpenBSD:**
+```bash
+# Must run as root
+doas ftr google.com
+
+# Or make the binary setuid root
+doas chown root:wheel /usr/local/bin/ftr
+doas chmod u+s /usr/local/bin/ftr
+# Then run normally
+ftr google.com
+```
+
 ### Using Cargo
 
 ```bash
@@ -206,6 +253,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
   - **macOS**: Root privileges may be required for raw socket access
   - **Windows**: No additional requirements (uses native Windows ICMP API)
   - **FreeBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
+  - **OpenBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
 
 ### Privilege Requirements
 

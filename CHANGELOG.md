@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- OpenBSD support (testing and compatibility verification)
+- OpenBSD support (OpenBSD 7.x)
+  - Raw ICMP socket implementation with IP_HDRINCL support
+  - Requires root privileges (identical behavior to FreeBSD)
+  - Tested on OpenBSD 7.7 ARM64
 
 ## [0.2.4] - 2025-01-27
 
