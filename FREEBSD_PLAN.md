@@ -127,9 +127,10 @@ Since FreeBSD does NOT support DGRAM ICMP, we need a different approach:
    ```
 
 3. **CI Integration**:
-   - Use `vmactions/freebsd-vm` GitHub Action for FreeBSD testing
-   - Configure for FreeBSD 13.x (stable) and 14.x (current)
-   - Add FreeBSD-specific smoke tests with `#[cfg(target_os="freebsd")]`
+   - ✅ Use `vmactions/freebsd-vm` GitHub Action for FreeBSD testing
+   - ✅ Configure for FreeBSD 13.x (stable) and 14.x (current)
+   - ✅ Add FreeBSD-specific smoke tests with `#[cfg(target_os="freebsd")]`
+   - ✅ Added to main CI workflow and separate FreeBSD test workflow
 
 ### Phase 5: Documentation
 

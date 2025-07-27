@@ -130,3 +130,64 @@ jobs:
         toolchain: 1.82.0
     - name: Check MSRV
       run: cargo check --all-features
+
+  freebsd:
+    name: FreeBSD
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ['14.1', '13.4']
+    steps:
+    - uses: actions/checkout@v4
+    - name: Test on FreeBSD ${{ matrix.version }}
+      uses: vmactions/freebsd-vm@v1
+      with:
+        release: ${{ matrix.version }}
+        usesh: true
+        prepare: |
+          # Install build dependencies
+          pkg install -y rust openssl perl5 pkgconf
+          # Install runtime dependencies
+          pkg install -y ca_root_nss
+        run: |
+          # Show environment info
+          echo "FreeBSD version:"
+          freebsd-version
+          echo "Rust version:"
+          rustc --version
+          echo "Cargo version:"
+          cargo --version
+          
+          # Build the project
+          echo "Building ftr..."
+          cargo build --release --verbose
+          
+          # Run unit tests
+          echo "Running unit tests..."
+          cargo test --lib --verbose
+          
+          # Run FreeBSD-specific tests
+          echo "Running FreeBSD-specific tests..."
+          cargo test --lib socket::factory::tests::test_freebsd
+          cargo test --lib socket::factory::tests::test_has_non_root_capability
+          
+          # Test that non-root execution fails appropriately
+          echo "Testing non-root error..."
+          if ./target/release/ftr 127.0.0.1 2>&1 | grep -q "requires root privileges"; then
+            echo "✓ Non-root error message correct"
+          else
+            echo "✗ Non-root error message incorrect"
+            exit 1
+          fi
+          
+          # Test with root (only basic tests due to CI limitations)
+          echo "Testing with root privileges..."
+          sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          
+          # Test JSON output
+          echo "Testing JSON output..."
+          sudo ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+          
+          # Test verbose mode
+          echo "Testing verbose mode..."
+          sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep "Using Raw ICMP"

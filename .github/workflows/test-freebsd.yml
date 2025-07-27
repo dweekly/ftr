@@ -1,0 +1,137 @@
+name: FreeBSD Tests
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/socket/**'
+      - 'Cargo.toml'
+      - '.github/workflows/test-freebsd.yml'
+  pull_request:
+    paths:
+      - 'src/socket/**'
+      - 'Cargo.toml'
+      - '.github/workflows/test-freebsd.yml'
+
+jobs:
+  test-freebsd:
+    name: Test on FreeBSD ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['14.1', '13.4']
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Test on FreeBSD ${{ matrix.version }}
+      uses: vmactions/freebsd-vm@v1
+      with:
+        release: ${{ matrix.version }}
+        usesh: true
+        prepare: |
+          echo "=== Preparing FreeBSD ${{ matrix.version }} environment ==="
+          
+          # Update package database
+          pkg update -f
+          
+          # Install build dependencies
+          echo "Installing build dependencies..."
+          pkg install -y rust openssl perl5 pkgconf
+          
+          # Install runtime dependencies
+          echo "Installing runtime dependencies..."
+          pkg install -y ca_root_nss
+          
+          # Install test utilities
+          echo "Installing test utilities..."
+          pkg install -y jq
+          
+        run: |
+          echo "=== FreeBSD Test Suite ==="
+          echo "FreeBSD version: $(freebsd-version)"
+          echo "Rust version: $(rustc --version)"
+          echo "Cargo version: $(cargo --version)"
+          echo
+          
+          # Build in release mode
+          echo "=== Building ftr in release mode ==="
+          cargo build --release --verbose
+          
+          # Run all unit tests
+          echo "=== Running unit tests ==="
+          cargo test --lib --verbose
+          
+          # Run FreeBSD-specific unit tests
+          echo "=== Running FreeBSD-specific unit tests ==="
+          cargo test --lib freebsd -- --nocapture
+          
+          # Build and run integration tests (non-root)
+          echo "=== Running non-root integration tests ==="
+          
+          # Test help
+          ./target/release/ftr --help > /dev/null
+          echo "✓ Help command works"
+          
+          # Test version
+          ./target/release/ftr --version > /dev/null
+          echo "✓ Version command works"
+          
+          # Test non-root error
+          if ./target/release/ftr 127.0.0.1 2>&1 | grep -q "Error: ftr requires root privileges on freebsd"; then
+            echo "✓ Non-root error message correct"
+          else
+            echo "✗ Non-root error message incorrect"
+            ./target/release/ftr 127.0.0.1 2>&1
+            exit 1
+          fi
+          
+          # Test socket mode error
+          if ./target/release/ftr --socket-mode dgram --protocol icmp 127.0.0.1 2>&1 | grep -q "requires root privileges"; then
+            echo "✓ DGRAM ICMP error handling correct"
+          else
+            echo "✗ DGRAM ICMP error handling incorrect"
+            exit 1
+          fi
+          
+          # Run root tests
+          echo "=== Running root privilege tests ==="
+          
+          # Basic localhost test
+          echo "Testing localhost traceroute..."
+          sudo ./target/release/ftr --max-hops 3 127.0.0.1
+          echo "✓ Localhost traceroute works"
+          
+          # Test verbose mode
+          echo "Testing verbose mode..."
+          if sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep -q "Using Raw ICMP IPv4 mode"; then
+            echo "✓ Verbose mode shows correct socket type"
+          else
+            echo "✗ Verbose mode output incorrect"
+            exit 1
+          fi
+          
+          # Test JSON output
+          echo "Testing JSON output..."
+          JSON_OUTPUT=$(sudo ./target/release/ftr --json --max-hops 1 127.0.0.1)
+          if echo "$JSON_OUTPUT" | jq -e '.protocol == "ICMP" and .socket_mode == "Raw"' > /dev/null; then
+            echo "✓ JSON output correct"
+          else
+            echo "✗ JSON output incorrect"
+            echo "$JSON_OUTPUT"
+            exit 1
+          fi
+          
+          # Test enrichment features (if network available)
+          echo "Testing enrichment features..."
+          if sudo ./target/release/ftr --max-hops 3 8.8.8.8 2>&1 | grep -q "Detected public IP"; then
+            echo "✓ Public IP detection works"
+          else
+            echo "⚠ Public IP detection may have failed (network issue?)"
+          fi
+          
+          # Run cargo test with all features
+          echo "=== Running all tests with features ==="
+          cargo test --all-features --verbose
+          
+          echo "=== All FreeBSD tests completed successfully ==="
