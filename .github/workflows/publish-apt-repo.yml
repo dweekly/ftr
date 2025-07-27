@@ -60,15 +60,19 @@ jobs:
           # Debug: Test R2 connection
           echo "Testing R2 bucket access..."
           echo "Bucket name: ${R2_BUCKET_NAME}"
+          echo "Bucket name length: ${#R2_BUCKET_NAME}"
           echo "Endpoint: ${RCLONE_S3_ENDPOINT}"
+          echo "Access Key ID starts with: ${RCLONE_S3_ACCESS_KEY_ID:0:8}..."
           
           # Try to list the bucket
           echo "Listing bucket contents:"
           rclone ls ":s3:${R2_BUCKET_NAME}/" --max-depth 1 || echo "Failed to list bucket"
           
-          # Try to create a test directory
+          # Test write access (R2 doesn't allow bucket operations)
           echo "Testing write access:"
-          rclone mkdir ":s3:${R2_BUCKET_NAME}/_test/" || echo "Failed to create test directory"
+          echo "test" > /tmp/test-apt-workflow.txt
+          rclone copy /tmp/test-apt-workflow.txt ":s3:${R2_BUCKET_NAME}/" --s3-no-check-bucket -v || echo "Failed to upload test file"
+          rm -f /tmp/test-apt-workflow.txt
 
       - name: Import GPG Key
         uses: crazy-max/ghaction-import-gpg@v6
@@ -161,25 +165,25 @@ jobs:
             POOL_PATH="pool/${APT_COMPONENT}/${DEB_FILENAME:0:1}/${CARGO_PKG_NAME}/"
             
             echo "Uploading $DEB_FILENAME to $POOL_PATH"
-            rclone mkdir ":s3:${R2_BUCKET_NAME}/${POOL_PATH}"
-            rclone copy "$deb" ":s3:${R2_BUCKET_NAME}/${POOL_PATH}" --progress
+            # Note: R2 doesn't support mkdir, directories are created automatically
+            rclone copy "$deb" ":s3:${R2_BUCKET_NAME}/${POOL_PATH}" --s3-no-check-bucket --progress
           done
           
           echo "Uploading updated metadata to R2..."
           # Only sync the dists directory (metadata)
-          rclone sync ~/.aptly/public/dists/ ":s3:${R2_BUCKET_NAME}/dists/" --create-empty-src-dirs --progress
+          rclone sync ~/.aptly/public/dists/ ":s3:${R2_BUCKET_NAME}/dists/" --s3-no-check-bucket --create-empty-src-dirs --progress
           
           # Also ensure the GPG keys exist
           if [ ! -f ~/.aptly/public/networkweather.gpg.key ]; then
             echo "Exporting GPG public key (armored)..."
             gpg --armor --export "${GPG_KEY_ID}" > ~/.aptly/public/networkweather.gpg.key
-            rclone copy ~/.aptly/public/networkweather.gpg.key ":s3:${R2_BUCKET_NAME}/" --progress
+            rclone copy ~/.aptly/public/networkweather.gpg.key ":s3:${R2_BUCKET_NAME}/" --s3-no-check-bucket --progress
           fi
           
           if [ ! -f ~/.aptly/public/networkweather.noarmor.gpg ]; then
             echo "Exporting GPG public key (dearmored)..."
             gpg --export "${GPG_KEY_ID}" > ~/.aptly/public/networkweather.noarmor.gpg
-            rclone copy ~/.aptly/public/networkweather.noarmor.gpg ":s3:${R2_BUCKET_NAME}/" --progress
+            rclone copy ~/.aptly/public/networkweather.noarmor.gpg ":s3:${R2_BUCKET_NAME}/" --s3-no-check-bucket --progress
           fi
 
       - name: Upload repository metadata to R2
