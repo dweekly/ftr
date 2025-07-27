@@ -56,6 +56,19 @@ jobs:
         run: |
           rclone version # Verifies rclone can see S3 env vars (RCLONE_S3_*)
           # No explicit rclone config file needed when using env vars for S3 provider
+          
+          # Debug: Test R2 connection
+          echo "Testing R2 bucket access..."
+          echo "Bucket name: ${R2_BUCKET_NAME}"
+          echo "Endpoint: ${RCLONE_S3_ENDPOINT}"
+          
+          # Try to list the bucket
+          echo "Listing bucket contents:"
+          rclone ls ":s3:${R2_BUCKET_NAME}/" --max-depth 1 || echo "Failed to list bucket"
+          
+          # Try to create a test directory
+          echo "Testing write access:"
+          rclone mkdir ":s3:${R2_BUCKET_NAME}/_test/" || echo "Failed to create test directory"
 
       - name: Import GPG Key
         uses: crazy-max/ghaction-import-gpg@v6
