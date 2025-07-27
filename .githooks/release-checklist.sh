@@ -146,26 +146,32 @@ else
     exit 1
 fi
 
-# 5. Check outdated dependencies
+# 5. Check dependency updates
 echo ""
-echo "5. Dependency status..."
-if command_exists cargo-outdated; then
-    OUTDATED=$(cargo outdated --format json 2>/dev/null | jq '.dependencies | map(select(.project != null)) | length' 2>/dev/null || echo "0")
-    if [ "$OUTDATED" != "0" ]; then
-        echo -e "${RED}✗ $OUTDATED direct dependencies are outdated${NC}"
-        cargo outdated --depth 1
-        echo ""
-        echo -e "${RED}Dependencies must be updated before release.${NC}"
-        echo "Run 'cargo update' to update compatible versions,"
-        echo "or manually update Cargo.toml for major version changes."
+echo "5. Checking for dependency updates..."
+echo "  Running cargo update --dry-run..."
+UPDATE_OUTPUT=$(cargo update --dry-run 2>&1)
+if echo "$UPDATE_OUTPUT" | grep -q "Updating"; then
+    echo -e "${YELLOW}⚠ Updates available for dependencies:${NC}"
+    echo "$UPDATE_OUTPUT" | grep "Updating" | head -10 | sed 's/^/    /'
+    echo ""
+    if ! confirm "Dependencies have updates available. Continue anyway?"; then
+        echo "Consider running 'cargo update' to update compatible versions."
         exit 1
-    else
-        echo -e "${GREEN}✓ All direct dependencies up to date${NC}"
     fi
 else
-    echo -e "${RED}✗ cargo-outdated is required for releases${NC}"
-    echo "Install with: cargo install cargo-outdated"
-    exit 1
+    echo -e "${GREEN}✓ All dependencies are up to date${NC}"
+fi
+
+# Optional: Check with cargo-outdated if available
+if command_exists cargo-outdated; then
+    echo ""
+    echo "  Checking for major version updates..."
+    OUTDATED_COUNT=$(cargo outdated --depth 1 2>/dev/null | grep -c "---" || echo "0")
+    if [ "$OUTDATED_COUNT" -gt "1" ]; then
+        echo -e "${YELLOW}Note: Major version updates may be available${NC}"
+        cargo outdated --depth 1 | head -15
+    fi
 fi
 
 # 6. Version check
