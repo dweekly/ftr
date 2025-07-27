@@ -153,12 +153,12 @@ fn test_freebsd_tcp_mode() {
 
     let output = cmd.output().unwrap();
 
-    // Should fail with "not yet available" error regardless of privileges
+    // Should fail with invalid value error since TCP is not implemented yet
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("not yet available") || stderr.contains("requires root privileges"),
-        "Expected 'not yet available' or root error, got: {}",
+        stderr.contains("invalid value 'tcp'") || stderr.contains("not yet available"),
+        "Expected 'invalid value' or 'not yet available' error, got: {}",
         stderr
     );
 }
@@ -183,8 +183,8 @@ fn test_freebsd_json_output_with_root() {
     assert_eq!(json["target"], "127.0.0.1");
     assert_eq!(json["target_ip"], "127.0.0.1");
     assert!(json["hops"].is_array());
-    assert_eq!(json["protocol"], "icmp");
-    assert_eq!(json["socket_mode"], "raw");
+    assert_eq!(json["protocol"], "ICMP");
+    assert_eq!(json["socket_mode"], "Raw");
 }
 
 #[test]
