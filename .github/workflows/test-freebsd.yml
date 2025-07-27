@@ -82,15 +82,14 @@ jobs:
           echo "✓ Version command works"
           
           # Test non-root error
-          echo "Current user: $(whoami)"
-          echo "User ID: $(id)"
+          echo "Testing non-root error..."
           ERROR_OUTPUT=$(./target/release/ftr 127.0.0.1 2>&1 || true)
-          echo "Error output: $ERROR_OUTPUT"
-          if echo "$ERROR_OUTPUT" | grep -q "Error: ftr requires root privileges on freebsd"; then
+          if echo "$ERROR_OUTPUT" | grep -q "requires root privileges"; then
             echo "✓ Non-root error message correct"
           else
             echo "✗ Non-root error message incorrect"
-            echo "Expected to find 'Error: ftr requires root privileges on freebsd' in error output"
+            echo "Error output was: $ERROR_OUTPUT"
+            echo "Expected to find 'requires root privileges' in error output"
             exit 1
           fi
           

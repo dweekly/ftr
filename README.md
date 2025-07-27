@@ -230,7 +230,7 @@ sudo sysctl -w net.ipv4.ping_group_range="0 65535"
   - **Linux**: Standard build tools (gcc/clang, make)
   - **macOS**: Xcode Command Line Tools
   - **Windows**: Visual Studio Build Tools or MinGW
-  - **FreeBSD**: `pkg install -y rust openssl perl5 pkgconf`
+  - **FreeBSD**: `pkg install -y rust openssl perl5 pkgconf rsync`
   - **OpenBSD**: `pkg_add rust`
 
 ### Build Steps
