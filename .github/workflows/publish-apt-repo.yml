@@ -42,17 +42,17 @@ jobs:
       - name: Install aptly
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget ca-certificates jq curl
+          sudo apt-get install -y wget ca-certificates jq curl unzip
 
           # Get the latest aptly release version from GitHub
           APTLY_VERSION=$(curl -s https://api.github.com/repos/aptly-dev/aptly/releases/latest | jq -r .tag_name | sed 's/^v//')
           echo "Installing aptly version: ${APTLY_VERSION}"
           
-          # Download and install aptly from GitHub releases
-          wget -q https://github.com/aptly-dev/aptly/releases/download/v${APTLY_VERSION}/aptly_${APTLY_VERSION}_linux_amd64.tar.gz
-          tar xzf aptly_${APTLY_VERSION}_linux_amd64.tar.gz
-          sudo mv aptly_${APTLY_VERSION}_linux_amd64/aptly /usr/local/bin/
-          rm -rf aptly_${APTLY_VERSION}_linux_amd64*
+          # Download and install aptly from GitHub releases (now using .zip)
+          wget -q https://github.com/aptly-dev/aptly/releases/download/v${APTLY_VERSION}/aptly_${APTLY_VERSION}_linux_amd64.zip
+          unzip -q aptly_${APTLY_VERSION}_linux_amd64.zip
+          sudo mv aptly /usr/local/bin/
+          rm -rf aptly_${APTLY_VERSION}_linux_amd64.zip
           
           # Verify installation
           aptly version
