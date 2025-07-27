@@ -167,7 +167,7 @@ fi
 if command_exists cargo-outdated; then
     echo ""
     echo "  Checking for major version updates..."
-    OUTDATED_COUNT=$(cargo outdated --depth 1 2>/dev/null | grep -c "---" || echo "0")
+    OUTDATED_COUNT=$(cargo outdated --depth 1 2>/dev/null | grep -c "^---" || echo "0")
     if [ "$OUTDATED_COUNT" -gt "1" ]; then
         echo -e "${YELLOW}Note: Major version updates may be available${NC}"
         cargo outdated --depth 1 | head -15
