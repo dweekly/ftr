@@ -18,7 +18,7 @@ const EPERM: i32 = 1; // Operation not permitted
 const EACCES: i32 = 13; // Permission denied
 
 /// Check if running as root
-fn is_root() -> bool {
+pub fn is_root() -> bool {
     #[cfg(target_os = "linux")]
     {
         unsafe { libc::geteuid() == 0 }
@@ -40,6 +40,46 @@ fn is_root() -> bool {
     #[cfg(not(any(unix, target_os = "windows")))]
     {
         // Unknown platform, assume not root
+        false
+    }
+}
+
+/// Check if the current platform has any non-root traceroute capability
+pub fn has_non_root_capability() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // Linux has UDP with IP_RECVERR and DGRAM ICMP with ping group
+        true
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // macOS has DGRAM ICMP without root
+        true
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // Windows allows raw ICMP without admin
+        true
+    }
+    #[cfg(target_os = "freebsd")]
+    {
+        // FreeBSD has no non-root ICMP capability
+        false
+    }
+    #[cfg(target_os = "openbsd")]
+    {
+        // OpenBSD has no non-root ICMP capability
+        false
+    }
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "freebsd",
+        target_os = "openbsd"
+    )))]
+    {
+        // Unknown platform, assume no non-root capability
         false
     }
 }
@@ -89,7 +129,7 @@ fn get_compatibility(protocol: ProbeProtocol, socket_mode: SocketMode) -> Compat
     {
         match (protocol, socket_mode) {
             (ProbeProtocol::Icmp, SocketMode::Raw) => RequiresRoot,
-            (ProbeProtocol::Icmp, SocketMode::Dgram) => Works,
+            (ProbeProtocol::Icmp, SocketMode::Dgram) => NotSupported, // FreeBSD doesn't support DGRAM ICMP
             (ProbeProtocol::Udp, SocketMode::Raw) => RequiresRoot,
             (ProbeProtocol::Udp, SocketMode::Dgram) => RequiresRoot, // Needs raw ICMP receive
             (ProbeProtocol::Tcp, SocketMode::Raw) => RequiresRoot,
@@ -268,10 +308,15 @@ pub fn create_probe_socket_with_port(
                     // Linux: UDP works without root via IP_RECVERR
                     vec![ProbeProtocol::Udp, ProbeProtocol::Icmp, ProbeProtocol::Tcp]
                 }
-                #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+                #[cfg(target_os = "macos")]
                 {
-                    // macOS/FreeBSD: DGRAM ICMP works without root
+                    // macOS: DGRAM ICMP works without root
                     vec![ProbeProtocol::Icmp, ProbeProtocol::Tcp, ProbeProtocol::Udp]
+                }
+                #[cfg(target_os = "freebsd")]
+                {
+                    // FreeBSD: No DGRAM ICMP, TCP works without root
+                    vec![ProbeProtocol::Tcp, ProbeProtocol::Udp, ProbeProtocol::Icmp]
                 }
                 #[cfg(target_os = "windows")]
                 {
@@ -540,8 +585,6 @@ pub fn create_probe_socket_with_port(
         Err(last_error.unwrap_or_else(|| anyhow!("Failed to create requested socket mode")))
     } else {
         // Build OS-specific error message
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
-        let os_name = std::env::consts::OS;
         #[allow(unused_variables)]
         let running_as_root = is_root();
 
@@ -560,13 +603,22 @@ pub fn create_probe_socket_with_port(
             )
         };
 
-        #[cfg(any(target_os = "macos", target_os = "freebsd"))]
+        #[cfg(target_os = "macos")]
         let error_msg = if running_as_root {
             "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
         } else {
             format!(
-                "Failed to create any probe socket. On {os_name}, DGRAM ICMP mode works without root.\n\
+                "Failed to create any probe socket. On macOS, DGRAM ICMP mode works without root.\n\
                  If it's not working, try running with sudo: sudo {cmd}"
+            )
+        };
+        #[cfg(target_os = "freebsd")]
+        let error_msg = if running_as_root {
+            "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
+        } else {
+            format!(
+                "Failed to create any probe socket. FreeBSD requires root privileges for traceroute.\n\
+                 Please run with sudo: sudo {cmd}"
             )
         };
 
@@ -575,9 +627,8 @@ pub fn create_probe_socket_with_port(
             "Failed to create any probe socket even with root privileges. This may be a system configuration issue.".to_string()
         } else {
             format!(
-                "Failed to create any probe socket. On OpenBSD, raw sockets require root.\n\
-                 Run with doas/sudo: doas {} or sudo {}",
-                cmd, cmd
+                "Failed to create any probe socket. OpenBSD requires root privileges for traceroute.\n\
+                 Please run with doas or sudo: doas {cmd} or sudo {cmd}"
             )
         };
 

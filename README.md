@@ -17,7 +17,7 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 - **CGNAT aware** - Properly handles Carrier Grade NAT (100.64.0.0/10)
 - **Early exit optimization** - Completes instantly when destination is reached
 - **Minimal dependencies** - Built with efficiency in mind
-- **Cross-platform** - Works on Linux, macOS, and Windows
+- **Cross-platform** - Works on Linux, macOS, Windows, and FreeBSD
 
 ## Installation
 
@@ -99,6 +99,54 @@ wget https://github.com/dweekly/ftr/releases/latest/download/ftr_<version>_arm64
 sudo dpkg -i ftr_<version>_arm64.deb
 ```
 
+### FreeBSD
+
+#### Using pkg
+
+```bash
+# Install from FreeBSD ports (when available)
+pkg install ftr
+```
+
+#### Building from Source
+
+**Build Dependencies:**
+```bash
+# Required for building
+pkg install -y rust openssl perl5 pkgconf
+
+# Required for runtime functionality
+pkg install -y ca_root_nss
+```
+
+**Build and Install:**
+```bash
+# Clone and build
+git clone https://github.com/dweekly/ftr
+cd ftr
+cargo build --release
+
+# Install the binary
+sudo cp target/release/ftr /usr/local/bin/
+```
+
+**Important Notes:**
+- FreeBSD requires **root privileges** for all traceroute operations (no unprivileged ICMP support)
+- The `ca_root_nss` package is required for HTTPS connections (public IP detection and ASN lookups)
+- Without `ca_root_nss`, you'll see "Warning: Failed to detect public IP"
+
+**Usage on FreeBSD:**
+```bash
+# Must run as root
+sudo ftr google.com
+
+# Or make the binary setuid root
+sudo chown root:wheel /usr/local/bin/ftr
+sudo chmod u+s /usr/local/bin/ftr
+# Then run normally
+ftr google.com
+```
+
 ### Using Cargo
 
 ```bash
@@ -157,6 +205,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
   - **Linux**: Root privileges or configured ping_group_range for ICMP functionality
   - **macOS**: Root privileges may be required for raw socket access
   - **Windows**: No additional requirements (uses native Windows ICMP API)
+  - **FreeBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
 
 ### Privilege Requirements
 
@@ -173,6 +222,18 @@ sudo sysctl -w net.ipv4.ping_group_range="0 65535"
 
 ## Building from Source
 
+### Prerequisites
+
+- **Rust**: Version 1.82.0 or later (install from [rustup.rs](https://rustup.rs/))
+- **Platform-specific dependencies**:
+  - **Linux**: Standard build tools (gcc/clang, make)
+  - **macOS**: Xcode Command Line Tools
+  - **Windows**: Visual Studio Build Tools or MinGW
+  - **FreeBSD**: `pkg install -y rust openssl perl5 pkgconf`
+  - **OpenBSD**: `pkg_add rust`
+
+### Build Steps
+
 ```bash
 git clone https://github.com/dweekly/ftr
 cd ftr
@@ -183,7 +244,13 @@ cd ftr
 # git config core.hooksPath .githooks
 
 cargo build --release
+
+# Binary will be at: target/release/ftr
 ```
+
+### Platform-Specific Notes
+
+- **All platforms**: The git hooks ensure code quality standards are met before commits
 
 ## How It Works
 

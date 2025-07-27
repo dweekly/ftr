@@ -472,6 +472,24 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }
 
+    // Check if running without root on a platform that requires it
+    if !ftr::socket::factory::is_root() && !ftr::socket::factory::has_non_root_capability() {
+        eprintln!(
+            "Error: ftr requires root privileges on {}",
+            std::env::consts::OS
+        );
+        eprintln!("This platform does not support unprivileged traceroute.");
+        eprintln!(
+            "Please run with sudo: sudo {}",
+            std::env::args().collect::<Vec<_>>().join(" ")
+        );
+        #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
+        eprintln!(
+            "Or make the binary setuid root: sudo chown root:wheel ftr && sudo chmod u+s ftr"
+        );
+        std::process::exit(1);
+    }
+
     let effective_max_hops = args.max_hops;
 
     let target_ipv4 = match resolve_host(&args.host).await {
@@ -983,11 +1001,18 @@ async fn process_hops_for_asn_and_classification(
     let mut isp_asn: Option<String> = None;
     if !no_asn {
         // First, try to get the public IP and its ASN to identify the ISP
-        if let Ok(public_ip) = get_public_ip(Some(&resolver_for_futures)).await {
-            if let Some(public_asn_info) = lookup_asn(public_ip, &resolver_for_futures).await {
-                if public_asn_info.asn != "N/A" {
-                    isp_asn = Some(public_asn_info.asn.clone());
+        match get_public_ip(Some(&resolver_for_futures)).await {
+            Ok(public_ip) => {
+                if let Some(public_asn_info) = lookup_asn(public_ip, &resolver_for_futures).await {
+                    if public_asn_info.asn != "N/A" {
+                        isp_asn = Some(public_asn_info.asn.clone());
+                    }
                 }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to detect public IP: {e}");
+                #[cfg(target_os = "freebsd")]
+                eprintln!("Note: On FreeBSD, ensure 'ca_root_nss' package is installed for HTTPS");
             }
         }
     }
