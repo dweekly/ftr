@@ -155,6 +155,8 @@ jobs:
           env IGNORE_OSVERSION=yes pkg install -y rust openssl perl5 pkgconf
           # Install runtime dependencies
           env IGNORE_OSVERSION=yes pkg install -y ca_root_nss
+          # Install test utilities
+          env IGNORE_OSVERSION=yes pkg install -y jq
         run: |
           # Show environment info
           echo "FreeBSD version:"
@@ -211,9 +213,18 @@ jobs:
           # Test JSON output
           echo "Testing JSON output..."
           if [ "$(id -u)" = "0" ]; then
-            ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+            JSON_OUTPUT=$(./target/release/ftr --json --max-hops 1 127.0.0.1)
           else
-            sudo ./target/release/ftr --json --max-hops 1 127.0.0.1 | jq .
+            JSON_OUTPUT=$(sudo ./target/release/ftr --json --max-hops 1 127.0.0.1)
+          fi
+          
+          # Validate JSON with jq if available
+          if command -v jq >/dev/null 2>&1; then
+            echo "$JSON_OUTPUT" | jq .
+            echo "✓ JSON output is valid"
+          else
+            echo "⚠ jq not found, skipping JSON validation"
+            echo "$JSON_OUTPUT"
           fi
           
           # Test verbose mode
