@@ -136,10 +136,16 @@ jobs:
           aptly snapshot create "${SNAPSHOT_NAME}" from repo "${APT_REPO_NAME}"
 
           echo "Publishing snapshot..."
-          # If publishing for the first time to this prefix/distribution:
-          if ! aptly publish list | grep -q "${APT_DISTRIBUTION} .*${APT_REPO_PREFIX}"; then
+          # Check if publication exists - empty prefix is shown as '.' in aptly publish list
+          PUBLISH_PREFIX="${APT_REPO_PREFIX:-.}"
+          
+          if ! aptly publish list -raw | grep -q "^${PUBLISH_PREFIX} ${APT_DISTRIBUTION}"; then
              echo "Publishing new snapshot ${SNAPSHOT_NAME} for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}'"
-             aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
+             if [ -z "${APT_REPO_PREFIX}" ]; then
+                aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}"
+             else
+                aptly publish snapshot -gpg-key="${GPG_KEY_ID}" -distribution="${APT_DISTRIBUTION}" -component="${APT_COMPONENT}" -architectures="amd64,arm64" "${SNAPSHOT_NAME}" "${APT_REPO_PREFIX}"
+             fi
           else
              echo "Switching existing publication for ${APT_DISTRIBUTION} at prefix '${APT_REPO_PREFIX}' to snapshot ${SNAPSHOT_NAME}"
              aptly publish switch -gpg-key="${GPG_KEY_ID}" -component="${APT_COMPONENT}" "${APT_DISTRIBUTION}" "${APT_REPO_PREFIX}" "${SNAPSHOT_NAME}"
