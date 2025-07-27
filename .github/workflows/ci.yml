@@ -177,10 +177,16 @@ jobs:
           
           # Test that non-root execution fails appropriately
           echo "Testing non-root error..."
-          if ./target/release/ftr 127.0.0.1 2>&1 | grep -q "requires root privileges"; then
+          echo "Current user: $(whoami)"
+          echo "User ID: $(id)"
+          echo "Testing command: ./target/release/ftr 127.0.0.1"
+          ERROR_OUTPUT=$(./target/release/ftr 127.0.0.1 2>&1 || true)
+          echo "Error output: $ERROR_OUTPUT"
+          if echo "$ERROR_OUTPUT" | grep -q "requires root privileges"; then
             echo "✓ Non-root error message correct"
           else
             echo "✗ Non-root error message incorrect"
+            echo "Expected to find 'requires root privileges' in error output"
             exit 1
           fi
           
