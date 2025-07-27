@@ -10,15 +10,15 @@ Starting with v0.2.1, ftr supports multiple probing modes with automatic fallbac
 
 1. **Raw ICMP** (Highest privilege)
    - Socket: `SOCK_RAW` with `IPPROTO_ICMP`
-   - Requires: CAP_NET_RAW capability or root
+   - Requires: CAP_NET_RAW capability or root (except Windows)
    - Features: Full control over IP and ICMP headers
-   - Platform: Linux, macOS, Windows
+   - Platform: Linux, macOS, Windows, FreeBSD, OpenBSD
 
 2. **DGRAM ICMP** (Medium privilege)
    - Socket: `SOCK_DGRAM` with `IPPROTO_ICMP` 
-   - Requires: Root or configured ping_group_range (Linux)
+   - Requires: Root or configured ping_group_range (Linux), no root needed (macOS)
    - Features: Kernel handles IP layer
-   - Platform: Linux, macOS
+   - Platform: Linux, macOS (NOT supported on FreeBSD/OpenBSD)
 
 ### UDP Mode
 
@@ -114,17 +114,34 @@ cargo run --example test_socket -- google.com
 cargo run --example test_socket -- google.com --udp
 ```
 
+## Platform Compatibility Matrix
+
+| Platform | Raw ICMP | DGRAM ICMP | UDP (send) | UDP (recv ICMP) | Non-root Option |
+|----------|----------|------------|------------|-----------------|-----------------|
+| Linux    | Root     | Root/ping_group | No root | No root (IP_RECVERR) | ✓ UDP or DGRAM |
+| macOS    | Root     | No root    | No root    | Root            | ✓ DGRAM ICMP    |
+| Windows  | No admin | N/A        | No admin   | No admin        | ✓ Raw ICMP      |
+| FreeBSD  | Root     | N/A        | No root    | Root            | ✗ None          |
+| OpenBSD  | Root     | N/A        | No root    | Root            | ✗ None          |
+
 ## Privilege Requirements Summary
 
 Privilege requirements vary by mode and platform:
 
-- **Raw ICMP**: Root or CAP_NET_RAW (all platforms)
-- **DGRAM ICMP**: Root or configured ping_group_range (Linux/macOS)
+- **Raw ICMP**: Root or CAP_NET_RAW (except Windows which works without admin)
+- **DGRAM ICMP**: 
+  - Linux: Root or configured ping_group_range
+  - macOS: Works without root
+  - FreeBSD/OpenBSD: Not supported by OS
 - **UDP**: 
   - Linux: No privileges required (uses `IP_RECVERR`)
-  - Other platforms: Root (needs raw ICMP socket)
+  - Other platforms: Root (needs raw ICMP socket for responses)
 
-On Linux, UDP mode is the only mode that works without any privileges.
+Key insights:
+- Linux: UDP mode works completely without privileges
+- macOS: DGRAM ICMP works without privileges
+- Windows: Raw ICMP works without admin privileges
+- FreeBSD/OpenBSD: All traceroute modes require root
 
 ## Troubleshooting
 
@@ -151,5 +168,7 @@ UDP traceroute sends UDP packets (no privileges needed) but must receive ICMP "P
 ### Platform-Specific Notes
 
 - **Linux**: Supports all modes. Configure ping_group_range for unprivileged ICMP.
-- **macOS**: Raw sockets require root. DGRAM ICMP may work for some users.
-- **Windows**: Requires Npcap/WinPcap. Only Raw mode supported.
+- **macOS**: Raw sockets require root. DGRAM ICMP works without root for all users.
+- **Windows**: Uses native Windows ICMP API (IcmpCreateFile). Raw ICMP works without admin.
+- **FreeBSD**: All modes require root. DGRAM ICMP is not supported by the OS.
+- **OpenBSD**: All modes require root. DGRAM ICMP is not supported by the OS.

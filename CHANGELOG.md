@@ -10,7 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.4] - TBD
 
 ### Added
-- FreeBSD support
+- FreeBSD support (FreeBSD 13.x and 14.x)
+  - Raw ICMP socket implementation with IP_HDRINCL support
+  - Automatic root privilege detection and clear error messages
+  - FreeBSD-specific build instructions and dependencies
+  - CI/CD integration with vmactions/freebsd-vm for automated testing
+  - Comprehensive FreeBSD-specific tests
+- Generic root privilege checking for platforms without non-root traceroute capability
+- Warning messages for public IP detection failures with platform-specific hints
+- Platform-specific native-tls configuration (vendored only on Linux)
+
+### Changed
+- Socket factory now properly identifies FreeBSD capabilities (no DGRAM ICMP support)
+- Improved error messages for platforms requiring root privileges
+- Updated documentation to clarify FreeBSD requirements
+
+### Fixed
+- Raw ICMP sockets now work correctly on FreeBSD with IP_HDRINCL
+- Build issues on FreeBSD with native-tls-vendored feature
 
 ## [0.2.3] - 2025-07-26
 
