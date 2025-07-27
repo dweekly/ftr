@@ -83,22 +83,43 @@ jobs:
           
           # Test non-root error
           echo "Testing non-root error..."
-          ERROR_OUTPUT=$(./target/release/ftr 127.0.0.1 2>&1 || true)
-          if echo "$ERROR_OUTPUT" | grep -q "requires root privileges"; then
-            echo "✓ Non-root error message correct"
+          echo "Current user: $(whoami)"
+          echo "User ID: $(id -u)"
+          
+          if [ "$(id -u)" = "0" ]; then
+            echo "⚠ Running as root, skipping non-root error test"
+            # When running as root, just verify it works
+            ./target/release/ftr --max-hops 1 127.0.0.1 > /dev/null
+            echo "✓ Root execution works"
           else
-            echo "✗ Non-root error message incorrect"
-            echo "Error output was: $ERROR_OUTPUT"
-            echo "Expected to find 'requires root privileges' in error output"
-            exit 1
+            ERROR_OUTPUT=$(./target/release/ftr 127.0.0.1 2>&1 || true)
+            if echo "$ERROR_OUTPUT" | grep -q "requires root privileges"; then
+              echo "✓ Non-root error message correct"
+            else
+              echo "✗ Non-root error message incorrect"
+              echo "Error output was: $ERROR_OUTPUT"
+              echo "Expected to find 'requires root privileges' in error output"
+              exit 1
+            fi
           fi
           
           # Test socket mode error
-          if ./target/release/ftr --socket-mode dgram --protocol icmp 127.0.0.1 2>&1 | grep -q "requires root privileges"; then
-            echo "✓ DGRAM ICMP error handling correct"
+          if [ "$(id -u)" = "0" ]; then
+            echo "⚠ Running as root, testing DGRAM ICMP not supported error"
+            if ./target/release/ftr --socket-mode dgram --protocol icmp 127.0.0.1 2>&1 | grep -q "not supported"; then
+              echo "✓ DGRAM ICMP not supported error correct"
+            else
+              echo "✗ DGRAM ICMP error handling incorrect"
+              echo "Expected 'not supported' error for DGRAM ICMP on FreeBSD"
+              exit 1
+            fi
           else
-            echo "✗ DGRAM ICMP error handling incorrect"
-            exit 1
+            if ./target/release/ftr --socket-mode dgram --protocol icmp 127.0.0.1 2>&1 | grep -q "requires root privileges"; then
+              echo "✓ DGRAM ICMP error handling correct"
+            else
+              echo "✗ DGRAM ICMP error handling incorrect"
+              exit 1
+            fi
           fi
           
           # Run root tests
