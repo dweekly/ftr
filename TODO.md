@@ -4,7 +4,6 @@ This file tracks planned work for the ftr project.
 
 ## High Priority
 
-- [ ] Add OpenBSD support  
 - [ ] Add missing tests for complex logic
   - UDP socket error handling
   - ICMP packet parsing edge cases
