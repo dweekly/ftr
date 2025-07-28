@@ -21,25 +21,74 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Error type for traceroute operations
+///
+/// Represents various failures that can occur during traceroute execution.
+///
+/// # Examples
+///
+/// ```
+/// # use ftr::TracerouteError;
+/// fn handle_error(err: TracerouteError) {
+///     match err {
+///         TracerouteError::InsufficientPermissions { required, suggestion } => {
+///             eprintln!("Insufficient permissions: {}", required);
+///             eprintln!("Try: {}", suggestion);
+///         }
+///         TracerouteError::ResolutionError(msg) => {
+///             eprintln!("DNS resolution failed: {}", msg);
+///         }
+///         _ => eprintln!("Traceroute failed: {}", err),
+///     }
+/// }
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum TracerouteError {
-    /// Socket creation failed
+    /// Socket creation failed due to insufficient permissions
+    ///
+    /// This error provides structured information about what permissions
+    /// are needed and how to obtain them.
+    #[error("Insufficient permissions: {required}")]
+    InsufficientPermissions {
+        /// Description of required permissions (e.g., "root or CAP_NET_RAW")
+        required: String,
+        /// Suggested remedy (e.g., "Run with sudo or use --udp mode")
+        suggestion: String,
+    },
+
+    /// Socket creation failed for other reasons
     #[error("Failed to create socket: {0}")]
     SocketError(String),
 
     /// DNS resolution failed
+    ///
+    /// The target hostname could not be resolved to an IP address.
     #[error("Failed to resolve host: {0}")]
     ResolutionError(String),
 
     /// Probe sending failed
+    ///
+    /// Failed to send a probe packet, possibly due to network issues.
     #[error("Failed to send probe: {0}")]
     ProbeSendError(String),
 
     /// Configuration error
+    ///
+    /// The provided configuration is invalid or incompatible.
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
+    /// Feature not yet implemented
+    ///
+    /// The requested feature (TCP, IPv6) is not yet implemented.
+    #[error("{feature} is not yet implemented")]
+    NotImplemented {
+        /// Feature name (e.g., "TCP traceroute", "IPv6 support")
+        feature: String,
+    },
+
     /// Target is IPv6 (not yet supported)
+    ///
+    /// IPv6 targets are not yet fully supported in this version.
     #[error("IPv6 targets are not yet supported")]
     Ipv6NotSupported,
 }
@@ -435,7 +484,7 @@ impl TracerouteEngine {
         }
 
         // Determine ISP ASN
-        let isp_asn: Option<String> = if self.config.enable_asn_lookup {
+        let isp_asn: Option<u32> = if self.config.enable_asn_lookup {
             detect_isp_with_default_resolver()
                 .await
                 .ok()

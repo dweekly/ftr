@@ -64,7 +64,7 @@ async fn test_asn_caching_with_cidr() {
     let result1 = ftr::asn::lookup_asn(google_ips[0], None).await;
     assert!(result1.is_ok(), "First ASN lookup failed");
     let asn1 = result1.unwrap();
-    assert_eq!(asn1.asn, "15169", "Expected Google ASN");
+    assert_eq!(asn1.asn, 15169, "Expected Google ASN");
 
     let cache_size_after_first = ftr::asn::ASN_CACHE.len();
     assert!(cache_size_after_first > 0, "ASN cache should have entries");

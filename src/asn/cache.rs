@@ -73,9 +73,9 @@ mod tests {
         let cache = AsnCache::new();
         assert!(cache.is_empty());
 
-        // Create test ASN info - note: ASN format without "AS" prefix
+        // Create test ASN info
         let asn_info = AsnInfo {
-            asn: "13335".to_string(),
+            asn: 13335,
             prefix: "104.16.0.0/12".to_string(),
             country_code: "US".to_string(),
             registry: "ARIN".to_string(),
@@ -93,7 +93,7 @@ mod tests {
         let ip: Ipv4Addr = "104.16.1.1".parse().unwrap();
         let result = cache.get(&ip);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().asn, "13335");
+        assert_eq!(result.unwrap().asn, 13335);
 
         // Test lookup - IP outside the prefix
         let ip: Ipv4Addr = "8.8.8.8".parse().unwrap();
@@ -112,9 +112,9 @@ mod tests {
         ASN_CACHE.clear();
         assert!(ASN_CACHE.is_empty());
 
-        // Insert test data - note: ASN format without "AS" prefix
+        // Insert test data
         let asn_info = AsnInfo {
-            asn: "15169".to_string(),
+            asn: 15169,
             prefix: "8.8.8.0/24".to_string(),
             country_code: "US".to_string(),
             registry: "ARIN".to_string(),

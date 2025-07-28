@@ -51,7 +51,7 @@ mod tests {
         // But we can check that the function works
         match result {
             Ok(isp_info) => {
-                assert!(!isp_info.asn.is_empty());
+                assert!(isp_info.asn != 0, "ASN should not be 0");
                 assert!(!isp_info.name.is_empty());
             }
             Err(e) => {

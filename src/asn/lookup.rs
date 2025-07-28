@@ -55,7 +55,7 @@ pub async fn lookup_asn(
         .to_string();
 
         let asn_info = AsnInfo {
-            asn: "N/A".to_string(),
+            asn: 0, // 0 indicates N/A for private/special IPs
             prefix: ipv4_addr.to_string() + "/32",
             country_code: "N/A".to_string(),
             registry: "N/A".to_string(),
@@ -107,7 +107,9 @@ pub async fn lookup_asn(
         return Err(AsnLookupError::InvalidFormat);
     }
 
-    let asn = parts[0].to_string();
+    // Parse ASN as u32, handling potential "AS" prefix
+    let asn_str = parts[0].trim_start_matches("AS");
+    let asn = asn_str.parse::<u32>().unwrap_or(0);
     let prefix = parts[1].to_string();
     let country_code = parts[2].to_string();
     let registry = if parts.len() > 3 {
@@ -179,7 +181,7 @@ mod tests {
         let result = lookup_asn(ip, None).await;
         assert!(result.is_ok());
         let asn_info = result.unwrap();
-        assert_eq!(asn_info.asn, "N/A");
+        assert_eq!(asn_info.asn, 0);
         assert_eq!(asn_info.name, "Private Network");
     }
 
@@ -189,7 +191,7 @@ mod tests {
         let result = lookup_asn(ip, None).await;
         match &result {
             Ok(asn_info) => {
-                assert_eq!(asn_info.asn, "N/A");
+                assert_eq!(asn_info.asn, 0);
                 assert_eq!(asn_info.name, "Carrier Grade NAT");
             }
             Err(e) => panic!("Expected Ok, got error: {:?}", e),
@@ -202,7 +204,7 @@ mod tests {
         let result = lookup_asn(ip, None).await;
         assert!(result.is_ok());
         let asn_info = result.unwrap();
-        assert_eq!(asn_info.asn, "N/A");
+        assert_eq!(asn_info.asn, 0);
         assert_eq!(asn_info.name, "Loopback");
     }
 
@@ -238,7 +240,7 @@ mod tests {
             let result = lookup_asn(ip, None).await;
             assert!(result.is_ok(), "Failed for IP: {}", ip_str);
             let asn_info = result.unwrap();
-            assert_eq!(asn_info.asn, "N/A");
+            assert_eq!(asn_info.asn, 0);
             assert_eq!(
                 asn_info.name, expected_name,
                 "Wrong name for IP: {}",
@@ -269,10 +271,11 @@ mod tests {
             let asn_info = result.unwrap();
 
             // Verify ASN matches expected
+            let expected_asn_num: u32 = expected_asn.parse().expect("Invalid ASN in test");
             assert_eq!(
-                asn_info.asn, expected_asn,
+                asn_info.asn, expected_asn_num,
                 "Wrong ASN for {}: expected {}, got {}",
-                ip_str, expected_asn, asn_info.asn
+                ip_str, expected_asn_num, asn_info.asn
             );
 
             // Verify name contains expected prefix

@@ -161,7 +161,7 @@ async fn test_result_methods() {
             hostname: None,
             addr: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
             asn_info: Some(AsnInfo {
-                asn: "AS12345".to_string(),
+                asn: 12345,
                 prefix: "10.0.0.0/8".to_string(),
                 country_code: "US".to_string(),
                 registry: "ARIN".to_string(),
@@ -185,7 +185,7 @@ async fn test_result_methods() {
         hops,
         isp_info: Some(ftr::IspInfo {
             public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
-            asn: "AS12345".to_string(),
+            asn: 12345,
             name: "Example ISP".to_string(),
         }),
         protocol_used: ProbeProtocol::Icmp,

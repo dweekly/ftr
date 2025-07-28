@@ -6,9 +6,30 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
 /// Result of a traceroute operation
+///
+/// Contains all the information gathered during a traceroute, including
+/// discovered hops, ISP information, and metadata about the operation.
+///
+/// # Examples
+///
+/// ```no_run
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let result = ftr::trace("google.com").await?;
+///
+/// println!("Reached destination: {}", result.destination_reached);
+/// println!("Total hops: {}", result.hop_count());
+///
+/// for hop in &result.hops {
+///     if let Some(addr) = hop.addr {
+///         println!("Hop {}: {} ({:?})", hop.ttl, addr, hop.hostname);
+///     }
+/// }
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TracerouteResult {
-    /// Target hostname
+    /// Target hostname as provided
     pub target: String,
     /// Resolved target IP address
     pub target_ip: IpAddr,
@@ -16,23 +37,25 @@ pub struct TracerouteResult {
     pub hops: Vec<ClassifiedHopInfo>,
     /// ISP information if detected
     pub isp_info: Option<IspInfo>,
-    /// Protocol used for probing
+    /// Protocol actually used for probing (may differ from requested)
     pub protocol_used: ProbeProtocol,
-    /// Socket mode used
+    /// Socket mode actually used
     pub socket_mode_used: SocketMode,
     /// Whether the destination was reached
     pub destination_reached: bool,
-    /// Total duration of the traceroute
+    /// Total duration of the traceroute operation
     pub total_duration: std::time::Duration,
 }
 
 impl TracerouteResult {
-    /// Get the number of hops
+    /// Get the number of hops discovered
     pub fn hop_count(&self) -> usize {
         self.hops.len()
     }
 
     /// Get the final hop that reached the destination, if any
+    ///
+    /// Returns the hop information for the probe that reached the target IP.
     pub fn destination_hop(&self) -> Option<&ClassifiedHopInfo> {
         self.hops
             .iter()
@@ -40,21 +63,29 @@ impl TracerouteResult {
     }
 
     /// Get the maximum TTL value used
+    ///
+    /// Returns the highest TTL value among all discovered hops.
     pub fn max_ttl(&self) -> Option<u8> {
         self.hops.iter().map(|h| h.ttl).max()
     }
 
     /// Check if a specific TTL had a response
+    ///
+    /// Returns true if any hop with the given TTL received a response.
     pub fn has_response_at_ttl(&self, ttl: u8) -> bool {
         self.hops.iter().any(|h| h.ttl == ttl && h.addr.is_some())
     }
 
     /// Get all hops with ASN information
+    ///
+    /// Returns a vector of references to hops that have ASN data available.
     pub fn hops_with_asn(&self) -> Vec<&ClassifiedHopInfo> {
         self.hops.iter().filter(|h| h.asn_info.is_some()).collect()
     }
 
     /// Get all hops within a specific network segment
+    ///
+    /// Filter hops by their network segment classification (e.g., LAN, WAN, etc.).
     pub fn hops_in_segment(
         &self,
         segment: crate::traceroute::SegmentType,
@@ -63,6 +94,8 @@ impl TracerouteResult {
     }
 
     /// Calculate average RTT across all responding hops
+    ///
+    /// Returns the mean round-trip time in milliseconds for all hops that responded.
     pub fn average_rtt_ms(&self) -> Option<f64> {
         let rtts: Vec<f64> = self
             .hops
@@ -79,6 +112,32 @@ impl TracerouteResult {
 }
 
 /// Progress information during a traceroute operation
+///
+/// Provides real-time status updates during a traceroute. Can be used
+/// to display progress bars or status information in UIs.
+///
+/// # Note
+///
+/// The `run_with_progress()` method that would use this for streaming updates
+/// is not yet fully implemented. Currently, you can only get progress snapshots
+/// via `Traceroute::get_progress()`.
+///
+/// # Examples
+///
+/// ```
+/// # use ftr::TracerouteProgress;
+/// # use std::time::Duration;
+/// let progress = TracerouteProgress {
+///     current_ttl: 15,
+///     max_ttl: 30,
+///     hops_discovered: 12,
+///     destination_reached: false,
+///     elapsed: Duration::from_secs(2),
+/// };
+///
+/// println!("Progress: {:.1}%", progress.percentage());
+/// println!("Complete: {}", progress.is_complete());
+/// ```
 #[derive(Debug, Clone)]
 pub struct TracerouteProgress {
     /// Current TTL being probed
@@ -95,6 +154,8 @@ pub struct TracerouteProgress {
 
 impl TracerouteProgress {
     /// Calculate progress percentage
+    ///
+    /// Returns a value between 0.0 and 100.0 representing completion percentage.
     pub fn percentage(&self) -> f32 {
         if self.destination_reached {
             100.0
@@ -104,6 +165,8 @@ impl TracerouteProgress {
     }
 
     /// Check if the traceroute is complete
+    ///
+    /// Returns true if either the destination was reached or the maximum TTL was exceeded.
     pub fn is_complete(&self) -> bool {
         self.destination_reached || self.current_ttl >= self.max_ttl
     }
@@ -132,7 +195,7 @@ mod tests {
                 hostname: None,
                 addr: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
                 asn_info: Some(AsnInfo {
-                    asn: "AS12345".to_string(),
+                    asn: 12345,
                     prefix: "10.0.0.0/8".to_string(),
                     country_code: "US".to_string(),
                     registry: "ARIN".to_string(),
@@ -146,7 +209,7 @@ mod tests {
                 hostname: Some("google.com".to_string()),
                 addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
                 asn_info: Some(AsnInfo {
-                    asn: "AS15169".to_string(),
+                    asn: 15169,
                     prefix: "8.8.8.0/24".to_string(),
                     country_code: "US".to_string(),
                     registry: "ARIN".to_string(),
@@ -162,7 +225,7 @@ mod tests {
             hops,
             isp_info: Some(IspInfo {
                 public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
-                asn: "AS12345".to_string(),
+                asn: 12345,
                 name: "Example ISP".to_string(),
             }),
             protocol_used: ProbeProtocol::Icmp,

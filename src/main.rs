@@ -316,7 +316,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
         target_ip: result.target_ip.to_string(),
         public_ip: result.isp_info.as_ref().map(|i| i.public_ip.to_string()),
         isp: result.isp_info.as_ref().map(|i| JsonIsp {
-            asn: i.asn.clone(),
+            asn: i.asn.to_string(),
             name: i.name.clone(),
         }),
         hops: Vec::new(),
@@ -372,7 +372,7 @@ fn display_text_results(result: TracerouteResult) {
 
             // Format ASN info
             let asn_str = if let Some(asn_info) = &hop.asn_info {
-                if asn_info.asn != "N/A" {
+                if asn_info.asn != 0 {
                     format!(
                         " [AS{} - {}, {}]",
                         asn_info.asn, asn_info.name, asn_info.country_code

@@ -67,7 +67,7 @@ mod tests {
             ],
             isp_info: Some(IspInfo {
                 public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
-                asn: "AS12345".to_string(),
+                asn: 12345,
                 name: "Test ISP".to_string(),
             }),
             protocol_used: ftr::ProbeProtocol::Icmp,
@@ -98,7 +98,7 @@ mod tests {
                     hostname: Some("router.local".to_string()),
                     addr: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
                     asn_info: Some(AsnInfo {
-                        asn: "AS12345".to_string(),
+                        asn: 12345,
                         prefix: "192.168.0.0/16".to_string(),
                         country_code: "US".to_string(),
                         registry: "ARIN".to_string(),
