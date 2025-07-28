@@ -12,8 +12,10 @@ pub mod udp;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+use serde::{Deserialize, Serialize};
+
 /// IP version to use for probing
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IpVersion {
     /// IPv4
     V4,
@@ -22,7 +24,7 @@ pub enum IpVersion {
 }
 
 /// Protocol to use for probing
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProbeProtocol {
     /// ICMP/ICMPv6 protocol
     Icmp,
@@ -44,7 +46,7 @@ impl ProbeProtocol {
 }
 
 /// Socket mode (affects permissions required)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SocketMode {
     /// Raw socket - requires CAP_NET_RAW or root
     Raw,

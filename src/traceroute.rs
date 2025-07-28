@@ -1,10 +1,24 @@
 //! Core traceroute functionality and utilities
 
+pub mod api;
+pub mod config;
+pub mod engine;
+pub mod result;
+pub mod types;
+
 use ipnet::Ipv4Net;
+use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
+// Re-export commonly used types
+pub use api::{trace, trace_with_config, Traceroute};
+pub use config::{TracerouteConfig, TracerouteConfigBuilder};
+pub use engine::{TracerouteEngine, TracerouteError};
+pub use result::{TracerouteProgress, TracerouteResult};
+pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
+
 /// Classification of a hop's network segment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentType {
     /// Local area network (private IP ranges)
     Lan,
@@ -54,7 +68,7 @@ pub fn parse_asn(asn_str: &str) -> Option<(String, String, String)> {
 }
 
 /// Represents ASN information for an IP address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsnInfo {
     /// Autonomous System Number (e.g., "13335")
     pub asn: String,
