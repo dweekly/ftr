@@ -69,6 +69,27 @@ powershell -Command '$env:CARGO_TARGET_DIR="C:\temp\ftr-target"; cargo build'
 - `cmd /c "set CARGO_TARGET_DIR=C:\temp\ftr-target && cargo build"` - variable doesn't persist to cargo
 - Using backslashes in paths with --target-dir flag - causes parsing issues
 
+### Running Tests on Windows
+
+When running tests on Windows in some environments (like Parallels VMs), you may encounter an issue where `cargo test` reports "0 tests run" with all tests filtered out. This happens when cargo passes an unexpected filter argument (like "2") to test binaries.
+
+**Test commands that work:**
+```bash
+# Pass an empty filter string to avoid the default filter
+cargo test --target-dir C:/temp/ftr-target -- ""
+
+# Use --nocapture flag (prevents the filter issue)
+cargo test --target-dir C:/temp/ftr-target -- --nocapture
+
+# Run a specific test suite
+cargo test --target-dir C:/temp/ftr-target --test windows_integration
+
+# Use the provided helper script
+./run-tests.ps1
+```
+
+**Note**: This filter issue appears to be environment-specific and may not affect all Windows systems.
+
 ### ENVIRONMENT.md
 Each development environment should have an `ENVIRONMENT.md` file that contains environment-specific configuration. This file is NOT checked into version control and is listed in `.gitignore`.
 

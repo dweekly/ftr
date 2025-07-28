@@ -175,9 +175,13 @@ async fn main() -> Result<()> {
         SocketModeArg::Dgram => SocketMode::Dgram,
     });
 
+    // Resolve target early to use in config
+    let target_ip = resolve_target(&args.host).await?;
+
     // Build configuration
     let config = TracerouteConfigBuilder::new()
         .target(&args.host)
+        .target_ip(target_ip)
         .start_ttl(args.start_ttl)
         .max_hops(args.max_hops)
         .probe_timeout(Duration::from_millis(args.probe_timeout_ms))
@@ -213,8 +217,6 @@ async fn main() -> Result<()> {
 
     // Print initial message
     if !args.json {
-        // Resolve target to show IP
-        let target_ip = resolve_target(&args.host).await?;
         println!(
             "ftr to {} ({}), {} max hops, {}ms probe timeout, {}ms overall timeout{}",
             args.host,

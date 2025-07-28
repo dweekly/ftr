@@ -31,7 +31,15 @@ jobs:
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test --verbose
+      # On Windows, explicitly pass empty filter to avoid potential issues
+      # where an unexpected filter argument causes tests to be skipped
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cargo test --verbose -- ""
+        else
+          cargo test --verbose
+        fi
+      shell: bash
 
   fmt:
     name: Rustfmt

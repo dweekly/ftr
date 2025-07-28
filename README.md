@@ -252,6 +252,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
   - **Linux**: Root privileges or configured ping_group_range for ICMP functionality
   - **macOS**: Root privileges may be required for raw socket access
   - **Windows**: No additional requirements (uses native Windows ICMP API)
+    - Note: Windows Firewall may prompt for permission on first run
   - **FreeBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
   - **OpenBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
 
