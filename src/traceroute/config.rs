@@ -147,7 +147,7 @@ impl TracerouteConfig {
 ///
 /// let config = TracerouteConfigBuilder::new()
 ///     .target("8.8.8.8")
-///     .protocol(ProbeProtocol::ICMP)
+///     .protocol(ProbeProtocol::Icmp)
 ///     .max_hops(15)
 ///     .queries(3)
 ///     .probe_timeout(Duration::from_secs(2))

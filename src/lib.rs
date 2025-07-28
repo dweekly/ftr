@@ -39,7 +39,7 @@
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let config = TracerouteConfigBuilder::new()
 //!         .target("1.1.1.1")
-//!         .protocol(ProbeProtocol::TCP)
+//!         .protocol(ProbeProtocol::Tcp)
 //!         .port(443)
 //!         .max_hops(20)
 //!         .queries(3)

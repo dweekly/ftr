@@ -219,7 +219,7 @@ pub async fn trace(target: &str) -> Result<TracerouteResult, TracerouteError> {
 ///
 /// let config = TracerouteConfigBuilder::new()
 ///     .target("1.1.1.1")
-///     .protocol(ProbeProtocol::UDP)
+///     .protocol(ProbeProtocol::Udp)
 ///     .max_hops(15)
 ///     .queries(3)
 ///     .build()?;
