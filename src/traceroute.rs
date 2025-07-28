@@ -1,18 +1,69 @@
 //! Core traceroute functionality and utilities
+//!
+//! This module provides the main traceroute implementation including:
+//! - High-level API functions ([`trace`], [`trace_with_config`])
+//! - Configuration types ([`TracerouteConfig`], [`TracerouteConfigBuilder`])
+//! - Result types ([`TracerouteResult`], [`TracerouteProgress`])
+//! - Error handling ([`TracerouteError`])
+//!
+//! # Error Handling
+//!
+//! All traceroute operations return a `Result<T, TracerouteError>` where
+//! [`TracerouteError`] is an enum providing structured error information:
+//!
+//! - **`InsufficientPermissions`** - Includes what permissions are needed and suggestions
+//! - **`NotImplemented`** - Feature not yet implemented (e.g., TCP traceroute)
+//! - **`Ipv6NotSupported`** - IPv6 targets not yet supported
+//! - **`ResolutionError`** - DNS resolution failed
+//! - **`SocketError`** - Socket creation/operation failed
+//! - **`ConfigError`** - Invalid configuration
+//! - **`ProbeSendError`** - Failed to send probe packet
+//!
+//! This design allows library users to handle errors programmatically without
+//! parsing error strings.
+
+pub mod api;
+pub mod config;
+pub mod engine;
+pub mod result;
+pub mod types;
+
+#[cfg(test)]
+mod caching_test;
 
 use ipnet::Ipv4Net;
+use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
-/// Classification of a hop's network segment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+// Re-export commonly used types
+pub use api::{trace, trace_with_config, Traceroute};
+pub use config::{TracerouteConfig, TracerouteConfigBuilder};
+pub use engine::{TracerouteEngine, TracerouteError};
+pub use result::{TracerouteProgress, TracerouteResult};
+pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
+
+/// Classification of a hop's network segment
+///
+/// Used to categorize network hops based on their location relative
+/// to the user's network topology.
+///
+/// # Examples
+///
+/// ```
+/// use ftr::SegmentType;
+///
+/// let segment = SegmentType::Isp;
+/// println!("Hop is in the {} segment", segment);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SegmentType {
-    /// Local area network (private IP ranges)
+    /// Local area network (private IP ranges like 192.168.x.x)
     Lan,
     /// Internet Service Provider network
     Isp,
     /// Beyond the user's ISP (general internet)
     Beyond,
-    /// Unknown segment type
+    /// Unknown or unclassified segment
     Unknown,
 }
 
@@ -53,19 +104,54 @@ pub fn parse_asn(asn_str: &str) -> Option<(String, String, String)> {
     }
 }
 
-/// Represents ASN information for an IP address.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Autonomous System Number (ASN) information for an IP address
+///
+/// Contains details about the network organization that owns a particular
+/// IP address range. This information is retrieved from IPtoASN.com.
+///
+/// # Examples
+///
+/// ```
+/// # use ftr::AsnInfo;
+/// let asn = AsnInfo {
+///     asn: 15169,
+///     prefix: "8.8.8.0/24".to_string(),
+///     country_code: "US".to_string(),
+///     registry: "ARIN".to_string(),
+///     name: "GOOGLE".to_string(),
+/// };
+///
+/// // Use the display_asn method for consistent formatting
+/// println!("{} - {} ({})", asn.display_asn(), asn.name, asn.country_code);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsnInfo {
-    /// Autonomous System Number (e.g., "13335")
-    pub asn: String,
+    /// Autonomous System Number (e.g., 13335)
+    ///
+    /// The numeric ASN without "AS" prefix. 0 indicates N/A (private/special IPs).
+    /// To display: if asn != 0 { format!("AS{}", asn) } else { "N/A" }
+    pub asn: u32,
     /// IP prefix/CIDR block (e.g., "104.16.0.0/12")
     pub prefix: String,
     /// Two-letter country code (e.g., "US")
     pub country_code: String,
-    /// Regional Internet Registry (e.g., "ARIN")
+    /// Regional Internet Registry (e.g., "ARIN", "RIPE", "APNIC")
     pub registry: String,
-    /// AS name/organization (e.g., "CLOUDFLARENET")
+    /// AS name/organization (e.g., "CLOUDFLARENET", "GOOGLE")
     pub name: String,
+}
+
+impl AsnInfo {
+    /// Get the display string for the ASN
+    ///
+    /// Returns "AS12345" format for valid ASNs, or "N/A" for private/special IPs.
+    pub fn display_asn(&self) -> String {
+        if self.asn != 0 {
+            format!("AS{}", self.asn)
+        } else {
+            "N/A".to_string()
+        }
+    }
 }
 
 /// Parse CIDR notation into Ipv4Net
@@ -158,18 +244,42 @@ mod tests {
     #[test]
     fn test_asn_info() {
         let asn_info = AsnInfo {
-            asn: "13335".to_string(),
+            asn: 13335,
             prefix: "104.16.0.0/12".to_string(),
             country_code: "US".to_string(),
             registry: "ARIN".to_string(),
             name: "CLOUDFLARENET".to_string(),
         };
 
-        assert_eq!(asn_info.asn, "13335");
+        assert_eq!(asn_info.asn, 13335);
         assert_eq!(asn_info.country_code, "US");
+        assert_eq!(asn_info.display_asn(), "AS13335");
 
         // Test Clone
         let cloned = asn_info.clone();
         assert_eq!(cloned, asn_info);
+    }
+
+    #[test]
+    fn test_asn_info_display() {
+        // Test normal ASN
+        let asn_info = AsnInfo {
+            asn: 12345,
+            prefix: "10.0.0.0/8".to_string(),
+            country_code: "US".to_string(),
+            registry: "ARIN".to_string(),
+            name: "EXAMPLE".to_string(),
+        };
+        assert_eq!(asn_info.display_asn(), "AS12345");
+
+        // Test N/A ASN (private/special IPs)
+        let private_asn = AsnInfo {
+            asn: 0,
+            prefix: "192.168.0.0/16".to_string(),
+            country_code: "".to_string(),
+            registry: "".to_string(),
+            name: "Private Use".to_string(),
+        };
+        assert_eq!(private_asn.display_asn(), "N/A");
     }
 }

@@ -69,6 +69,27 @@ powershell -Command '$env:CARGO_TARGET_DIR="C:\temp\ftr-target"; cargo build'
 - `cmd /c "set CARGO_TARGET_DIR=C:\temp\ftr-target && cargo build"` - variable doesn't persist to cargo
 - Using backslashes in paths with --target-dir flag - causes parsing issues
 
+### Running Tests on Windows
+
+When running tests on Windows in some environments (like Parallels VMs), you may encounter an issue where `cargo test` reports "0 tests run" with all tests filtered out. This happens when cargo passes an unexpected filter argument (like "2") to test binaries.
+
+**Test commands that work:**
+```bash
+# Pass an empty filter string to avoid the default filter
+cargo test --target-dir C:/temp/ftr-target -- ""
+
+# Use --nocapture flag (prevents the filter issue)
+cargo test --target-dir C:/temp/ftr-target -- --nocapture
+
+# Run a specific test suite
+cargo test --target-dir C:/temp/ftr-target --test windows_integration
+
+# Use the provided helper script
+./run-tests.ps1
+```
+
+**Note**: This filter issue appears to be environment-specific and may not affect all Windows systems.
+
 ### ENVIRONMENT.md
 Each development environment should have an `ENVIRONMENT.md` file that contains environment-specific configuration. This file is NOT checked into version control and is listed in `.gitignore`.
 
@@ -293,3 +314,60 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 4. Keep changes focused and atomic
 5. Document significant changes
 6. Ask the user before making destructive operations
+
+## Documentation Index
+
+This section provides a comprehensive list of all documentation files and their purposes to help future agents understand which documents to read for specific use cases.
+
+### Root-Level Documentation
+
+- **README.md** - Main project documentation with features, installation instructions, usage examples, and build instructions
+- **CHANGELOG.md** - Comprehensive history of all releases with detailed notes on features, fixes, and breaking changes
+- **LICENSE** - MIT license terms
+- **TODO.md** - Active development tasks and future features
+- **AGENTS.md** - (This file) Instructions and guidelines for AI agents working with the codebase
+- **ENVIRONMENT.md** - Local environment configuration (not in version control)
+
+### docs/ Directory
+
+#### Development and Process Documentation
+- **docs/RUST_BEST_PRACTICES.md** - Rust-specific best practices for the project including error handling, documentation, testing, and code organization
+- **docs/RELEASE_CHECKLIST.md** - Comprehensive checklist for creating releases including version updates, testing, and GitHub release creation
+
+#### Technical Documentation
+- **docs/LIBRARY_USAGE.md** - Comprehensive guide for using ftr as a Rust library including API examples, configuration options, and integration patterns
+- **docs/UDP_TRACEROUTE_LINUX.md** - Explains UDP traceroute behavior on Linux, port filtering issues, and how ftr solves them
+- **docs/MULTI_MODE.md** - Documentation for multi-mode probing feature including multiple queries per hop and load-balanced path discovery
+- **docs/PACKAGING.md** - Guide for packaging ftr for different platforms including Debian/Ubuntu, FreeBSD, macOS, and Windows
+
+### Platform-Specific Notes
+
+#### Linux
+- Read **docs/UDP_TRACEROUTE_LINUX.md** for UDP mode behavior and privilege requirements
+- Check **docs/PACKAGING.md** for APT repository setup and .deb package creation
+
+#### FreeBSD/OpenBSD
+- See **README.md** installation sections for platform-specific build requirements
+- Check **AGENTS.md** VM section for testing procedures (no shared directory support)
+
+#### Windows
+- See **AGENTS.md** for Parallels mount build issues and workarounds
+- Check **README.md** for Windows-specific installation options
+
+#### macOS
+- See **docs/PACKAGING.md** for Homebrew tap information
+- Check **README.md** for macOS installation via Homebrew
+
+### Use Case Quick Reference
+
+| Task | Read These Documents |
+|------|---------------------|
+| Understanding the project | README.md, CHANGELOG.md |
+| Using ftr as a library | docs/LIBRARY_USAGE.md |
+| Creating a new release | docs/RELEASE_CHECKLIST.md, CHANGELOG.md |
+| Packaging for distribution | docs/PACKAGING.md |
+| Understanding UDP behavior | docs/UDP_TRACEROUTE_LINUX.md |
+| Working with VMs | AGENTS.md (VM Guidelines section), ENVIRONMENT.md |
+| Following code standards | docs/RUST_BEST_PRACTICES.md, AGENTS.md |
+| Planning new features | TODO.md, CHANGELOG.md (for context) |
+| Multi-probe traceroute | docs/MULTI_MODE.md |

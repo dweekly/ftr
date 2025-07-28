@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "ftr"
-version = "0.2.4"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -386,6 +386,7 @@ dependencies = [
  "serde",
  "serde_json",
  "socket2 0.6.0",
+ "thiserror 2.0.12",
  "tokio",
  "windows-sys 0.60.2",
 ]

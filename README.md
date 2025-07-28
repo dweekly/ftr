@@ -4,20 +4,56 @@
 [![License](https://img.shields.io/crates/l/ftr.svg)](https://github.com/dweekly/ftr/blob/main/LICENSE)
 [![CI](https://github.com/dweekly/ftr/workflows/CI/badge.svg)](https://github.com/dweekly/ftr/actions)
 [![codecov](https://codecov.io/gh/dweekly/ftr/graph/badge.svg)](https://codecov.io/gh/dweekly/ftr)
+[![docs.rs](https://docs.rs/ftr/badge.svg)](https://docs.rs/ftr)
 
-A fast, parallel ICMP traceroute implementation with ASN lookup.
+A fast, parallel traceroute implementation with automatic ASN lookup. Available as both a command-line tool and a Rust library.
 
 ## Features
 
-- **Parallel probing** - Sends multiple TTL probes concurrently for faster route discovery
-- **ASN lookups** - Automatically identifies the autonomous system for each hop
-- **Reverse DNS** - Shows hostnames for each hop when available
-- **ISP detection** - Identifies your ISP by detecting your public IP's ASN
-- **Smart classification** - Categorizes hops as LAN, ISP, or BEYOND
-- **CGNAT aware** - Properly handles Carrier Grade NAT (100.64.0.0/10)
-- **Early exit optimization** - Completes instantly when destination is reached
-- **Minimal dependencies** - Built with efficiency in mind
-- **Cross-platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
+- **High-Performance** - Parallel probing and smart caching for faster results
+- **Library API** - Full-featured async Rust library with structured error handling
+- **ASN Enrichment** - Automatic AS number and organization lookup with caching
+- **ISP Detection** - Identifies your ISP and classifies network segments
+- **Cross-Platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
+- **Multiple Protocols** - ICMP and UDP support with automatic fallback
+- **JSON Output** - Structured output for programmatic use
+- **Minimal Dependencies** - Efficient design with focus on performance
+
+## Quick Start
+
+### As a CLI Tool
+
+```bash
+# Basic usage
+ftr google.com
+
+# With custom options
+ftr --json --max-hops 20 google.com
+```
+
+### As a Library
+
+```rust
+use ftr::{trace, TracerouteConfig};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Simple trace
+    let result = trace("google.com").await?;
+    println!("Found {} hops", result.hop_count());
+    
+    // Custom configuration
+    let config = TracerouteConfig::builder()
+        .target("1.1.1.1")
+        .max_hops(20)
+        .build()?;
+    let result = ftr::trace_with_config(config).await?;
+    
+    Ok(())
+}
+```
+
+See [docs/LIBRARY_USAGE.md](docs/LIBRARY_USAGE.md) for comprehensive library documentation.
 
 ## Installation
 
@@ -252,6 +288,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
   - **Linux**: Root privileges or configured ping_group_range for ICMP functionality
   - **macOS**: Root privileges may be required for raw socket access
   - **Windows**: No additional requirements (uses native Windows ICMP API)
+    - Note: Windows Firewall may prompt for permission on first run
   - **FreeBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
   - **OpenBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
 

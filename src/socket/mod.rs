@@ -12,23 +12,44 @@ pub mod udp;
 #[cfg(target_os = "windows")]
 pub mod windows;
 
+use serde::{Deserialize, Serialize};
+
 /// IP version to use for probing
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Currently only IPv4 is fully supported. IPv6 support is planned for future releases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IpVersion {
-    /// IPv4
+    /// IPv4 addressing
     V4,
-    /// IPv6
+    /// IPv6 addressing (not yet fully supported)
     V6,
 }
 
 /// Protocol to use for probing
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Different protocols have different advantages:
+/// - **ICMP**: Most accurate, but often requires root privileges
+/// - **UDP**: Works without root on some systems, good compatibility
+///
+/// # Note
+///
+/// TCP support is planned for a future release but not yet implemented.
+///
+/// # Examples
+///
+/// ```
+/// use ftr::ProbeProtocol;
+///
+/// let protocol = ProbeProtocol::Udp;
+/// println!("Using {} protocol", protocol.description());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProbeProtocol {
-    /// ICMP/ICMPv6 protocol
+    /// ICMP Echo Request protocol
     Icmp,
-    /// UDP protocol
+    /// UDP protocol with high port numbers
     Udp,
-    /// TCP protocol
+    /// TCP SYN packets (not yet implemented)
     Tcp,
 }
 
@@ -44,13 +65,27 @@ impl ProbeProtocol {
 }
 
 /// Socket mode (affects permissions required)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Different socket modes have different permission requirements:
+/// - **Raw**: Full control but requires root/CAP_NET_RAW
+/// - **Dgram**: ICMP datagram sockets - platform specific permissions
+/// - **Stream**: TCP connections (not yet implemented)
+///
+/// The library will automatically fall back to less privileged modes when possible.
+///
+/// # Platform-Specific DGRAM Support
+///
+/// - **Linux**: Requires root or `sysctl net.ipv4.ping_group_range` configuration
+/// - **macOS**: Works without root for ICMP DGRAM sockets
+/// - **FreeBSD/OpenBSD**: Requires root
+/// - **Windows**: Uses Windows-specific ICMP APIs (IcmpSendEcho)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SocketMode {
-    /// Raw socket - requires CAP_NET_RAW or root
+    /// Raw socket - always requires CAP_NET_RAW or root
     Raw,
-    /// Datagram socket - may require root or sysctl configuration
+    /// Datagram socket for ICMP - permissions vary by platform
     Dgram,
-    /// Stream socket (TCP only) - no special permissions
+    /// Stream socket (TCP) - not yet implemented
     Stream,
 }
 

@@ -7,11 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2025-07-28
+
 ### Added
+- **Major Library Refactoring** - Complete transformation from monolithic CLI to modular library
+  - High-level async API with `trace()` and `trace_with_config()` functions
+  - Comprehensive configuration via `TracerouteConfigBuilder` with fluent API
+  - Structured error handling with `TracerouteError` enum for programmatic error handling
+  - Modular architecture with separate modules for ASN, DNS, public IP, and socket operations
+  - Extensive documentation for all public APIs with examples
+  - New examples demonstrating library usage patterns
+- **Caching Infrastructure**
+  - ASN lookup caching with configurable TTL (default 24 hours)
+  - Reverse DNS caching with configurable TTL (default 1 hour)
+  - Thread-safe global caches using Arc<Mutex<>>
+  - Significant performance improvements for repeated lookups
+- **Enhanced Testing**
+  - Comprehensive unit tests for all modules
+  - Integration tests for library API
+  - Test coverage for main.rs CLI functionality
+  - Structured error handling tests
+  - Platform-specific test improvements
+- **Error Handling Improvements**
+  - `InsufficientPermissions` error with structured fields for required permissions and suggestions
+  - `NotImplemented` error for features like TCP traceroute
+  - `Ipv6NotSupported` error for IPv6 targets
+  - Clear, actionable error messages for all error types
+- **Configuration Enhancements**
+  - Public IP parameter in TracerouteConfig to avoid repeated detection
+  - Convenience methods like `queries()` and `parallel_probes()`
+  - Better validation with descriptive error messages
+- **Documentation Updates**
+  - Comprehensive library documentation in lib.rs
+  - Error handling guide with examples
+  - Module-level documentation for all public modules
+  - Platform-specific implementation notes
 - OpenBSD support (OpenBSD 7.x)
   - Raw ICMP socket implementation with IP_HDRINCL support
   - Requires root privileges (identical behavior to FreeBSD)
   - Tested on OpenBSD 7.7 ARM64
+
+### Changed
+- **API Changes**
+  - `AsnInfo.asn` changed from String to u32 (breaking change)
+  - Added `display_asn()` method for formatting ASN with "AS" prefix
+  - Improved error types to be more specific and actionable
+- **Performance Optimizations**
+  - Parallel ASN and DNS lookups during hop enrichment
+  - Caching reduces redundant network requests
+  - More efficient data structures
+- **CI/CD Improvements**
+  - FreeBSD CI reduced to single version (14.0) for efficiency
+  - Better test organization and coverage reporting
+- **Code Organization**
+  - Core types moved from main.rs to library modules
+  - Traceroute engine extracted to dedicated module
+  - Better separation of concerns throughout codebase
+
+### Fixed
+- ASN lookup for private/special IPs now returns 0 instead of failing
+- Memory efficiency improvements in caching implementation
+- Race conditions in concurrent lookups
+- Documentation accuracy for TCP support (marked as not implemented)
+- Platform-specific socket mode documentation
 
 ## [0.2.4] - 2025-01-27
 

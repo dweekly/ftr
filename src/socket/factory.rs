@@ -782,4 +782,168 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_compatibility_matrix() {
+        // Test all protocol/mode combinations for each OS
+        let protocols = vec![ProbeProtocol::Icmp, ProbeProtocol::Udp, ProbeProtocol::Tcp];
+        let modes = vec![SocketMode::Raw, SocketMode::Dgram, SocketMode::Stream];
+
+        for protocol in &protocols {
+            for mode in &modes {
+                let compat = get_compatibility(*protocol, *mode);
+                match compat {
+                    Compatibility::Works
+                    | Compatibility::RequiresRoot
+                    | Compatibility::NotSupported => {
+                        // All valid values
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_probe_mode_descriptions() {
+        let test_cases = vec![
+            (
+                ProbeMode {
+                    ip_version: IpVersion::V4,
+                    protocol: ProbeProtocol::Icmp,
+                    socket_mode: SocketMode::Raw,
+                },
+                "Raw ICMP IPv4",
+            ),
+            (
+                ProbeMode {
+                    ip_version: IpVersion::V6,
+                    protocol: ProbeProtocol::Icmp,
+                    socket_mode: SocketMode::Dgram,
+                },
+                "Datagram ICMPv6 IPv6",
+            ),
+            (
+                ProbeMode {
+                    ip_version: IpVersion::V4,
+                    protocol: ProbeProtocol::Tcp,
+                    socket_mode: SocketMode::Stream,
+                },
+                "Stream TCP IPv4",
+            ),
+        ];
+
+        for (mode, expected) in test_cases {
+            assert_eq!(mode.description(), expected);
+        }
+    }
+
+    #[test]
+    fn test_create_probe_socket_with_port() {
+        let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+
+        // Test with custom port
+        let result = create_probe_socket_with_port(
+            ipv4,
+            Some(ProbeProtocol::Udp),
+            Some(SocketMode::Dgram),
+            false,
+            12345,
+        );
+
+        // Result may succeed or fail based on permissions, but shouldn't panic
+        match result {
+            Ok(_) => eprintln!("Socket created with custom port"),
+            Err(e) => eprintln!("Socket creation failed (expected in tests): {}", e),
+        }
+    }
+
+    #[test]
+    fn test_verbose_output() {
+        let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+
+        // Test verbose output (this won't actually print during tests unless test fails)
+        let _ = create_probe_socket_with_options(
+            ipv4,
+            Some(ProbeProtocol::Icmp),
+            None,
+            true, // verbose
+        );
+    }
+
+    #[test]
+    fn test_invalid_combinations() {
+        let ipv4 = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+
+        // Test invalid combination (ICMP with Stream mode)
+        let result = create_probe_socket_with_mode(
+            ipv4,
+            Some(ProbeProtocol::Icmp),
+            Some(SocketMode::Stream),
+        );
+
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("not supported"));
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_linux_compatibility() {
+        // Test Linux-specific compatibility rules
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Udp, SocketMode::Dgram),
+            Compatibility::Works
+        );
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Dgram),
+            Compatibility::Works
+        );
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Raw),
+            Compatibility::RequiresRoot
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_macos_compatibility() {
+        // Test macOS-specific compatibility rules
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Dgram),
+            Compatibility::Works
+        );
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Udp, SocketMode::Dgram),
+            Compatibility::RequiresRoot
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn test_windows_compatibility() {
+        // Test Windows-specific compatibility rules
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Raw),
+            Compatibility::Works
+        );
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Dgram),
+            Compatibility::NotSupported
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "openbsd")]
+    fn test_openbsd_compatibility() {
+        // Test OpenBSD-specific compatibility rules
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Icmp, SocketMode::Dgram),
+            Compatibility::NotSupported
+        );
+        assert_eq!(
+            get_compatibility(ProbeProtocol::Tcp, SocketMode::Stream),
+            Compatibility::Works
+        );
+    }
 }
