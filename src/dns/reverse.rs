@@ -23,6 +23,11 @@ pub async fn reverse_dns_lookup(
     ip: IpAddr,
     resolver: Option<Arc<TokioResolver>>,
 ) -> Result<String, ReverseDnsError> {
+    // Check cache first
+    if let Some(hostname) = crate::dns::RDNS_CACHE.get(&ip) {
+        return Ok(hostname);
+    }
+
     // Use provided resolver or create a new one
     let resolver = match resolver {
         Some(r) => r,
@@ -48,6 +53,9 @@ pub async fn reverse_dns_lookup(
             }
         })
         .ok_or(ReverseDnsError::NotFound)?;
+
+    // Cache the result
+    crate::dns::RDNS_CACHE.insert(ip, name.clone());
 
     Ok(name)
 }

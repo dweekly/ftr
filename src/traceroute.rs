@@ -6,6 +6,9 @@ pub mod engine;
 pub mod result;
 pub mod types;
 
+#[cfg(test)]
+mod caching_test;
+
 use ipnet::Ipv4Net;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;

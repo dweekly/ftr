@@ -36,6 +36,8 @@ pub struct TracerouteConfig {
     pub enable_rdns: bool,
     /// Enable verbose output
     pub verbose: bool,
+    /// Public IP address (if known) to avoid repeated detection
+    pub public_ip: Option<IpAddr>,
 }
 
 impl Default for TracerouteConfig {
@@ -55,6 +57,7 @@ impl Default for TracerouteConfig {
             enable_asn_lookup: true,
             enable_rdns: true,
             verbose: false,
+            public_ip: None,
         }
     }
 }
@@ -180,6 +183,12 @@ impl TracerouteConfigBuilder {
     /// Enable or disable verbose output
     pub fn verbose(mut self, verbose: bool) -> Self {
         self.config.verbose = verbose;
+        self
+    }
+
+    /// Set the public IP address (if known)
+    pub fn public_ip(mut self, ip: IpAddr) -> Self {
+        self.config.public_ip = Some(ip);
         self
     }
 

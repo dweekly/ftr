@@ -113,7 +113,29 @@ impl TracerouteEngine {
 
         // Detect ISP if enabled
         let isp_info = if self.config.enable_asn_lookup {
-            detect_isp_with_default_resolver().await.ok()
+            if let Some(public_ip) = self.config.public_ip {
+                // Use provided public IP
+                match public_ip {
+                    IpAddr::V4(ipv4) => {
+                        if let Ok(asn_info) = lookup_asn(ipv4, None).await {
+                            Some(crate::traceroute::IspInfo {
+                                public_ip,
+                                asn: asn_info.asn,
+                                name: asn_info.name,
+                            })
+                        } else {
+                            None
+                        }
+                    }
+                    IpAddr::V6(_) => {
+                        // Fallback to detection for IPv6
+                        detect_isp_with_default_resolver().await.ok()
+                    }
+                }
+            } else {
+                // Detect public IP
+                detect_isp_with_default_resolver().await.ok()
+            }
         } else {
             None
         };

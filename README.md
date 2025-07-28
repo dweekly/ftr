@@ -19,6 +19,10 @@ A fast, parallel ICMP traceroute implementation with ASN lookup.
 - **Minimal dependencies** - Built with efficiency in mind
 - **Cross-platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
 
+## Library Usage
+
+ftr can be used as a Rust library in your own applications. See [LIBRARY_USAGE.md](LIBRARY_USAGE.md) for a comprehensive guide.
+
 ## Installation
 
 ### Windows
