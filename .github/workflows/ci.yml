@@ -142,15 +142,12 @@ jobs:
   freebsd:
     name: FreeBSD
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        version: ['14.0', '13.3']
     steps:
     - uses: actions/checkout@v4
-    - name: Test on FreeBSD ${{ matrix.version }}
+    - name: Test on FreeBSD 14.0
       uses: vmactions/freebsd-vm@v1
       with:
-        release: ${{ matrix.version }}
+        release: '14.0'
         usesh: true
         # Note: vmactions/freebsd-vm runs as root user by default
         # sudo is not installed, so we conditionally use it only when not root

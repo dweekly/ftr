@@ -1,4 +1,26 @@
 //! Core traceroute functionality and utilities
+//!
+//! This module provides the main traceroute implementation including:
+//! - High-level API functions ([`trace`], [`trace_with_config`])
+//! - Configuration types ([`TracerouteConfig`], [`TracerouteConfigBuilder`])
+//! - Result types ([`TracerouteResult`], [`TracerouteProgress`])
+//! - Error handling ([`TracerouteError`])
+//!
+//! # Error Handling
+//!
+//! All traceroute operations return a `Result<T, TracerouteError>` where
+//! [`TracerouteError`] is an enum providing structured error information:
+//!
+//! - **`InsufficientPermissions`** - Includes what permissions are needed and suggestions
+//! - **`NotImplemented`** - Feature not yet implemented (e.g., TCP traceroute)
+//! - **`Ipv6NotSupported`** - IPv6 targets not yet supported
+//! - **`ResolutionError`** - DNS resolution failed
+//! - **`SocketError`** - Socket creation/operation failed
+//! - **`ConfigError`** - Invalid configuration
+//! - **`ProbeSendError`** - Failed to send probe packet
+//!
+//! This design allows library users to handle errors programmatically without
+//! parsing error strings.
 
 pub mod api;
 pub mod config;

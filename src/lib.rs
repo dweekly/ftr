@@ -55,6 +55,46 @@
 //! }
 //! ```
 //!
+//! # Error Handling
+//!
+//! The library provides structured error types through the [`TracerouteError`] enum,
+//! allowing for programmatic error handling without string parsing:
+//!
+//! ```no_run
+//! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+//! use ftr::{trace, TracerouteError};
+//!
+//! match trace("example.com").await {
+//!     Ok(result) => println!("Success! Found {} hops", result.hop_count()),
+//!     
+//!     // Permission errors include structured information
+//!     Err(TracerouteError::InsufficientPermissions { required, suggestion }) => {
+//!         eprintln!("Permission denied: {}", required);
+//!         eprintln!("Try: {}", suggestion);
+//!     }
+//!     
+//!     // Feature not implemented errors
+//!     Err(TracerouteError::NotImplemented { feature }) => {
+//!         eprintln!("{} is not yet implemented", feature);
+//!         // Could fall back to supported features
+//!     }
+//!     
+//!     // Other structured errors
+//!     Err(TracerouteError::Ipv6NotSupported) => {
+//!         eprintln!("IPv6 targets are not yet supported");
+//!     }
+//!     Err(TracerouteError::ResolutionError(msg)) => {
+//!         eprintln!("DNS resolution failed: {}", msg);
+//!     }
+//!     Err(e) => eprintln!("Error: {}", e),
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! See [`TracerouteError`] for all error variants and the `examples/error_handling.rs`
+//! example for comprehensive error handling patterns.
+//!
 //! # Modules
 //!
 //! - [`asn`]: ASN (Autonomous System Number) lookup functionality

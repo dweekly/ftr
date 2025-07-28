@@ -426,3 +426,7 @@ fn display_text_results(result: TracerouteResult) {
         println!("Detected ISP: AS{} ({})", isp_info.asn, isp_info.name);
     }
 }
+
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod main_tests;
