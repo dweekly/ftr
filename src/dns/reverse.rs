@@ -122,4 +122,121 @@ mod tests {
         let _ = reverse_dns_lookup(ip, Some(resolver)).await;
         // We don't assert on the result as DNS can be flaky in tests
     }
+
+    #[tokio::test]
+    async fn test_reverse_dns_caching_with_known_ips() {
+        use crate::dns::test_utils::reset_dns_counter;
+
+        // Clear cache and counter before test
+        crate::dns::RDNS_CACHE.clear();
+        reset_dns_counter();
+
+        // Test with IPs that have stable PTR records
+        let test_cases = vec![
+            (IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), "dns.google"), // Google DNS
+            (IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), "one.one.one.one"), // Cloudflare
+        ];
+
+        for (ip, expected_prefix) in test_cases {
+            // Clear cache for each test
+            crate::dns::RDNS_CACHE.clear();
+
+            // First lookup - should hit network
+            let result1 = reverse_dns_lookup(ip, None).await;
+            assert!(result1.is_ok(), "First lookup failed for {}", ip);
+            let hostname1 = result1.unwrap();
+            assert!(
+                hostname1.starts_with(expected_prefix),
+                "Expected {} to resolve to something starting with '{}', got '{}'",
+                ip,
+                expected_prefix,
+                hostname1
+            );
+
+            // Second lookup - should hit cache
+            let result2 = reverse_dns_lookup(ip, None).await;
+            assert!(result2.is_ok(), "Second lookup failed for {}", ip);
+            assert_eq!(
+                hostname1,
+                result2.unwrap(),
+                "Cache returned different value"
+            );
+
+            // Verify it's in cache
+            let cached = crate::dns::RDNS_CACHE.get(&ip);
+            assert!(cached.is_some(), "IP {} not found in cache", ip);
+            assert_eq!(cached.unwrap(), hostname1, "Cached value doesn't match");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_reverse_dns_ipv6() {
+        let ip = IpAddr::V6("2001:4860:4860::8888".parse().unwrap());
+        let result = reverse_dns_lookup(ip, None).await;
+
+        match result {
+            Ok(hostname) => {
+                assert!(!hostname.is_empty());
+                // Google's IPv6 DNS typically has PTR records
+            }
+            Err(_) => {
+                // Network issues or no PTR record is acceptable in tests
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_trailing_dot_removal() {
+        // This test verifies that trailing dots are removed from hostnames
+        // We can't directly test this with real DNS, so we test the logic
+        // by checking the result doesn't end with a dot
+        let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        let result = reverse_dns_lookup(ip, None).await;
+
+        if let Ok(hostname) = result {
+            assert!(!hostname.ends_with('.'), "Hostname should not end with dot");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_error_types() {
+        // Test with an IP that's unlikely to have a PTR record
+        let ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+        let result = reverse_dns_lookup(ip, None).await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ReverseDnsError::ResolutionError(_) | ReverseDnsError::NotFound => {
+                // Both error types are acceptable
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_lookups() {
+        use tokio::task::JoinSet;
+
+        let ips = vec![
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+            IpAddr::V4(Ipv4Addr::new(208, 67, 222, 222)),
+        ];
+
+        let mut tasks = JoinSet::new();
+
+        for ip in ips {
+            tasks.spawn(async move { reverse_dns_lookup(ip, None).await });
+        }
+
+        let mut results = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok(dns_result) => results.push(dns_result),
+                Err(e) => eprintln!("Task failed: {}", e),
+            }
+        }
+
+        // We should have results for all IPs (success or failure)
+        assert_eq!(results.len(), 3);
+    }
 }

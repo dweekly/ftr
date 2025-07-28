@@ -119,7 +119,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // Ignore in CI as it requires network and privileges
     async fn test_trace_localhost() {
         let config = TracerouteConfig::builder()
             .target("127.0.0.1")

@@ -45,7 +45,6 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[ignore] // Ignore in CI as it requires network access
     async fn test_detect_isp() {
         let result = detect_isp_with_default_resolver().await;
         // We can't assert on specific values as they depend on the test environment

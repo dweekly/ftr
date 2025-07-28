@@ -222,4 +222,163 @@ mod tests {
         assert!(result2.is_ok());
         assert_eq!(result1.unwrap().name, result2.unwrap().name);
     }
+
+    #[tokio::test]
+    async fn test_special_ips() {
+        // Test various special IP addresses
+        let test_cases = vec![
+            ("0.0.0.0", "Special Use"),         // Unspecified
+            ("169.254.1.1", "Special Use"),     // Link-local
+            ("255.255.255.255", "Special Use"), // Broadcast
+            ("198.51.100.1", "Special Use"),    // Documentation
+        ];
+
+        for (ip_str, expected_name) in test_cases {
+            let ip: Ipv4Addr = ip_str.parse().unwrap();
+            let result = lookup_asn(ip, None).await;
+            assert!(result.is_ok(), "Failed for IP: {}", ip_str);
+            let asn_info = result.unwrap();
+            assert_eq!(asn_info.asn, "N/A");
+            assert_eq!(
+                asn_info.name, expected_name,
+                "Wrong name for IP: {}",
+                ip_str
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_lookup_public_ip() {
+        // Test with known public IPs and their expected ASNs
+        let test_cases = vec![
+            ("8.8.8.8", "15169", "GOOGLE"),                // Google DNS
+            ("1.1.1.1", "13335", "CLOUDFLARENET"),         // Cloudflare DNS
+            ("208.67.222.222", "36692", "CISCO-UMBRELLA"), // OpenDNS (now Cisco Umbrella)
+        ];
+
+        for (ip_str, expected_asn, expected_name_prefix) in test_cases {
+            let ip: Ipv4Addr = ip_str.parse().unwrap();
+            let result = lookup_asn(ip, None).await;
+
+            assert!(
+                result.is_ok(),
+                "ASN lookup failed for {}: {:?}",
+                ip_str,
+                result.err()
+            );
+            let asn_info = result.unwrap();
+
+            // Verify ASN matches expected
+            assert_eq!(
+                asn_info.asn, expected_asn,
+                "Wrong ASN for {}: expected {}, got {}",
+                ip_str, expected_asn, asn_info.asn
+            );
+
+            // Verify name contains expected prefix
+            assert!(
+                asn_info.name.contains(expected_name_prefix),
+                "ASN name for {} doesn't contain '{}': got '{}'",
+                ip_str,
+                expected_name_prefix,
+                asn_info.name
+            );
+
+            // Basic validation
+            assert!(!asn_info.prefix.is_empty(), "Empty prefix for {}", ip_str);
+            assert!(
+                !asn_info.country_code.is_empty(),
+                "Empty country code for {}",
+                ip_str
+            );
+
+            eprintln!(
+                "✓ IP {} -> ASN: {}, Name: {}",
+                ip_str, asn_info.asn, asn_info.name
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_custom_resolver() {
+        let resolver = create_default_resolver();
+        let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
+        let result = lookup_asn(ip, Some(resolver)).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_cache_multiple_ips_same_prefix() {
+        // Clear cache
+        ASN_CACHE.clear();
+
+        // Two IPs in the same private network
+        let ip1: Ipv4Addr = "192.168.1.1".parse().unwrap();
+        let ip2: Ipv4Addr = "192.168.1.2".parse().unwrap();
+
+        // First lookup
+        let result1 = lookup_asn(ip1, None).await;
+        assert!(result1.is_ok());
+
+        // Second lookup - different IP but should still benefit from cache
+        // if the cache is using prefix-based lookups
+        let result2 = lookup_asn(ip2, None).await;
+        assert!(result2.is_ok());
+
+        // Both should be private network
+        assert_eq!(result1.unwrap().name, "Private Network");
+        assert_eq!(result2.unwrap().name, "Private Network");
+    }
+
+    #[test]
+    fn test_error_display() {
+        let errors = vec![
+            AsnLookupError::DnsError("timeout".to_string()),
+            AsnLookupError::InvalidFormat,
+            AsnLookupError::NotFound,
+        ];
+
+        for error in errors {
+            let error_str = error.to_string();
+            assert!(!error_str.is_empty());
+
+            match error {
+                AsnLookupError::DnsError(msg) => assert!(error_str.contains(&msg)),
+                AsnLookupError::InvalidFormat => assert!(error_str.contains("Invalid")),
+                AsnLookupError::NotFound => assert!(error_str.contains("No ASN")),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_lookups() {
+        use tokio::task::JoinSet;
+
+        let ips = vec![
+            Ipv4Addr::new(192, 168, 1, 1),
+            Ipv4Addr::new(10, 0, 0, 1),
+            Ipv4Addr::new(172, 16, 0, 1),
+            Ipv4Addr::new(127, 0, 0, 1),
+        ];
+
+        let mut tasks = JoinSet::new();
+
+        for ip in ips {
+            tasks.spawn(async move { lookup_asn(ip, None).await });
+        }
+
+        let mut results = Vec::new();
+        while let Some(result) = tasks.join_next().await {
+            match result {
+                Ok(asn_result) => results.push(asn_result),
+                Err(e) => eprintln!("Task failed: {}", e),
+            }
+        }
+
+        // All should succeed since they're all special IPs
+        assert_eq!(results.len(), 4);
+        for result in results {
+            assert!(result.is_ok());
+        }
+    }
 }
