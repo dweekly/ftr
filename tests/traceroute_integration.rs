@@ -191,7 +191,8 @@ fn test_socket_mode_compatibility() {
                 || stderr.contains("Permission denied")
                 || stderr.contains("Failed to create")
                 || stderr.contains("not yet implemented on Windows")
-                || stderr.contains("not yet available"),
+                || stderr.contains("not yet available")
+                || stderr.contains("Insufficient permissions"),
             "Expected permission-related error or not implemented message, got: {}",
             stderr
         );
