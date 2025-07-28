@@ -108,26 +108,31 @@ mod tests {
 
     #[test]
     fn test_global_cache() {
-        // Clear any existing data
-        ASN_CACHE.clear();
-        assert!(ASN_CACHE.is_empty());
+        // Use a unique prefix that won't conflict with other tests
+        let unique_prefix = "8.8.4.0/24";
+        let test_ip = "8.8.4.4";
 
         // Insert test data
         let asn_info = AsnInfo {
             asn: 15169,
-            prefix: "8.8.8.0/24".to_string(),
+            prefix: unique_prefix.to_string(),
             country_code: "US".to_string(),
             registry: "ARIN".to_string(),
-            name: "GOOGLE".to_string(),
+            name: "GOOGLE-TEST".to_string(),
         };
 
-        let prefix: Ipv4Net = "8.8.8.0/24".parse().unwrap();
-        ASN_CACHE.insert(prefix, asn_info);
+        let prefix: Ipv4Net = unique_prefix.parse().unwrap();
+        ASN_CACHE.insert(prefix, asn_info.clone());
 
         // Verify insertion
-        let ip: Ipv4Addr = "8.8.8.8".parse().unwrap();
+        let ip: Ipv4Addr = test_ip.parse().unwrap();
         let result = ASN_CACHE.get(&ip);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().name, "GOOGLE");
+
+        // The cache might contain other entries from parallel tests,
+        // so we just verify our entry exists
+        assert!(result.is_some(), "Failed to find entry for {}", test_ip);
+        let found = result.unwrap();
+        assert_eq!(found.asn, 15169);
+        assert_eq!(found.name, "GOOGLE-TEST");
     }
 }
