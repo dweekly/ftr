@@ -112,11 +112,23 @@ async fn test_traceroute_with_caching() {
                 dns_cache_size, asn_cache_size
             );
 
-            // Both caches should have entries
-            assert!(
-                dns_cache_size > 0,
-                "DNS cache should have entries after trace"
-            );
+            // Note: DNS cache might be 0 if no responsive hops were found
+            // or if rdns lookups failed. Check if any hops have hostnames.
+            let hops_with_hostnames = trace_result
+                .hops
+                .iter()
+                .filter(|h| h.hostname.is_some())
+                .count();
+
+            if dns_cache_size == 0 && hops_with_hostnames == 0 {
+                eprintln!("Warning: No hops with hostnames found, DNS cache empty is expected");
+            } else if hops_with_hostnames > 0 {
+                assert!(
+                    dns_cache_size > 0,
+                    "DNS cache should have entries after trace with {} hops having hostnames",
+                    hops_with_hostnames
+                );
+            }
             assert!(
                 asn_cache_size > 0,
                 "ASN cache should have entries after trace"

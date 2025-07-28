@@ -200,8 +200,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_error_types() {
-        // Test with an IP that's unlikely to have a PTR record
-        let ip = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+        // Use a reserved TEST-NET-1 address that shouldn't have a PTR record
+        // 192.0.2.0/24 is reserved for documentation (RFC 5737)
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 123));
         let result = reverse_dns_lookup(ip, None).await;
 
         assert!(result.is_err());
