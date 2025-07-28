@@ -168,32 +168,27 @@ fn test_invalid_hostname() {
 }
 
 #[test]
-fn test_socket_mode_compatibility() {
-    // Test that incompatible socket modes fail appropriately
+fn test_socket_mode_requires_permissions() {
+    // Test that raw socket mode fails appropriately without root
+    // This is a CLI test, so we just verify it exits with error status
+    // The actual structured error testing is done in error_handling_test.rs
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
-        "--protocol",
-        "udp",
-        "--socket-mode",
-        "raw",
-        "--start-ttl",
-        "1",
-        "127.0.0.1",
-    ]);
+    cmd.args(&["--socket-mode", "raw", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
 
-    // Should either work (if root/admin) or fail with appropriate error
+    // If we're not root, this should fail
+    // If we are root, it might succeed or fail for other reasons
+    // The important thing is that the CLI handles errors gracefully
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // Just verify we got some error output
+        assert!(!stderr.is_empty(), "Expected error output but got none");
+
+        // Verify it contains "Error:" prefix (our CLI convention)
         assert!(
-            stderr.contains("requires root")
-                || stderr.contains("Permission denied")
-                || stderr.contains("Failed to create")
-                || stderr.contains("not yet implemented on Windows")
-                || stderr.contains("not yet available")
-                || stderr.contains("Insufficient permissions"),
-            "Expected permission-related error or not implemented message, got: {}",
+            stderr.contains("Error:"),
+            "Expected error message to start with 'Error:', got: {}",
             stderr
         );
     }

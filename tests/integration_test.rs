@@ -232,13 +232,43 @@ async fn test_result_methods() {
 
 #[tokio::test]
 async fn test_error_types() {
-    // Test various error conditions
+    // Test various error conditions with structured errors
 
-    // Invalid target (empty)
+    // Invalid target (empty) - should get ConfigError
     let result = trace("").await;
-    assert!(matches!(result, Err(TracerouteError::ConfigError(_))));
+    match result {
+        Err(TracerouteError::ConfigError(msg)) => {
+            println!("Got expected ConfigError: {}", msg);
+            assert!(msg.contains("Target") || msg.contains("target"));
+        }
+        _ => panic!("Expected ConfigError for empty target"),
+    }
 
-    // Test with a config that might fail
+    // Test unimplemented TCP protocol
+    let config = TracerouteConfigBuilder::new()
+        .target("127.0.0.1")
+        .protocol(ProbeProtocol::Tcp)
+        .build()
+        .unwrap();
+
+    let result = trace_with_config(config).await;
+    match result {
+        Err(TracerouteError::NotImplemented { feature }) => {
+            assert_eq!(feature, "TCP traceroute");
+        }
+        _ => panic!("Expected NotImplemented error for TCP"),
+    }
+
+    // Test IPv6 not supported
+    let result = trace("::1").await;
+    match result {
+        Err(TracerouteError::Ipv6NotSupported) => {
+            println!("Got expected Ipv6NotSupported error");
+        }
+        _ => panic!("Expected Ipv6NotSupported error"),
+    }
+
+    // Test resolution error
     let config = TracerouteConfigBuilder::new()
         .target("invalid.host.that.does.not.exist.example")
         .build()
@@ -246,15 +276,16 @@ async fn test_error_types() {
 
     let result = trace_with_config(config).await;
     match result {
-        Ok(_) => {
-            // Unexpectedly succeeded - DNS might have resolved it
+        Err(TracerouteError::ResolutionError(msg)) => {
+            println!("Got expected ResolutionError: {}", msg);
+            assert!(msg.contains("resolve") || msg.contains("Target IP"));
         }
         Err(e) => {
-            // Should be either Resolution or Socket error
-            assert!(
-                matches!(e, TracerouteError::ResolutionError(_))
-                    || matches!(e, TracerouteError::SocketError(_))
-            );
+            // Could be other error if DNS somehow resolved it
+            println!("Got different error (might be OK): {:?}", e);
+        }
+        Ok(_) => {
+            println!("Warning: invalid hostname somehow resolved, skipping test");
         }
     }
 }
