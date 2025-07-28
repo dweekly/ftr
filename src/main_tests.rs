@@ -5,7 +5,6 @@ mod tests {
     use crate::*;
     use clap::Parser;
     use ftr::{ProbeProtocol, SocketMode};
-    use std::io::Cursor;
     use std::net::IpAddr;
 
     #[test]
