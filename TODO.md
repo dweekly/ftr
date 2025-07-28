@@ -8,6 +8,12 @@ This file tracks planned work for the ftr project.
   - UDP socket error handling
   - ICMP packet parsing edge cases
   - ASN lookup failures
+  - Mock-based engine tests (timeout scenarios, destination detection)
+  - Error path testing (socket creation failures, DNS failures)
+- [ ] Increase test coverage to 50%+ (currently ~11%)
+  - Add integration tests for library API
+  - Add property-based tests for parsers
+  - Test concurrent operations and edge cases
 
 ## Medium Priority
 
@@ -39,6 +45,8 @@ This file tracks planned work for the ftr project.
 - [ ] Add fuzz testing to CI pipeline
 - [ ] Add benchmarking suite (Criterion) under `benches/` to track performance regressions
 - [ ] Add fuzz targets (e.g. using `cargo-fuzz`) for packet parsing components
+- [ ] Add test coverage tracking to CI (cargo-tarpaulin)
+- [ ] Create test fixtures and mock implementations for external dependencies
 
 ## v0.4.0 Release Ideas
 
