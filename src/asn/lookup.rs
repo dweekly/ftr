@@ -30,12 +30,7 @@ pub async fn lookup_asn(
     ipv4_addr: Ipv4Addr,
     resolver: Option<Arc<TokioResolver>>,
 ) -> Result<AsnInfo, AsnLookupError> {
-    // Check cache first
-    if let Some(cached) = ASN_CACHE.get(&ipv4_addr) {
-        return Ok(cached);
-    }
-
-    // Check if it's a private or special IP
+    // Check if it's a private or special IP first, before cache
     if is_internal_ip(&ipv4_addr)
         || is_cgnat(&ipv4_addr)
         || ipv4_addr.is_link_local()
@@ -68,6 +63,11 @@ pub async fn lookup_asn(
         }
 
         return Ok(asn_info);
+    }
+
+    // Check cache for non-special IPs
+    if let Some(cached) = ASN_CACHE.get(&ipv4_addr) {
+        return Ok(cached);
     }
 
     // Use provided resolver or create a new one
