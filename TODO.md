@@ -4,6 +4,9 @@ This file tracks planned work for the ftr project.
 
 ## High Priority
 
+- [ ] Update GitHub Actions to use macos-15 instead of macos-latest
+  - macos-latest still points to older version
+  - Explicitly using macos-15 ensures consistent environment
 - [ ] Add missing tests for complex logic
   - UDP socket error handling
   - ICMP packet parsing edge cases
