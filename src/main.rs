@@ -372,15 +372,6 @@ fn display_text_results(result: TracerouteResult) {
     // If enrichment is disabled, no hops should have ASN info
     let enrichment_disabled = result.hops.iter().all(|h| h.asn_info.is_none());
 
-    // DEBUG: Let's see what's happening
-    if std::env::var("DEBUG_ENRICH").is_ok() {
-        eprintln!("enrichment_disabled: {}", enrichment_disabled);
-        eprintln!(
-            "First hop ASN info: {:?}",
-            result.hops.first().and_then(|h| h.asn_info.as_ref())
-        );
-    }
-
     // Display hops
     for hop in &result.hops {
         if hop.addr.is_none() {
