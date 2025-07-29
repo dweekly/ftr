@@ -273,6 +273,24 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
   - Highlight major features and improvements
   - Provide clear upgrade path from previous versions
 
+### Creating Pull Requests with GitHub CLI
+- **Always use `--head` flag when creating PRs**:
+  ```bash
+  gh pr create --base main --head branch-name --title "Title" --body "Description"
+  ```
+- **Common issue**: Without `--head`, gh pr may fail with "aborted: you must first push the current branch"
+- **Even after pushing**, gh pr sometimes requires explicit `--head` flag
+- **Example workflow**:
+  ```bash
+  # Push your branch
+  git push -u origin feature-branch
+  
+  # Create PR with explicit base and head
+  gh pr create --base main --head feature-branch \
+    --title "Add new feature" \
+    --body "Description of changes"
+  ```
+
 ## Virtual Machine Guidelines
 
 ### Shared Directory Access
