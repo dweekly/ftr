@@ -142,6 +142,9 @@ mod tests {
     fn test_cache_thread_safety() {
         use std::thread;
 
+        // Clear cache before test
+        RDNS_CACHE.clear();
+
         let handles: Vec<_> = (0..10)
             .map(|i| {
                 thread::spawn(move || {

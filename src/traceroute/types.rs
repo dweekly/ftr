@@ -90,6 +90,7 @@ impl ClassifiedHopInfo {
 ///     public_ip: "1.2.3.4".parse().unwrap(),
 ///     asn: 12345,
 ///     name: "Example ISP".to_string(),
+///     hostname: Some("customer-1-2-3-4.example.com".to_string()),
 /// };
 /// println!("Connected via {} (AS{})", isp.name, isp.asn);
 /// ```

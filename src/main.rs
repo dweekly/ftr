@@ -368,11 +368,18 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
 
 /// Display results in text format
 fn display_text_results(result: TracerouteResult) {
-    // Check if enrichment was disabled (all hops will have Unknown segment)
-    let enrichment_disabled = result
-        .hops
-        .iter()
-        .all(|h| h.segment == ftr::SegmentType::Unknown || h.addr.is_none());
+    // Check if enrichment was disabled by looking at whether ANY hop has ASN info
+    // If enrichment is disabled, no hops should have ASN info
+    let enrichment_disabled = result.hops.iter().all(|h| h.asn_info.is_none());
+
+    // DEBUG: Let's see what's happening
+    if std::env::var("DEBUG_ENRICH").is_ok() {
+        eprintln!("enrichment_disabled: {}", enrichment_disabled);
+        eprintln!(
+            "First hop ASN info: {:?}",
+            result.hops.first().and_then(|h| h.asn_info.as_ref())
+        );
+    }
 
     // Display hops
     for hop in &result.hops {
@@ -410,10 +417,12 @@ fn display_text_results(result: TracerouteResult) {
                 String::new()
             };
 
-            // Only show segment if enrichment was enabled
+            // Only show segment and ASN if enrichment was enabled
             if enrichment_disabled {
-                println!("{:2} {} {}{}", hop.ttl, host_display, rtt_str, asn_str);
+                // Raw mode - no enrichment data at all
+                println!("{:2} {} {}", hop.ttl, host_display, rtt_str);
             } else {
+                // Enriched mode - show segment and ASN info
                 println!(
                     "{:2} [{}] {} {}{}",
                     hop.ttl, hop.segment, host_display, rtt_str, asn_str

@@ -154,6 +154,8 @@ impl TracerouteEngine {
         let enrichment_enabled = self.config.enable_asn_lookup || self.config.enable_rdns;
         let public_ip_future = if enrichment_enabled && self.config.public_ip.is_none() {
             let enrichment_results = Arc::clone(&self.enrichment_results);
+            let enable_asn = self.config.enable_asn_lookup;
+            let enable_rdns = self.config.enable_rdns;
             Some(tokio::spawn(async move {
                 use crate::public_ip::{get_public_ip, PublicIpProvider};
 
@@ -163,30 +165,41 @@ impl TracerouteEngine {
                     let resolver = Arc::new(crate::dns::create_default_resolver());
 
                     let asn_future = async {
-                        if let IpAddr::V4(ipv4) = public_ip {
-                            lookup_asn(ipv4, Some(Arc::clone(&resolver))).await.ok()
+                        if enable_asn {
+                            if let IpAddr::V4(ipv4) = public_ip {
+                                lookup_asn(ipv4, Some(Arc::clone(&resolver))).await.ok()
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
                     };
 
-                    let rdns_future = reverse_dns_lookup(public_ip, Some(Arc::clone(&resolver)));
+                    let rdns_future = async {
+                        if enable_rdns {
+                            reverse_dns_lookup(public_ip, Some(Arc::clone(&resolver)))
+                                .await
+                                .ok()
+                        } else {
+                            None
+                        }
+                    };
 
                     // Run both in parallel
                     let (asn_info, hostname) = tokio::join!(asn_future, rdns_future);
 
                     // Store the enrichment result
-                    let hostname_ok = hostname.ok();
                     enrichment_results.lock().expect("mutex poisoned").insert(
                         public_ip,
                         EnrichmentResult {
                             ip: public_ip,
-                            hostname: hostname_ok.clone(),
+                            hostname: hostname.clone(),
                             asn_info: asn_info.clone(),
                         },
                     );
 
-                    Some((public_ip, asn_info, hostname_ok))
+                    Some((public_ip, asn_info, hostname))
                 } else {
                     None
                 }
@@ -317,6 +330,8 @@ impl TracerouteEngine {
         let shutdown = Arc::new(Mutex::new(false));
         let shutdown_clone = Arc::clone(&shutdown);
         let enrichment_enabled = self.config.enable_asn_lookup || self.config.enable_rdns;
+        let enable_asn = self.config.enable_asn_lookup;
+        let enable_rdns = self.config.enable_rdns;
         let enrichment_results_clone = Arc::clone(&self.enrichment_results);
         let receiver_poll_interval = self.config.timing.receiver_poll_interval;
         let verbose = self.config.verbose;
@@ -395,19 +410,33 @@ impl TracerouteEngine {
                                     Arc::clone(&enrichment_results_clone);
 
                                 tokio::spawn(async move {
-                                    // Run ASN and rDNS lookups in parallel
+                                    // Run ASN and rDNS lookups in parallel (only if enabled)
                                     let asn_future = async {
-                                        if let IpAddr::V4(ipv4) = ip {
-                                            lookup_asn(ipv4, Some(Arc::clone(&resolver_clone)))
-                                                .await
-                                                .ok()
+                                        if enable_asn {
+                                            if let IpAddr::V4(ipv4) = ip {
+                                                lookup_asn(ipv4, Some(Arc::clone(&resolver_clone)))
+                                                    .await
+                                                    .ok()
+                                            } else {
+                                                None
+                                            }
                                         } else {
                                             None
                                         }
                                     };
 
-                                    let rdns_future =
-                                        reverse_dns_lookup(ip, Some(Arc::clone(&resolver_clone)));
+                                    let rdns_future = async {
+                                        if enable_rdns {
+                                            reverse_dns_lookup(
+                                                ip,
+                                                Some(Arc::clone(&resolver_clone)),
+                                            )
+                                            .await
+                                            .ok()
+                                        } else {
+                                            None
+                                        }
+                                    };
 
                                     let (asn_info, hostname) =
                                         tokio::join!(asn_future, rdns_future);
@@ -420,7 +449,7 @@ impl TracerouteEngine {
                                             ip,
                                             EnrichmentResult {
                                                 ip,
-                                                hostname: hostname.ok(),
+                                                hostname,
                                                 asn_info,
                                             },
                                         );
@@ -633,8 +662,16 @@ impl TracerouteEngine {
         for raw_hop in raw_hops {
             // Get pre-computed enrichment data for this hop
             let enrichment = raw_hop.addr.and_then(|addr| enrichment_results.get(&addr));
-            let asn_info = enrichment.and_then(|e| e.asn_info.clone());
-            let hostname = enrichment.and_then(|e| e.hostname.clone());
+            let asn_info = if self.config.enable_asn_lookup {
+                enrichment.and_then(|e| e.asn_info.clone())
+            } else {
+                None
+            };
+            let hostname = if self.config.enable_rdns {
+                enrichment.and_then(|e| e.hostname.clone())
+            } else {
+                None
+            };
 
             let segment = if let Some(IpAddr::V4(ipv4)) = raw_hop.addr {
                 if crate::traceroute::is_internal_ip(&ipv4) {

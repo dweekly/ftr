@@ -103,10 +103,15 @@ fn test_no_enrich_flag() {
 
     let output = cmd.output().unwrap();
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("stdout: {}", stdout);
+    println!("stderr: {}", stderr);
+
     if output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
         // Should not contain ASN information when --no-enrich is used
-        assert!(!stdout.contains("AS"));
+        assert!(!stdout.contains("AS"), "stdout contains 'AS': {}", stdout);
         assert!(!stdout.contains("Google"));
     }
 }
