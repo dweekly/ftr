@@ -317,6 +317,7 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
 4. Keep changes focused and atomic
 5. Document significant changes
 6. Ask the user before making destructive operations
+7. NEVER use `--no-verify` when pushing - always let pre-push hooks run
 
 ## Documentation Index
 
