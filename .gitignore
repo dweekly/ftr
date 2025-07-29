@@ -26,6 +26,9 @@ target/
 # Windows
 nul
 
+# Rust temporary files
+rmeta*/
+
 # Test coverage
 tarpaulin-report.html
 cobertura.xml
