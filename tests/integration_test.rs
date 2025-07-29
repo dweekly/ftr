@@ -16,16 +16,6 @@ async fn trace_with_timeout(target: &str) -> Result<TracerouteResult, String> {
     }
 }
 
-async fn trace_config_with_timeout(
-    config: ftr::TracerouteConfig,
-) -> Result<TracerouteResult, String> {
-    match tokio::time::timeout(Duration::from_secs(10), trace_with_config(config)).await {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(e)) => Err(format!("Trace error: {}", e)),
-        Err(_) => Err("Timeout after 10 seconds".to_string()),
-    }
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_basic_trace() {
     // Test basic tracing to localhost
