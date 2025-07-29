@@ -7,12 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-07-29
+
 ### Added
 - Configurable inter-query delay via `-i` parameter (default 0ms)
 - Parallel public IP detection at startup
 - Reverse DNS lookup for public IP
 - Truly parallel enrichment - ASN and rDNS lookups start immediately as each IP arrives
-- TimingConfig struct for all configurable delays
 - macOS DGRAM ICMP socket support
 
 ### Changed
@@ -28,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raw ICMP socket issues on macOS (now uses DGRAM mode)
 - CGNAT addresses now correctly classified as ISP segment, not LAN
 - Redundant public IP detection on every run
+- `--no-enrich` flag not working correctly - ASN lookups were still being performed and displayed
+- `--no-rdns` flag not working correctly - reverse DNS was disabled when any enrichment was disabled
 
 ## [0.3.0] - 2025-07-28
 

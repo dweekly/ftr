@@ -49,6 +49,14 @@ When building on Windows where the source directory is a Parallels mount (e.g., 
 cargo build --target-dir C:/temp/ftr-target
 ```
 
+### Windows 'nul' File Warning
+**IMPORTANT**: When working on Windows, be careful not to accidentally create a file named 'nul'. This can happen if you run a command like `command > nul` without the proper syntax. Windows treats 'nul' as a special device name (like /dev/null on Unix).
+
+If you accidentally create a 'nul' file:
+- It should be deleted immediately
+- It's already in .gitignore to prevent accidental commits
+- Use `del nul` on Windows or `rm nul` on Unix to remove it
+
 **Important notes:**
 - Use forward slashes (/) not backslashes (\) in the path - they work on Windows and avoid escaping issues
 - The `--target-dir` flag must be used directly with cargo; setting CARGO_TARGET_DIR environment variable doesn't work reliably
