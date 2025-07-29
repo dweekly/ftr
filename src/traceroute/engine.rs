@@ -11,7 +11,6 @@ use crate::traceroute::{
     ClassifiedHopInfo, RawHopInfo, SegmentType, TracerouteConfig, TracerouteProgress,
     TracerouteResult,
 };
-use futures::stream::{FuturesUnordered, StreamExt};
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;
@@ -93,6 +92,14 @@ pub enum TracerouteError {
     Ipv6NotSupported,
 }
 
+/// Enrichment result for a hop
+#[derive(Clone)]
+struct EnrichmentResult {
+    ip: IpAddr,
+    hostname: Option<String>,
+    asn_info: Option<crate::traceroute::AsnInfo>,
+}
+
 /// Traceroute engine
 pub struct TracerouteEngine {
     config: TracerouteConfig,
@@ -100,6 +107,8 @@ pub struct TracerouteEngine {
     results: Arc<Mutex<HashMap<u8, RawHopInfo>>>,
     active_probes: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
     destination_reached: Arc<Mutex<bool>>,
+    destination_ttl: Arc<Mutex<Option<u8>>>,
+    enrichment_results: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
 }
 
 impl TracerouteEngine {
@@ -117,6 +126,8 @@ impl TracerouteEngine {
             results: Arc::new(Mutex::new(HashMap::new())),
             active_probes: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
+            destination_ttl: Arc::new(Mutex::new(None)),
+            enrichment_results: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -137,6 +148,51 @@ impl TracerouteEngine {
         let target_ipv4 = match target_ip {
             IpAddr::V4(ipv4) => ipv4,
             IpAddr::V6(_) => return Err(TracerouteError::Ipv6NotSupported),
+        };
+
+        // Start ISP detection in parallel if needed
+        let enrichment_enabled = self.config.enable_asn_lookup || self.config.enable_rdns;
+        let public_ip_future = if enrichment_enabled && self.config.public_ip.is_none() {
+            let enrichment_results = Arc::clone(&self.enrichment_results);
+            Some(tokio::spawn(async move {
+                use crate::public_ip::{get_public_ip, PublicIpProvider};
+
+                // Get public IP first
+                if let Ok(public_ip) = get_public_ip(PublicIpProvider::default()).await {
+                    // Immediately start ASN and rDNS lookups in parallel
+                    let resolver = Arc::new(crate::dns::create_default_resolver());
+
+                    let asn_future = async {
+                        if let IpAddr::V4(ipv4) = public_ip {
+                            lookup_asn(ipv4, Some(Arc::clone(&resolver))).await.ok()
+                        } else {
+                            None
+                        }
+                    };
+
+                    let rdns_future = reverse_dns_lookup(public_ip, Some(Arc::clone(&resolver)));
+
+                    // Run both in parallel
+                    let (asn_info, hostname) = tokio::join!(asn_future, rdns_future);
+
+                    // Store the enrichment result
+                    let hostname_ok = hostname.ok();
+                    enrichment_results.lock().expect("mutex poisoned").insert(
+                        public_ip,
+                        EnrichmentResult {
+                            ip: public_ip,
+                            hostname: hostname_ok.clone(),
+                            asn_info: asn_info.clone(),
+                        },
+                    );
+
+                    Some((public_ip, asn_info, hostname_ok))
+                } else {
+                    None
+                }
+            }))
+        } else {
+            None
         };
 
         // Run the traceroute probes
@@ -160,30 +216,70 @@ impl TracerouteEngine {
                 .collect()
         };
 
-        // Detect ISP if enabled
+        // Get ISP info from parallel detection or provided IP
         let isp_info = if self.config.enable_asn_lookup {
             if let Some(public_ip) = self.config.public_ip {
-                // Use provided public IP
-                match public_ip {
-                    IpAddr::V4(ipv4) => {
-                        if let Ok(asn_info) = lookup_asn(ipv4, None).await {
+                // Use provided public IP - check if we already have enrichment for it
+                let existing_enrichment = {
+                    let enrichment_results =
+                        self.enrichment_results.lock().expect("mutex poisoned");
+                    enrichment_results.get(&public_ip).cloned()
+                };
+
+                if let Some(enrichment) = existing_enrichment {
+                    enrichment
+                        .asn_info
+                        .as_ref()
+                        .map(|asn_info| crate::traceroute::IspInfo {
+                            public_ip,
+                            asn: asn_info.asn,
+                            name: asn_info.name.clone(),
+                            hostname: enrichment.hostname.clone(),
+                        })
+                } else {
+                    // Need to look it up
+                    match public_ip {
+                        IpAddr::V4(ipv4) => {
+                            if let Ok(asn_info) = lookup_asn(ipv4, None).await {
+                                // Look up rDNS for provided public IP
+                                let hostname =
+                                    crate::dns::reverse_dns_lookup(public_ip, None).await.ok();
+
+                                Some(crate::traceroute::IspInfo {
+                                    public_ip,
+                                    asn: asn_info.asn,
+                                    name: asn_info.name,
+                                    hostname,
+                                })
+                            } else {
+                                None
+                            }
+                        }
+                        IpAddr::V6(_) => {
+                            // Fallback to detection for IPv6
+                            detect_isp_with_default_resolver().await.ok()
+                        }
+                    }
+                }
+            } else if let Some(future) = public_ip_future {
+                // Wait for parallel detection to complete
+                match future.await {
+                    Ok(Some((public_ip, asn_info, hostname))) => {
+                        if let Some(asn) = asn_info {
                             Some(crate::traceroute::IspInfo {
                                 public_ip,
-                                asn: asn_info.asn,
-                                name: asn_info.name,
+                                asn: asn.asn,
+                                name: asn.name,
+                                hostname,
                             })
                         } else {
                             None
                         }
                     }
-                    IpAddr::V6(_) => {
-                        // Fallback to detection for IPv6
-                        detect_isp_with_default_resolver().await.ok()
-                    }
+                    _ => None,
                 }
             } else {
-                // Detect public IP
-                detect_isp_with_default_resolver().await.ok()
+                None
             }
         } else {
             None
@@ -216,18 +312,33 @@ impl TracerouteEngine {
         let results_clone = Arc::clone(&self.results);
         let active_probes_clone = Arc::clone(&self.active_probes);
         let destination_reached_clone = Arc::clone(&self.destination_reached);
-        let overall_timeout = self.config.overall_timeout;
+        let destination_ttl_clone = Arc::clone(&self.destination_ttl);
+
+        let shutdown = Arc::new(Mutex::new(false));
+        let shutdown_clone = Arc::clone(&shutdown);
+        let enrichment_enabled = self.config.enable_asn_lookup || self.config.enable_rdns;
+        let enrichment_results_clone = Arc::clone(&self.enrichment_results);
+        let receiver_poll_interval = self.config.timing.receiver_poll_interval;
+        let verbose = self.config.verbose;
 
         let receiver_handle = tokio::spawn(async move {
-            let receiver_start_time = Instant::now();
-
+            // Set up resolver for enrichment
+            let resolver = if enrichment_enabled {
+                Some(Arc::new(crate::dns::create_default_resolver()))
+            } else {
+                None
+            };
             loop {
-                if receiver_start_time.elapsed() > overall_timeout + Duration::from_millis(1000) {
+                // Check if we should shutdown
+                if *shutdown_clone.lock().expect("mutex poisoned") {
                     break;
                 }
 
+                // Don't exit early just because destination is reached -
+                // intermediate hops might still be responding
+
                 // Try to receive a response
-                match recv_socket.recv_response(Duration::from_millis(100)) {
+                match recv_socket.recv_response(receiver_poll_interval) {
                     Ok(Some(response)) => {
                         // Remove from active probes
                         active_probes_clone
@@ -249,6 +360,13 @@ impl TracerouteEngine {
                                 if response.from_addr == IpAddr::V4(target_ip) {
                                     *destination_reached_clone.lock().expect("mutex poisoned") =
                                         true;
+
+                                    // Record which TTL reached the destination
+                                    let mut dest_ttl_guard =
+                                        destination_ttl_clone.lock().expect("mutex poisoned");
+                                    if dest_ttl_guard.is_none() {
+                                        *dest_ttl_guard = Some(ttl);
+                                    }
                                 }
                             }
                             _ => {}
@@ -256,13 +374,67 @@ impl TracerouteEngine {
 
                         // Store result if not already present
                         let mut results_guard = results_clone.lock().expect("mutex poisoned");
+                        let is_new = !results_guard.contains_key(&ttl);
                         results_guard.entry(ttl).or_insert(raw_hop);
+                        drop(results_guard);
+
+                        // Start enrichment immediately if this is a new IP
+                        if is_new && enrichment_enabled {
+                            let enrichment_guard =
+                                enrichment_results_clone.lock().expect("mutex poisoned");
+                            if !enrichment_guard.contains_key(&response.from_addr) {
+                                drop(enrichment_guard);
+
+                                // Spawn parallel enrichment tasks
+                                let ip = response.from_addr;
+                                let resolver_clone = resolver
+                                    .as_ref()
+                                    .expect("resolver should be Some when enrichment_enabled")
+                                    .clone();
+                                let enrichment_results_clone2 =
+                                    Arc::clone(&enrichment_results_clone);
+
+                                tokio::spawn(async move {
+                                    // Run ASN and rDNS lookups in parallel
+                                    let asn_future = async {
+                                        if let IpAddr::V4(ipv4) = ip {
+                                            lookup_asn(ipv4, Some(Arc::clone(&resolver_clone)))
+                                                .await
+                                                .ok()
+                                        } else {
+                                            None
+                                        }
+                                    };
+
+                                    let rdns_future =
+                                        reverse_dns_lookup(ip, Some(Arc::clone(&resolver_clone)));
+
+                                    let (asn_info, hostname) =
+                                        tokio::join!(asn_future, rdns_future);
+
+                                    // Store the result
+                                    enrichment_results_clone2
+                                        .lock()
+                                        .expect("mutex poisoned")
+                                        .insert(
+                                            ip,
+                                            EnrichmentResult {
+                                                ip,
+                                                hostname: hostname.ok(),
+                                                asn_info,
+                                            },
+                                        );
+                                });
+                            }
+                        }
                     }
                     Ok(None) => {
                         // Timeout, continue
                     }
                     Err(e) => {
-                        eprintln!("Error receiving response: {e}");
+                        if verbose {
+                            eprintln!("Error receiving response: {e}");
+                        }
                     }
                 }
 
@@ -277,13 +449,23 @@ impl TracerouteEngine {
         let mut sequence = 1u16;
 
         for ttl_val in self.config.start_ttl..=self.config.max_hops {
+            // Check if we should stop sending (destination found at lower TTL)
+            {
+                let dest_ttl = self.destination_ttl.lock().expect("mutex poisoned");
+                if let Some(found_at_ttl) = *dest_ttl {
+                    if ttl_val > found_at_ttl {
+                        break; // Don't send probes beyond the destination
+                    }
+                }
+            }
+
             // Set TTL
             self.socket
                 .set_ttl(ttl_val)
                 .map_err(|e| TracerouteError::ProbeSendError(e.to_string()))?;
 
             // Send multiple probes for this TTL
-            for query_num in 0..self.config.queries_per_hop {
+            for _query_num in 0..self.config.queries_per_hop {
                 // Create probe info
                 let probe_info = ProbeInfo {
                     ttl: ttl_val,
@@ -300,7 +482,9 @@ impl TracerouteEngine {
 
                 // Send the probe
                 if let Err(e) = self.socket.send_probe(IpAddr::V4(target_ip), probe_info) {
-                    eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
+                    if self.config.verbose {
+                        eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
+                    }
                     self.active_probes
                         .lock()
                         .expect("mutex poisoned")
@@ -309,21 +493,32 @@ impl TracerouteEngine {
 
                 sequence += 1;
 
-                // Small delay between probes for the same TTL
-                if query_num < self.config.queries_per_hop - 1 {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                // Add delay between queries if configured
+                if _query_num < self.config.queries_per_hop - 1
+                    && self.config.send_interval.as_millis() > 0
+                {
+                    tokio::time::sleep(self.config.send_interval).await;
                 }
             }
 
-            // Delay between different TTLs
-            if self.config.send_interval.as_millis() > 0 {
+            // Only add delay if configured and not last hop
+            if self.config.send_interval.as_millis() > 0 && ttl_val < self.config.max_hops {
                 tokio::time::sleep(self.config.send_interval).await;
             }
         }
 
-        // Wait for responses
-        let overall_start_time = Instant::now();
+        // Wait for responses (overall_timeout is the max time to wait AFTER sending probes)
+        let wait_start_time = Instant::now();
         loop {
+            // Clean up timed-out probes first
+            {
+                let mut active_guard = self.active_probes.lock().expect("mutex poisoned");
+                let now = Instant::now();
+                active_guard.retain(|_, probe| {
+                    now.duration_since(probe.sent_at) < self.config.probe_timeout
+                });
+            }
+
             let (results_count, active_empty, dest_reached) = {
                 let results_guard = self.results.lock().expect("mutex poisoned");
                 let active_guard = self.active_probes.lock().expect("mutex poisoned");
@@ -331,34 +526,9 @@ impl TracerouteEngine {
                 (results_guard.len(), active_guard.is_empty(), *dest_guard)
             };
 
-            // Check if we have a complete path to destination
-            if dest_reached {
-                let results_guard = self.results.lock().expect("mutex poisoned");
-                let mut have_complete_path = true;
-
-                // Find the highest TTL that reached the destination
-                let mut dest_ttl = self.config.start_ttl;
-                for ttl in self.config.start_ttl..=self.config.max_hops {
-                    if let Some(hop) = results_guard.get(&ttl) {
-                        if hop.addr == Some(IpAddr::V4(target_ip)) {
-                            dest_ttl = ttl;
-                            break;
-                        }
-                    }
-                }
-
-                // Check if we have all hops from start to destination
-                for ttl in self.config.start_ttl..=dest_ttl {
-                    if !results_guard.contains_key(&ttl) {
-                        have_complete_path = false;
-                        break;
-                    }
-                }
-
-                if have_complete_path {
-                    break;
-                }
-            }
+            // Only exit if all probes have been processed (responded or timed out)
+            // Don't exit early just because we found the destination -
+            // intermediate hops might still be responding
 
             if (dest_reached && active_empty)
                 || (results_count >= (self.config.max_hops - self.config.start_ttl + 1) as usize
@@ -367,15 +537,18 @@ impl TracerouteEngine {
                 break;
             }
 
-            if overall_start_time.elapsed() > self.config.overall_timeout {
+            if wait_start_time.elapsed() > self.config.overall_timeout {
                 break;
             }
 
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            tokio::time::sleep(self.config.timing.main_loop_poll_interval).await;
         }
 
-        // Abort receiver
-        receiver_handle.abort();
+        // Signal receiver to shutdown
+        *shutdown.lock().expect("mutex poisoned") = true;
+
+        // Wait for receiver to finish
+        let _ = receiver_handle.await;
 
         // Extract results
         let results_guard = self.results.lock().expect("mutex poisoned");
@@ -418,77 +591,37 @@ impl TracerouteEngine {
         raw_hops: Vec<RawHopInfo>,
         _target_ip: Ipv4Addr,
     ) -> Result<Vec<ClassifiedHopInfo>, TracerouteError> {
-        let resolver = Arc::new(
-            TokioResolver::builder_with_config(
-                ResolverConfig::cloudflare(),
-                TokioConnectionProvider::default(),
-            )
-            .build(),
-        );
+        // Wait a bit for any remaining enrichment tasks to complete
+        tokio::time::sleep(self.config.timing.enrichment_wait_time).await;
 
-        // Prepare for parallel lookups
-        let mut hops_to_enrich = Vec::new();
-        for (idx, hop) in raw_hops.iter().enumerate() {
-            let ipv4_addr_opt = match hop.addr {
-                Some(IpAddr::V4(ipv4)) => Some(ipv4),
-                _ => None,
+        // Get enrichment results
+        let enrichment_results = self.enrichment_results.lock().expect("mutex poisoned");
+
+        // Find the public IP enrichment result to get ISP ASN
+        let isp_asn = if self.config.enable_asn_lookup {
+            // Look for the public IP in enrichment results
+            let public_ip = if let Some(ip) = self.config.public_ip {
+                Some(ip)
+            } else {
+                // Find the first non-private IP with ASN info - that's likely our public IP
+                enrichment_results
+                    .values()
+                    .find(|e| {
+                        if let (IpAddr::V4(ipv4), Some(asn)) = (e.ip, &e.asn_info) {
+                            !crate::traceroute::is_internal_ip(&ipv4) && asn.asn != 0
+                        } else {
+                            false
+                        }
+                    })
+                    .map(|e| e.ip)
             };
-            hops_to_enrich.push((idx, hop.clone(), ipv4_addr_opt));
-        }
 
-        let mut asn_results: HashMap<usize, Option<crate::traceroute::AsnInfo>> = HashMap::new();
-        let mut rdns_results: HashMap<usize, Option<String>> = HashMap::new();
-
-        // Perform parallel lookups
-        let mut asn_futures = FuturesUnordered::new();
-        let mut rdns_futures = FuturesUnordered::new();
-
-        for (idx, hop, ipv4_addr_opt) in &hops_to_enrich {
-            // ASN lookup
-            if self.config.enable_asn_lookup {
-                if let Some(ipv4_addr) = ipv4_addr_opt {
-                    let resolver_clone = Arc::clone(&resolver);
-                    let ip_to_lookup = *ipv4_addr;
-                    let idx_copy = *idx;
-                    asn_futures.push(async move {
-                        let asn_opt = lookup_asn(ip_to_lookup, Some(resolver_clone)).await.ok();
-                        (idx_copy, asn_opt)
-                    });
-                }
-            }
-
-            // Reverse DNS lookup
-            if self.config.enable_rdns {
-                if let Some(addr) = hop.addr {
-                    let resolver_clone = Arc::clone(&resolver);
-                    let ip_to_lookup = addr;
-                    let idx_copy = *idx;
-                    rdns_futures.push(async move {
-                        let hostname = reverse_dns_lookup(ip_to_lookup, Some(resolver_clone))
-                            .await
-                            .ok();
-                        (idx_copy, hostname)
-                    });
-                }
-            }
-        }
-
-        // Collect ASN results
-        while let Some((idx, asn_opt)) = asn_futures.next().await {
-            asn_results.insert(idx, asn_opt);
-        }
-
-        // Collect rDNS results
-        while let Some((idx, hostname_opt)) = rdns_futures.next().await {
-            rdns_results.insert(idx, hostname_opt);
-        }
-
-        // Determine ISP ASN
-        let isp_asn: Option<u32> = if self.config.enable_asn_lookup {
-            detect_isp_with_default_resolver()
-                .await
-                .ok()
-                .map(|isp| isp.asn)
+            public_ip.and_then(|ip| {
+                enrichment_results
+                    .get(&ip)
+                    .and_then(|e| e.asn_info.as_ref())
+                    .map(|asn| asn.asn)
+            })
         } else {
             None
         };
@@ -497,15 +630,19 @@ impl TracerouteEngine {
         let mut classified_hops = Vec::new();
         let mut in_isp_segment = false;
 
-        for (idx, (_, raw_hop, ipv4_addr_opt)) in hops_to_enrich.iter().enumerate() {
-            let asn_info = asn_results.get(&idx).and_then(std::clone::Clone::clone);
-            let hostname = rdns_results.get(&idx).and_then(std::clone::Clone::clone);
+        for raw_hop in raw_hops {
+            // Get pre-computed enrichment data for this hop
+            let enrichment = raw_hop.addr.and_then(|addr| enrichment_results.get(&addr));
+            let asn_info = enrichment.and_then(|e| e.asn_info.clone());
+            let hostname = enrichment.and_then(|e| e.hostname.clone());
 
-            let segment = if let Some(ipv4_addr) = ipv4_addr_opt {
-                if crate::traceroute::is_internal_ip(ipv4_addr)
-                    || crate::traceroute::is_cgnat(ipv4_addr)
-                {
+            let segment = if let Some(IpAddr::V4(ipv4)) = raw_hop.addr {
+                if crate::traceroute::is_internal_ip(&ipv4) {
                     SegmentType::Lan
+                } else if crate::traceroute::is_cgnat(&ipv4) {
+                    // CGNAT addresses belong to ISP, not LAN
+                    in_isp_segment = true;
+                    SegmentType::Isp
                 } else if let Some(ref isp) = isp_asn {
                     if let Some(ref asn) = asn_info {
                         if asn.asn == *isp {

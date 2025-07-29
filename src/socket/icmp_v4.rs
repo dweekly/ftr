@@ -278,13 +278,17 @@ impl RawIcmpV4Socket {
             use std::os::unix::io::AsRawFd;
             unsafe {
                 let enable: i32 = 1;
-                libc::setsockopt(
+                let ret = libc::setsockopt(
                     socket.as_raw_fd(),
                     libc::IPPROTO_IP,
                     libc::IP_HDRINCL,
                     &enable as *const _ as *const libc::c_void,
                     std::mem::size_of::<i32>() as libc::socklen_t,
                 );
+                if ret != 0 {
+                    let err = std::io::Error::last_os_error();
+                    return Err(anyhow::anyhow!("Failed to set IP_HDRINCL: {}", err));
+                }
             }
         }
 
@@ -341,7 +345,7 @@ impl RawIcmpV4Socket {
         packet
     }
 
-    /// Parse an ICMP response (same as DGRAM version)
+    /// Parse an ICMP response
     fn parse_response(
         &self,
         packet_data: &[u8],
@@ -439,9 +443,13 @@ impl ProbeSocket for RawIcmpV4Socket {
         self.mode
     }
 
-    fn set_ttl(&self, _ttl: u8) -> Result<()> {
-        // For raw sockets, we'll set TTL in the IP header when sending
-        // Store it for later use if needed
+    fn set_ttl(&self, ttl: u8) -> Result<()> {
+        // For raw sockets with IP_HDRINCL, we can't use SO_TTL
+        // Instead, we need to store the TTL and use it when building packets
+        // But we still try to set it on the socket for any packets we don't build
+        self.socket
+            .set_ttl_v4(ttl as u32)
+            .context("Failed to set TTL")?;
         Ok(())
     }
 
@@ -483,7 +491,12 @@ impl ProbeSocket for RawIcmpV4Socket {
         let target_addr = SocketAddr::V4(SocketAddrV4::new(target_v4, 0));
         self.socket
             .send_to(&ip_packet, &target_addr.into())
-            .context("Failed to send raw ICMP packet")?;
+            .with_context(|| {
+                format!(
+                    "Failed to send raw ICMP packet: TTL={}, target={}",
+                    probe_info.ttl, target_v4
+                )
+            })?;
 
         // Track the probe
         self.active_probes

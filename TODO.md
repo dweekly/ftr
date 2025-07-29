@@ -17,6 +17,10 @@ This file tracks planned work for the ftr project.
 
 ## Medium Priority
 
+- [ ] Replace libc with nix crate
+  - nix provides safer, more idiomatic Rust bindings to system calls
+  - Better error handling and type safety
+  - More consistent cross-platform behavior
 - [ ] Complete socket abstraction implementation
   - Add TCP mode support (TCP SYN packets)
   - Add IPv6 support (ICMPv6, UDP6, TCP6)

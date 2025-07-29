@@ -23,14 +23,20 @@ pub async fn detect_isp(resolver: Option<Arc<TokioResolver>>) -> Result<IspInfo,
     };
 
     // Look up ASN information
-    let asn_info = lookup_asn(ipv4, resolver)
+    let asn_info = lookup_asn(ipv4, resolver.clone())
         .await
         .map_err(|e| PublicIpError::AsnLookupFailed(e.to_string()))?;
+
+    // Look up reverse DNS for the public IP
+    let hostname = crate::dns::reverse_dns_lookup(public_ip, resolver)
+        .await
+        .ok();
 
     Ok(IspInfo {
         public_ip,
         asn: asn_info.asn,
         name: asn_info.name,
+        hostname,
     })
 }
 

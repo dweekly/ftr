@@ -121,6 +121,6 @@ pub use socket::factory::{
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
     trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType,
-    Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
-    TracerouteResult,
+    TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
+    TracerouteProgress, TracerouteResult,
 };

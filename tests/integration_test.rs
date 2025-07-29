@@ -187,6 +187,7 @@ async fn test_result_methods() {
             public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
             asn: 12345,
             name: "Example ISP".to_string(),
+            hostname: None,
         }),
         protocol_used: ProbeProtocol::Icmp,
         socket_mode_used: SocketMode::Raw,

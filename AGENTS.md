@@ -24,6 +24,9 @@ Without these hooks, code with formatting issues or clippy warnings can be commi
 - **NEVER run `git rebase -i`** - Interactive commands don't work in non-interactive environments.
 - **NEVER modify `.git/config`** - The user has specifically configured their git settings.
 
+### System Commands to NEVER Run
+- **NEVER run commands with `sudo`** - The AI agent cannot execute sudo commands. If elevated privileges are needed, ask the user to run the command instead.
+
 ### File and Data Operations to NEVER Perform
 - **NEVER delete files without explicit user approval** - This includes:
   - Local files on any system

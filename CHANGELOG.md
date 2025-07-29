@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configurable inter-query delay via `-i` parameter (default 0ms)
+- Parallel public IP detection at startup
+- Reverse DNS lookup for public IP
+- Truly parallel enrichment - ASN and rDNS lookups start immediately as each IP arrives
+- TimingConfig struct for all configurable delays
+- macOS DGRAM ICMP socket support
+
+### Changed
+- `-W` parameter now represents wait time after sending last probe, not total execution time
+- Public IP detection runs once in parallel with probe sending
+- Default send interval changed to 0ms for better performance
+- Verbose flag now controls debug output during traceroute execution
+
+### Fixed
+- Performance regression where execution took >1s with `-W 100`
+- Race condition causing missing intermediate hop responses
+- Hardcoded 10ms inter-query delay removed
+- Raw ICMP socket issues on macOS (now uses DGRAM mode)
+- CGNAT addresses now correctly classified as ISP segment, not LAN
+- Redundant public IP detection on every run
+
 ## [0.3.0] - 2025-07-28
 
 ### Added

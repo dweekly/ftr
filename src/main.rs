@@ -41,8 +41,8 @@ struct Args {
     #[clap(long, default_value_t = 1000)]
     probe_timeout_ms: u64,
 
-    /// Interval between launching probes in milliseconds
-    #[clap(short = 'i', long, default_value_t = 5)]
+    /// Interval between launching probes in milliseconds (applies to both inter-TTL and inter-query delays)
+    #[clap(short = 'i', long, default_value_t = 0)]
     send_launch_interval_ms: u64,
 
     /// Overall timeout for the traceroute in milliseconds
@@ -123,6 +123,7 @@ struct JsonOutput {
 struct JsonIsp {
     asn: String,
     name: String,
+    hostname: Option<String>,
 }
 
 #[tokio::main]
@@ -342,6 +343,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
         isp: result.isp_info.as_ref().map(|i| JsonIsp {
             asn: i.asn.to_string(),
             name: i.name.clone(),
+            hostname: i.hostname.clone(),
         }),
         hops: Vec::new(),
         protocol: result.protocol_used.description().to_string(),
@@ -422,7 +424,14 @@ fn display_text_results(result: TracerouteResult) {
 
     // Display ISP info if available
     if let Some(isp_info) = &result.isp_info {
-        println!("\nDetected public IP: {}", isp_info.public_ip);
+        if let Some(hostname) = &isp_info.hostname {
+            println!(
+                "\nDetected public IP: {} ({})",
+                isp_info.public_ip, hostname
+            );
+        } else {
+            println!("\nDetected public IP: {}", isp_info.public_ip);
+        }
         println!("Detected ISP: AS{} ({})", isp_info.asn, isp_info.name);
     }
 }

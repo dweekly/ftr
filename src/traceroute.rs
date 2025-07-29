@@ -37,7 +37,7 @@ use std::net::Ipv4Addr;
 
 // Re-export commonly used types
 pub use api::{trace, trace_with_config, Traceroute};
-pub use config::{TracerouteConfig, TracerouteConfigBuilder};
+pub use config::{TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
 pub use engine::{TracerouteEngine, TracerouteError};
 pub use result::{TracerouteProgress, TracerouteResult};
 pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};

@@ -252,24 +252,25 @@ mod tests {
         assert!(result.is_ok() || result.is_err()); // Either is fine for unit test
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_trace_localhost() {
         let config = TracerouteConfig::builder()
             .target("127.0.0.1")
             .max_hops(3)
             .probe_timeout(Duration::from_millis(100))
+            .overall_timeout(Duration::from_millis(500))
             .build()
             .unwrap();
 
-        let result = trace_with_config(config).await;
-        // May fail due to permissions, but that's okay
+        let result = tokio::time::timeout(Duration::from_secs(2), trace_with_config(config)).await;
+
         match result {
-            Ok(trace_result) => {
+            Ok(Ok(trace_result)) => {
                 assert_eq!(trace_result.target, "127.0.0.1");
                 assert!(!trace_result.hops.is_empty());
             }
-            Err(_) => {
-                // Permission errors are expected in tests
+            Ok(Err(_)) | Err(_) => {
+                // Permission errors or timeouts are expected in tests
             }
         }
     }

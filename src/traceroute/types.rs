@@ -101,6 +101,8 @@ pub struct IspInfo {
     pub asn: u32,
     /// ISP/Organization name
     pub name: String,
+    /// Reverse DNS hostname of the public IP (if available)
+    pub hostname: Option<String>,
 }
 
 #[cfg(test)]
@@ -144,6 +146,7 @@ mod tests {
             public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
             asn: 12345,
             name: "Example ISP".to_string(),
+            hostname: Some("customer.example-isp.com".to_string()),
         };
         assert_eq!(isp.asn, 12345);
         assert_eq!(isp.name, "Example ISP");

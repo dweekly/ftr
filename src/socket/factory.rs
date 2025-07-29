@@ -1,7 +1,9 @@
 //! Factory for creating probe sockets with automatic fallback
 
 #[cfg(not(target_os = "windows"))]
-use super::icmp_v4::{DgramIcmpV4Socket, RawIcmpV4Socket};
+use super::icmp_v4::DgramIcmpV4Socket;
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+use super::icmp_v4::RawIcmpV4Socket;
 #[cfg(target_os = "linux")]
 use super::udp::UdpRecvErrSocket;
 #[cfg(not(target_os = "windows"))]
@@ -406,7 +408,17 @@ pub fn create_probe_socket_with_port(
                                 // On Windows, use our Windows-specific implementation
                                 return Ok(Box::new(WindowsIcmpSocket::new()?));
                             }
-                            #[cfg(not(target_os = "windows"))]
+                            #[cfg(target_os = "macos")]
+                            {
+                                // On macOS, raw ICMP sockets behave like DGRAM sockets
+                                // They don't support IP_HDRINCL properly for ICMP
+                                let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+                                socket
+                                    .bind(&bind_addr.into())
+                                    .context("Failed to bind socket")?;
+                                return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                            }
+                            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                             {
                                 // Raw socket doesn't need explicit binding
                                 return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
