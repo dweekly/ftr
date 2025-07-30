@@ -78,7 +78,7 @@ struct Args {
     verbose: u8,
 
     /// Target port for UDP/TCP modes
-    #[clap(short, long, default_value_t = 443)]
+    #[clap(short, long, default_value_t = 33434)]
     port: u16,
 
     /// Use async implementation (experimental, Windows only)

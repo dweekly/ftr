@@ -345,6 +345,8 @@ pub struct UdpWithIcmpSocket {
     mode: ProbeMode,
     /// Maps sequence number to (socket, probe_info) for each active probe
     active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
+    /// Maps source port to probe_info for fallback matching when payload is truncated
+    port_to_probe: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
     destination_reached: Arc<Mutex<bool>>,
     /// The destination port to use for UDP probes
     dest_port: u16,
@@ -378,6 +380,7 @@ impl UdpWithIcmpSocket {
             icmp_socket,
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
+            port_to_probe: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
             dest_port: port,
         })
@@ -424,8 +427,8 @@ impl UdpWithIcmpSocket {
                     return None;
                 }
 
-                // Extract UDP port from original packet
-                let _dest_port = u16::from_be_bytes([original_udp_bytes[2], original_udp_bytes[3]]);
+                // Extract UDP source port from original packet
+                let src_port = u16::from_be_bytes([original_udp_bytes[0], original_udp_bytes[1]]);
 
                 // Try to extract identifier and sequence from UDP payload
                 if original_udp_bytes.len() >= UDP_HEADER_LEN_BYTES + 4 {
@@ -472,6 +475,44 @@ impl UdpWithIcmpSocket {
                                 });
                             }
                         }
+                    }
+                } else {
+                    // Fallback: Only have UDP header (8 bytes), try to match by source port
+                    if let Some(probe_info) = self
+                        .port_to_probe
+                        .lock()
+                        .expect("mutex poisoned")
+                        .remove(&src_port)
+                    {
+                        // Also remove from active_probes
+                        self.active_probes
+                            .lock()
+                            .expect("mutex poisoned")
+                            .remove(&probe_info.sequence);
+
+                        let response_type = match icmp_packet.get_icmp_type() {
+                            IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
+                            IcmpTypes::DestinationUnreachable => {
+                                let code = icmp_packet.get_icmp_code().0;
+                                if code == 3 {
+                                    // Port unreachable - we've reached the destination
+                                    *self.destination_reached.lock().expect("mutex poisoned") =
+                                        true;
+                                    ResponseType::UdpPortUnreachable
+                                } else {
+                                    ResponseType::DestinationUnreachable(code)
+                                }
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        let rtt = recv_time.duration_since(probe_info.sent_at);
+                        return Some(ProbeResponse {
+                            from_addr,
+                            response_type,
+                            probe_info,
+                            rtt,
+                        });
                     }
                 }
             }
@@ -535,11 +576,20 @@ impl ProbeSocket for UdpWithIcmpSocket {
             .send(&payload)
             .context("Failed to send UDP packet")?;
 
+        // Get the local port after sending
+        let local_port = udp_socket.local_addr()?.port();
+
         // Store the socket and probe info
         self.active_probes
             .lock()
             .expect("mutex poisoned")
-            .insert(probe_info.sequence, (udp_socket, probe_info));
+            .insert(probe_info.sequence, (udp_socket, probe_info.clone()));
+
+        // Also store by source port for fallback matching
+        self.port_to_probe
+            .lock()
+            .expect("mutex poisoned")
+            .insert(local_port, probe_info);
 
         Ok(())
     }
@@ -548,7 +598,6 @@ impl ProbeSocket for UdpWithIcmpSocket {
         if let Some(ref icmp_socket) = self.icmp_socket {
             let mut recv_buf = [MaybeUninit::uninit(); 1500];
             let deadline = Instant::now() + timeout;
-
             loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {

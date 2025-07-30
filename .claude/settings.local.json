@@ -10,7 +10,8 @@
       "Bash(./target/debug/ftr:*)",
       "Bash(time:*)",
       "Bash(/dev/null)",
-      "Bash(./target/release/ftr google.com --async-mode)"
+      "Bash(./target/release/ftr google.com --async-mode)",
+      "Bash(cargo machete:*)"
     ],
     "deny": []
   }

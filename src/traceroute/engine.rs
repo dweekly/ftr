@@ -717,8 +717,8 @@ impl TracerouteEngine {
 
         // Wait for completion or timeout
         debug_print!(1, "Starting wait for responses or timeout");
-        let timeout_result = overall_timeout.await;
-        debug_print!(1, "Wait completed, timed_out={}", timeout_result.is_err());
+        let _timeout_result = overall_timeout.await;
+        debug_print!(1, "Wait completed, timed_out={}", _timeout_result.is_err());
 
         // Signal shutdown
         let _ = shutdown_tx.send(());
