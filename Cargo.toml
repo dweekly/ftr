@@ -123,3 +123,6 @@ assets = [
     ["README.md", "usr/share/doc/ftr/README", "644"],
     ["CHANGELOG.md", "usr/share/doc/ftr/CHANGELOG", "644"],
 ]
+
+[package.metadata.cargo-machete]
+ignored = ["lazy_static", "tokio-util"]
