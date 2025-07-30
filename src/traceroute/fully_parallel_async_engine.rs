@@ -134,7 +134,7 @@ impl FullyParallelAsyncEngine {
 
                             // Start enrichment immediately if not cached
                             if enable_asn || enable_rdns {
-                                let mut cache = enrichment_cache.lock().await;
+                                let cache = enrichment_cache.lock().await;
                                 if !cache.contains_key(&response.from_addr) {
                                     drop(cache); // Release lock before enrichment
 

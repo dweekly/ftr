@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .queries_per_hop(1)
         .enable_asn_lookup(true)
         .enable_rdns(true)
-        .verbose(true)
+        .verbose(1)
         .build()?;
 
     match ftr::trace_with_config(config).await {

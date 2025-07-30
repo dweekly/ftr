@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .socket_mode(mode)
             .max_hops(10)
             .probe_timeout(Duration::from_millis(500))
-            .verbose(true)
+            .verbose(1)
             .build()?;
 
         match trace_with_config(config).await {
