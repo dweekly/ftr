@@ -107,7 +107,11 @@
 
 pub mod asn;
 pub mod config;
+pub mod debug;
 pub mod dns;
+pub mod enrichment;
+#[cfg(feature = "async")]
+pub mod probe;
 pub mod public_ip;
 pub mod socket;
 pub mod traceroute;
@@ -125,3 +129,7 @@ pub use traceroute::{
     TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
     TracerouteProgress, TracerouteResult,
 };
+
+// Re-export async API when feature is enabled
+#[cfg(feature = "async")]
+pub use traceroute::async_api;

@@ -422,10 +422,10 @@ pub fn create_probe_socket_with_config(
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
                             #[cfg(target_os = "windows")]
                             {
-                                // On Windows, use our async Windows-specific implementation
-                                use super::windows_async::WindowsAsyncIcmpSocket;
+                                // On Windows, use our IOCP-based implementation for immediate event notifications
+                                use super::windows_iocp::WindowsIocpIcmpSocket;
                                 let socket =
-                                    WindowsAsyncIcmpSocket::new_with_config(_timing_config)?;
+                                    WindowsIocpIcmpSocket::new_with_config(_timing_config)?;
                                 return Ok(Box::new(socket));
                             }
                             #[cfg(target_os = "macos")]

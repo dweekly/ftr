@@ -13,6 +13,16 @@ pub mod udp;
 pub mod windows;
 #[cfg(target_os = "windows")]
 pub mod windows_async;
+#[cfg(target_os = "windows")]
+pub mod windows_iocp;
+
+// Async socket modules
+#[cfg(feature = "async")]
+pub mod async_trait;
+#[cfg(all(feature = "async", target_os = "windows"))]
+pub mod windows_async_tokio;
+#[cfg(feature = "async")]
+pub mod async_factory;
 
 use serde::{Deserialize, Serialize};
 

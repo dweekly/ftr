@@ -19,6 +19,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot};
+use crate::debug_print;
 
 /// Error type for traceroute operations
 ///
@@ -113,6 +114,9 @@ enum TracerouteEvent {
     DestinationReached { ttl: u8 },
     /// All probes completed (either responded or timed out)
     AllProbesComplete,
+    /// Windows event signaled (probe completed but may not have response)
+    #[cfg(target_os = "windows")]
+    WindowsEventSignaled { sequence: u16 },
 }
 
 /// Traceroute engine
@@ -124,6 +128,7 @@ pub struct TracerouteEngine {
     destination_reached: Arc<Mutex<bool>>,
     destination_ttl: Arc<Mutex<Option<u8>>>,
     enrichment_results: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
+    completed_probes: Arc<Mutex<u32>>,
 }
 
 impl TracerouteEngine {
@@ -143,6 +148,7 @@ impl TracerouteEngine {
             destination_reached: Arc::new(Mutex::new(false)),
             destination_ttl: Arc::new(Mutex::new(None)),
             enrichment_results: Arc::new(Mutex::new(HashMap::new())),
+            completed_probes: Arc::new(Mutex::new(0)),
         })
     }
 
@@ -332,6 +338,7 @@ impl TracerouteEngine {
 
     /// Run the probe phase
     async fn run_probes(&self, target_ip: Ipv4Addr) -> Result<Vec<RawHopInfo>, TracerouteError> {
+        debug_print!(1, "Starting probe phase for target {}", target_ip);
         let socket_arc = Arc::clone(&self.socket);
         let icmp_identifier = std::process::id() as u16;
 
@@ -374,6 +381,10 @@ impl TracerouteEngine {
                         // Try to receive a response with a short timeout
                         match recv_socket.recv_response(receiver_poll_interval) {
                     Ok(Some(response)) => {
+                        debug_print!(2, "Received response: from={:?}, TTL={}, seq={}, RTT={:?}", 
+                            response.from_addr, response.probe_info.ttl, 
+                            response.probe_info.sequence, response.rtt);
+                        
                         // Remove from active probes
                         active_probes_clone
                             .lock()
@@ -502,6 +513,8 @@ impl TracerouteEngine {
 
         // Send probes
         let mut sequence = 1u16;
+        debug_print!(1, "Starting to send probes, TTL range {}..={}", 
+            self.config.start_ttl, self.config.max_hops);
 
         for ttl_val in self.config.start_ttl..=self.config.max_hops {
             // Check if we should stop sending (destination found at lower TTL)
@@ -536,6 +549,7 @@ impl TracerouteEngine {
                     .insert(sequence, probe_info.clone());
 
                 // Send the probe
+                debug_print!(2, "Sending probe: TTL={}, seq={}", ttl_val, sequence);
                 if let Err(e) = self.socket.send_probe(IpAddr::V4(target_ip), probe_info) {
                     if self.config.verbose {
                         eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
@@ -562,6 +576,9 @@ impl TracerouteEngine {
             }
         }
 
+        // Track total probes sent
+        let total_probes_sent = (sequence - 1) as u32;
+        
         // Spawn probe timeout checker task
         let active_probes_timeout = Arc::clone(&self.active_probes);
         let probe_timeout = self.config.probe_timeout;
@@ -591,12 +608,26 @@ impl TracerouteEngine {
         });
 
         // Wait for responses using event-driven approach
+        debug_print!(1, "Finished sending probes ({} total), waiting for responses (timeout={}ms)", 
+            total_probes_sent, self.config.overall_timeout.as_millis());
+        let completed_probes_clone = Arc::clone(&self.completed_probes);
         let overall_timeout = tokio::time::timeout(self.config.overall_timeout, async {
             loop {
                 tokio::select! {
                     Some(event) = event_rx.recv() => {
                         match event {
                             TracerouteEvent::ResponseReceived(_) => {
+                                // Increment completed probes count
+                                *completed_probes_clone.lock().expect("mutex poisoned") += 1;
+                                
+                                // Check if all probes completed
+                                let completed = *completed_probes_clone.lock().expect("mutex poisoned");
+                                if completed >= total_probes_sent {
+                                    debug_print!(1, "All {} probes completed (responded or timed out)", total_probes_sent);
+                                    let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
+                                    break;
+                                }
+                                
                                 // Check if we should continue
                                 let (results_count, active_empty, dest_reached) = {
                                     let results_guard = self.results.lock().expect("mutex poisoned");
@@ -609,11 +640,25 @@ impl TracerouteEngine {
                                     || (results_count >= (self.config.max_hops - self.config.start_ttl + 1) as usize
                                         && active_empty)
                                 {
+                                    debug_print!(1, "Exiting early: dest_reached={}, active_empty={}, results_count={}/{}", 
+                                        dest_reached, active_empty, results_count, 
+                                        self.config.max_hops - self.config.start_ttl + 1);
                                     let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
                                     break;
                                 }
                             }
                             TracerouteEvent::ProbeTimeout { .. } => {
+                                // Increment completed probes count
+                                *completed_probes_clone.lock().expect("mutex poisoned") += 1;
+                                
+                                // Check if all probes completed
+                                let completed = *completed_probes_clone.lock().expect("mutex poisoned");
+                                if completed >= total_probes_sent {
+                                    debug_print!(1, "All {} probes completed (responded or timed out)", total_probes_sent);
+                                    let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
+                                    break;
+                                }
+                                
                                 // Check if all probes are done
                                 let active_empty = self.active_probes.lock().expect("mutex poisoned").is_empty();
                                 let dest_reached = *self.destination_reached.lock().expect("mutex poisoned");
@@ -621,6 +666,28 @@ impl TracerouteEngine {
                                 if active_empty && dest_reached {
                                     let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
                                     break;
+                                }
+                            }
+                            #[cfg(target_os = "windows")]
+                            TracerouteEvent::WindowsEventSignaled { sequence } => {
+                                // Remove from active probes if still there
+                                let removed = self.active_probes
+                                    .lock()
+                                    .expect("mutex poisoned")
+                                    .remove(&sequence)
+                                    .is_some();
+                                    
+                                if removed {
+                                    // Increment completed probes count
+                                    *completed_probes_clone.lock().expect("mutex poisoned") += 1;
+                                    
+                                    // Check if all probes completed
+                                    let completed = *completed_probes_clone.lock().expect("mutex poisoned");
+                                    if completed >= total_probes_sent {
+                                        debug_print!(1, "All {} probes completed (responded or timed out)", total_probes_sent);
+                                        let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
+                                        break;
+                                    }
                                 }
                             }
                             TracerouteEvent::DestinationReached { ttl } => {
@@ -636,14 +703,18 @@ impl TracerouteEngine {
         });
         
         // Wait for completion or timeout
-        let _ = overall_timeout.await;
+        debug_print!(1, "Starting wait for responses or timeout");
+        let timeout_result = overall_timeout.await;
+        debug_print!(1, "Wait completed, timed_out={}", timeout_result.is_err());
         
         // Signal shutdown
         let _ = shutdown_tx.send(());
         timeout_checker.abort();
 
         // Wait for receiver to finish
+        debug_print!(1, "Waiting for receiver to finish");
         let _ = receiver_handle.await;
+        debug_print!(1, "Receiver finished");
 
         // Extract results
         let results_guard = self.results.lock().expect("mutex poisoned");

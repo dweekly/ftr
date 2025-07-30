@@ -22,6 +22,10 @@ use windows_sys::Win32::NetworkManagement::IpHelper::{
 use windows_sys::Win32::Networking::WinSock::{WSAStartup, WSADATA};
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForMultipleObjects};
 
+// ICMP status codes not provided by windows-sys
+const IP_REQ_TIMED_OUT: u32 = 11010;
+const IP_GENERAL_FAILURE: u32 = 11050;
+
 // Global flag to track if Winsock has been initialized
 static WINSOCK_INIT: OnceLock<()> = OnceLock::new();
 
@@ -40,6 +44,7 @@ fn ensure_winsock_initialized() -> io::Result<()> {
 }
 
 use crate::socket::{ProbeInfo, ProbeMode, ProbeResponse, ProbeSocket, ResponseType};
+use crate::debug_print;
 
 /// Size of ICMP echo payload
 const ICMP_ECHO_PAYLOAD_SIZE: usize = 32;
@@ -113,6 +118,18 @@ impl WindowsAsyncIcmpSocket {
         // Parse the reply
         let reply = unsafe { &*(pending.reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         
+        // Check if this was a timeout or other failure with no valid response
+        // Common timeout statuses include IP_REQ_TIMED_OUT (11010) and others
+        match reply.Status {
+            IP_REQ_TIMED_OUT | IP_GENERAL_FAILURE => {
+                // This probe timed out or failed - no response to return
+                debug_print!(2, "Probe seq={} timed out or failed, status={}", 
+                    pending.probe_info.sequence, reply.Status);
+                return Ok(None);
+            }
+            _ => {}
+        }
+        
         // Use the RTT provided by Windows ICMP API (in milliseconds)
         // The API provides valid RTT for both successful replies and TTL expired
         // Only use elapsed time for actual failures (unreachable, etc.)
@@ -151,7 +168,11 @@ impl WindowsAsyncIcmpSocket {
             IP_DEST_HOST_UNREACHABLE => ResponseType::DestinationUnreachable(1),
             IP_DEST_PROT_UNREACHABLE => ResponseType::DestinationUnreachable(2),
             IP_DEST_PORT_UNREACHABLE => ResponseType::DestinationUnreachable(3),
-            _ => return Ok(None), // Unknown response type
+            _ => {
+                debug_print!(2, "Unknown response status {} for probe seq={}", 
+                    reply.Status, pending.probe_info.sequence);
+                return Ok(None); // Unknown response type
+            }
         };
 
         Ok(Some(ProbeResponse {
@@ -240,12 +261,17 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
                 crate::config::timing::socket_read_timeout().as_millis() as u32,
             )
         };
-
+        
         if result == 0 {
             let error = unsafe { GetLastError() };
+            debug_print!(2, "IcmpSendEcho2 returned 0 for TTL={}, seq={}, error={}", 
+                probe_info.ttl, probe_info.sequence, error);
             if error != ERROR_IO_PENDING {
                 return Err(io::Error::from_raw_os_error(error as i32).into());
             }
+        } else {
+            debug_print!(2, "IcmpSendEcho2 succeeded immediately for TTL={}, seq={}", 
+                probe_info.ttl, probe_info.sequence);
         }
 
         // Store pending probe info AFTER the async send
@@ -312,6 +338,7 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
                 };
 
                 if let Some(probe) = pending_probe {
+                    debug_print!(2, "Event signaled for probe seq={}", probe.probe_info.sequence);
                     return self.process_completed_probe(probe);
                 }
             }

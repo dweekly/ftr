@@ -336,6 +336,41 @@ The project uses a multi-mode socket abstraction layer located in `src/socket/`:
   - sudo is not installed by default on the FreeBSD CI runner
   - CI scripts should use conditional logic: if root, run directly; otherwise use sudo
 
+## Tool Usage Guidelines
+
+### Bash Tool Command Execution on Windows
+**IMPORTANT**: On Windows, the Bash tool passes arguments directly to the command executable, it does NOT interpret shell syntax like redirections or pipes.
+
+**Common mistake on Windows**:
+```bash
+# WRONG - This will fail with "unexpected argument '2' found" on Windows
+Bash(cargo build --features async 2>&1 | grep -E "(warning|error)")
+```
+
+**Correct approaches for Windows**:
+```bash
+# Option 1: Use PowerShell (preferred on Windows)
+Bash(powershell -c "cargo build --features async 2>&1 | Select-String 'warning|error'")
+
+# Option 2: Use cmd.exe with proper syntax
+Bash(cmd /c "cargo build --features async 2>&1 | findstr /R warning error")
+
+# Option 3: Let the output come through naturally without filtering
+Bash(cargo build --features async)
+```
+
+**Why this happens on Windows**: The Bash tool on Windows executes commands directly (like `CreateProcess`) rather than through a shell. This means:
+- Shell redirections (`>`, `<`, `2>&1`) are passed as literal arguments to the program
+- Pipes (`|`) are passed as literal arguments instead of creating a pipeline
+- Environment variables (`%VAR%` or `$VAR`) are not expanded
+- Command substitution doesn't work
+
+**Windows-specific notes**:
+- Use PowerShell (`powershell -c "..."`) for complex commands with pipes and redirections
+- Use `cmd /c "..."` if you need traditional Windows command syntax
+- For simple commands without shell features, call them directly
+- Remember that Windows uses backslashes for paths, but forward slashes often work too
+
 ## General Best Practices
 1. Always read files before editing them
 2. Check for existing patterns and follow them
@@ -369,6 +404,7 @@ This section provides a comprehensive list of all documentation files and their 
 - **docs/UDP_TRACEROUTE_LINUX.md** - Explains UDP traceroute behavior on Linux, port filtering issues, and how ftr solves them
 - **docs/MULTI_MODE.md** - Documentation for multi-mode probing feature including multiple queries per hop and load-balanced path discovery
 - **docs/PACKAGING.md** - Guide for packaging ftr for different platforms including Debian/Ubuntu, FreeBSD, macOS, and Windows
+- **docs/TIMING_CONFIGURATION.md** - Describes the timing configuration system for eliminating hardcoded delays and enabling runtime performance tuning
 
 ### Platform-Specific Notes
 
@@ -401,3 +437,4 @@ This section provides a comprehensive list of all documentation files and their 
 | Following code standards | docs/RUST_BEST_PRACTICES.md, AGENTS.md |
 | Planning new features | TODO.md, CHANGELOG.md (for context) |
 | Multi-probe traceroute | docs/MULTI_MODE.md |
+| Optimizing performance | docs/TIMING_CONFIGURATION.md |

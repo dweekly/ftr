@@ -471,11 +471,13 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "async-trait",
  "clap",
  "criterion",
  "futures",
  "hickory-resolver",
  "ipnet",
+ "lazy_static",
  "libc",
  "once_cell",
  "pnet",
@@ -487,6 +489,7 @@ dependencies = [
  "socket2 0.6.0",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-util",
  "windows-sys 0.60.2",
 ]
 
@@ -1808,6 +1811,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9203b8055f63a2a00e2f593bb0510367fe707d7ff1e5c872de2f537b339e5410"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2002,7 +2014,9 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "slab",
  "socket2 0.6.0",
  "tokio-macros",
@@ -2027,6 +2041,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
 dependencies = [
  "native-tls",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-util"
+version = "0.7.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66a539a9ad6d5d281510d5bd368c973d636c02dbf8a67300bfb6b950696ad7df"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "pin-project-lite",
  "tokio",
 ]
 
