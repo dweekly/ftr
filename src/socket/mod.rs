@@ -11,6 +11,8 @@ pub mod icmp_v4;
 pub mod udp;
 #[cfg(target_os = "windows")]
 pub mod windows;
+#[cfg(target_os = "windows")]
+pub mod windows_async;
 
 use serde::{Deserialize, Serialize};
 
@@ -196,6 +198,14 @@ pub trait ProbeSocket: Send + Sync {
 
     /// Check if destination has been reached
     fn destination_reached(&self) -> bool;
+
+    /// Set timing configuration for the socket
+    /// This allows the socket to use configuration-driven timeouts instead of hardcoded values
+    fn set_timing_config(&mut self, config: &crate::TimingConfig) -> Result<()> {
+        // Default implementation does nothing for backward compatibility
+        let _ = config;
+        Ok(())
+    }
 }
 
 /// Trait for creating probe sockets with fallback

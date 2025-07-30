@@ -1,6 +1,6 @@
 //! High-level traceroute API
 
-use crate::socket::factory::create_probe_socket_with_port;
+use crate::socket::factory::create_probe_socket_with_config;
 use crate::socket::ProbeSocket;
 use crate::traceroute::{
     TracerouteConfig, TracerouteEngine, TracerouteError, TracerouteProgress, TracerouteResult,
@@ -152,12 +152,13 @@ fn create_socket_from_config(
     }
 
     // Create socket with options
-    let socket = create_probe_socket_with_port(
+    let socket = create_probe_socket_with_config(
         target_ip,
         config.protocol,
         config.socket_mode,
         config.verbose,
         config.port,
+        Some(&config.timing),
     );
 
     socket.map_err(|e| {
