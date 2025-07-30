@@ -27,7 +27,9 @@ fn ensure_winsock_initialized() -> io::Result<()> {
         let mut wsadata: WSADATA = std::mem::zeroed();
         let result = WSAStartup(0x0202, &mut wsadata);
         if result != 0 {
-            panic!("Failed to initialize Winsock: {}", result);
+            // This should never happen in practice, but if it does, we can't continue
+            eprintln!("FATAL: Failed to initialize Winsock: {}", result);
+            std::process::exit(1);
         }
     });
     Ok(())
@@ -95,7 +97,7 @@ impl ProbeSocket for WindowsIcmpSocket {
     }
 
     fn set_ttl(&self, ttl: u8) -> Result<()> {
-        *self.current_ttl.lock().unwrap() = ttl;
+        *self.current_ttl.lock().expect("mutex poisoned") = ttl;
         Ok(())
     }
 
@@ -110,7 +112,7 @@ impl ProbeSocket for WindowsIcmpSocket {
         // Store the probe info for later when we call recv_response
         self.pending_probes
             .lock()
-            .unwrap()
+            .expect("mutex poisoned")
             .insert(probe_info.sequence, (probe_info, target_v4));
         Ok(())
     }
@@ -118,17 +120,22 @@ impl ProbeSocket for WindowsIcmpSocket {
     fn recv_response(&self, timeout: Duration) -> Result<Option<ProbeResponse>> {
         // Get the oldest pending probe
         let (probe_info, target) = {
-            let mut pending = self.pending_probes.lock().unwrap();
+            let mut pending = self.pending_probes.lock().expect("mutex poisoned");
             if pending.is_empty() {
                 return Ok(None);
             }
             // Get the probe with the smallest sequence number
-            let min_seq = *pending.keys().min().unwrap();
-            pending.remove(&min_seq).unwrap()
+            let min_seq = *pending
+                .keys()
+                .min()
+                .expect("pending probes should not be empty");
+            pending
+                .remove(&min_seq)
+                .expect("min_seq should exist in pending probes")
         };
 
         // Create send data
-        let send_data = vec![0u8; ICMP_ECHO_PAYLOAD_SIZE];
+        let send_data = [0u8; ICMP_ECHO_PAYLOAD_SIZE];
 
         // Create IP options for TTL
         let mut ip_options = IP_OPTION_INFORMATION {
@@ -184,7 +191,7 @@ impl ProbeSocket for WindowsIcmpSocket {
             IP_SUCCESS => {
                 // Check if this is our destination
                 if from_addr == IpAddr::V4(target) {
-                    *self.destination_reached.lock().unwrap() = true;
+                    *self.destination_reached.lock().expect("mutex poisoned") = true;
                 }
                 ResponseType::EchoReply
             }
@@ -205,7 +212,7 @@ impl ProbeSocket for WindowsIcmpSocket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self.destination_reached.lock().expect("mutex poisoned")
     }
 }
 

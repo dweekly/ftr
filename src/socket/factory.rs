@@ -8,8 +8,6 @@ use super::icmp_v4::RawIcmpV4Socket;
 use super::udp::UdpRecvErrSocket;
 #[cfg(not(target_os = "windows"))]
 use super::udp::UdpWithIcmpSocket;
-#[cfg(target_os = "windows")]
-use super::windows::WindowsIcmpSocket;
 use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
@@ -262,6 +260,25 @@ pub fn create_probe_socket_with_port(
     verbose: bool,
     port: u16,
 ) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_config(
+        target,
+        preferred_protocol,
+        preferred_mode,
+        verbose,
+        port,
+        None,
+    )
+}
+
+/// Creates a probe socket with the specified options including timing configuration.
+pub fn create_probe_socket_with_config(
+    target: IpAddr,
+    preferred_protocol: Option<ProbeProtocol>,
+    preferred_mode: Option<SocketMode>,
+    verbose: bool,
+    port: u16,
+    _timing_config: Option<&crate::TimingConfig>,
+) -> Result<Box<dyn ProbeSocket>> {
     let ip_version = match target {
         IpAddr::V4(_) => IpVersion::V4,
         IpAddr::V6(_) => IpVersion::V6,
@@ -405,8 +422,11 @@ pub fn create_probe_socket_with_port(
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
                             #[cfg(target_os = "windows")]
                             {
-                                // On Windows, use our Windows-specific implementation
-                                return Ok(Box::new(WindowsIcmpSocket::new()?));
+                                // On Windows, use our async Windows-specific implementation
+                                use super::windows_async::WindowsAsyncIcmpSocket;
+                                let socket =
+                                    WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
+                                return Ok(Box::new(socket));
                             }
                             #[cfg(target_os = "macos")]
                             {
