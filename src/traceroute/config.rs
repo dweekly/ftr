@@ -92,8 +92,8 @@ pub struct TracerouteConfig {
     pub enable_asn_lookup: bool,
     /// Enable reverse DNS lookups (default: true)
     pub enable_rdns: bool,
-    /// Enable verbose output
-    pub verbose: bool,
+    /// Verbose level (0=normal, 1=verbose, 2=very verbose)
+    pub verbose: u8,
     /// Public IP address (if known) to avoid repeated detection
     ///
     /// When running multiple traceroutes, you can provide the public IP
@@ -120,7 +120,7 @@ impl Default for TracerouteConfig {
             port: 443,
             enable_asn_lookup: true,
             enable_rdns: true,
-            verbose: false,
+            verbose: 0,
             public_ip: None,
             timing: TimingConfig::default(),
         }
@@ -333,10 +333,12 @@ impl TracerouteConfigBuilder {
         self
     }
 
-    /// Enable or disable verbose output
+    /// Set verbose level
     ///
-    /// When enabled, provides detailed socket and probe information. Default is false.
-    pub fn verbose(mut self, verbose: bool) -> Self {
+    /// 0 = normal output (default)
+    /// 1 = verbose output (socket and probe information)
+    /// 2 = very verbose (timing traces)
+    pub fn verbose(mut self, verbose: u8) -> Self {
         self.config.verbose = verbose;
         self
     }

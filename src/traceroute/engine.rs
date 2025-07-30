@@ -496,7 +496,7 @@ impl TracerouteEngine {
                         // Timeout, continue
                     }
                     Err(e) => {
-                        if verbose {
+                        if verbose > 0 {
                             eprintln!("Error receiving response: {e}");
                         }
                     }
@@ -555,7 +555,7 @@ impl TracerouteEngine {
                 // Send the probe
                 debug_print!(2, "Sending probe: TTL={}, seq={}", ttl_val, sequence);
                 if let Err(e) = self.socket.send_probe(IpAddr::V4(target_ip), probe_info) {
-                    if self.config.verbose {
+                    if self.config.verbose > 0 {
                         eprintln!("Failed to send probe for TTL {ttl_val}: {e}");
                     }
                     self.active_probes

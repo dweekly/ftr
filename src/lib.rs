@@ -117,6 +117,16 @@ macro_rules! debug_print {
         }
     };
 }
+
+/// Macro for timing traces in very verbose mode
+#[macro_export]
+macro_rules! trace_time {
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose >= 2 {
+            eprintln!("[TIMING {:?}] {}", std::time::Instant::now(), format!($($arg)*));
+        }
+    };
+}
 pub mod dns;
 pub mod enrichment;
 #[cfg(feature = "async")]

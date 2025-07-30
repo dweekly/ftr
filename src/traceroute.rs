@@ -29,6 +29,9 @@ pub mod async_api;
 pub mod async_engine;
 pub mod config;
 pub mod engine;
+#[cfg(feature = "async")]
+pub mod fully_parallel_async_engine;
+pub mod isp_from_path;
 pub mod result;
 pub mod types;
 

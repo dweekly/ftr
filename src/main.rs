@@ -141,6 +141,12 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
+    // Pre-warm STUN cache if using async mode
+    #[cfg(feature = "async")]
+    if args.async_mode {
+        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+    }
+
     // Initialize debug mode if requested
     // ftr::debug::init_debug(args.verbose);
 
@@ -199,7 +205,7 @@ async fn main() -> Result<()> {
         .queries_per_hop(args.queries)
         .enable_asn_lookup(!args.no_enrich)
         .enable_rdns(!args.no_rdns)
-        .verbose(args.verbose > 0)
+        .verbose(args.verbose)
         .port(args.port)
         .build();
 

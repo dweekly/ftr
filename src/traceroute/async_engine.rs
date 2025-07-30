@@ -4,9 +4,9 @@
 //! Tokio for immediate response processing.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::public_ip::detect_isp_with_default_resolver;
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
+use crate::trace_time;
 use crate::traceroute::{ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -14,7 +14,6 @@ use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
 
 /// Async traceroute engine
@@ -41,6 +40,12 @@ impl AsyncTracerouteEngine {
     /// Run the async traceroute
     pub async fn run(&self) -> Result<TracerouteResult> {
         let start_time = Instant::now();
+        trace_time!(
+            self.config.verbose,
+            "Starting async traceroute to {}",
+            self.target
+        );
+
         let mut probe_futures = FuturesUnordered::new();
         let mut responses: Vec<ProbeResponse> = Vec::new();
         let mut sequence = 1u16;
@@ -50,6 +55,7 @@ impl AsyncTracerouteEngine {
         let mut destination_ttl: Option<u8> = None;
 
         // Send all probes concurrently
+        let probe_send_start = Instant::now();
         for ttl in self.config.start_ttl..=self.config.max_hops {
             for _query in 0..self.config.queries_per_hop {
                 let probe = ProbeInfo {
@@ -61,16 +67,43 @@ impl AsyncTracerouteEngine {
 
                 let socket = Arc::clone(&self.socket);
                 let target = self.target;
+                let verbose = self.config.verbose;
 
                 // Create future for this probe - the socket implementation handles timeouts
-                let probe_future =
-                    async move { socket.send_probe_and_recv(target, probe).await.ok() };
+                let probe_future = async move {
+                    trace_time!(
+                        verbose,
+                        "Sending probe seq={} ttl={}",
+                        probe.sequence,
+                        probe.ttl
+                    );
+                    let result = socket.send_probe_and_recv(target, probe).await.ok();
+                    if let Some(ref resp) = result {
+                        trace_time!(
+                            verbose,
+                            "Received response seq={} ttl={} from={} rtt={:?}",
+                            resp.sequence,
+                            resp.ttl,
+                            resp.from_addr,
+                            resp.rtt
+                        );
+                    }
+                    result
+                };
 
                 probe_futures.push(probe_future);
             }
         }
+        trace_time!(
+            self.config.verbose,
+            "Finished creating {} probe futures in {:?}",
+            sequence - 1,
+            probe_send_start.elapsed()
+        );
 
         // Collect responses
+        let collection_start = Instant::now();
+        trace_time!(self.config.verbose, "Starting response collection");
         let collection_future = async {
             while let Some(response) = probe_futures.next().await {
                 if let Some(resp) = response {
@@ -98,19 +131,33 @@ impl AsyncTracerouteEngine {
                             }
                         }
                         if can_exit {
+                            trace_time!(
+                                self.config.verbose,
+                                "Early exit condition met - all TTLs up to destination responded"
+                            );
                             // We have responses from all TTLs up to destination
                             // But we still need to wait a bit for any in-flight responses
                             // from intermediate hops that might arrive late
-                            sleep(Duration::from_millis(100)).await;
+                            let late_wait_start = Instant::now();
+                            sleep(Duration::from_millis(25)).await;
+                            trace_time!(self.config.verbose, "Waited 25ms for late responses");
 
                             // Collect any remaining responses that arrived
+                            let mut late_count = 0;
                             while let Ok(Some(response)) =
                                 timeout(Duration::from_millis(10), probe_futures.next()).await
                             {
                                 if let Some(resp) = response {
                                     responses.push(resp);
+                                    late_count += 1;
                                 }
                             }
+                            trace_time!(
+                                self.config.verbose,
+                                "Collected {} late responses in {:?}",
+                                late_count,
+                                late_wait_start.elapsed()
+                            );
                             break;
                         }
                     }
@@ -119,11 +166,35 @@ impl AsyncTracerouteEngine {
         };
 
         // Execute with overall timeout
-        let _ = timeout(self.config.overall_timeout, collection_future).await;
+        let timeout_result = timeout(self.config.overall_timeout, collection_future).await;
+        let collection_elapsed = collection_start.elapsed();
+        trace_time!(
+            self.config.verbose,
+            "Response collection completed in {:?}, timeout={}",
+            collection_elapsed,
+            timeout_result.is_err()
+        );
+        trace_time!(
+            self.config.verbose,
+            "Total responses collected: {}",
+            responses.len()
+        );
 
         // Build the result
+        let build_start = Instant::now();
         let elapsed = start_time.elapsed();
-        self.build_result(responses, elapsed).await
+        let result = self.build_result(responses, elapsed).await;
+        trace_time!(
+            self.config.verbose,
+            "Result building completed in {:?}",
+            build_start.elapsed()
+        );
+        trace_time!(
+            self.config.verbose,
+            "Total async traceroute completed in {:?}",
+            elapsed
+        );
+        result
     }
 
     /// Build the final traceroute result
@@ -245,13 +316,10 @@ impl AsyncTracerouteEngine {
             }
         };
 
-        // Public IP detection for ISP info (if ASN lookup is enabled)
+        // Try to extract ISP info from the traceroute path itself (fast path)
         let isp_info = if self.config.enable_asn_lookup {
-            // Try to detect public IP and ISP info
-            match detect_isp_with_default_resolver().await {
-                Ok(isp) => Some(isp),
-                Err(_) => None,
-            }
+            // Note: We'll do this after enrichment in async_api.rs where we have enriched hops
+            None
         } else {
             None
         };

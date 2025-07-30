@@ -54,6 +54,7 @@ once_cell = "1.19"
 lazy_static = "1.5"
 async-trait = "0.1"
 tokio-util = "0.7"
+getrandom = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -121,4 +122,4 @@ assets = [
     ["target/release/ftr", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/ftr/README", "644"],
     ["CHANGELOG.md", "usr/share/doc/ftr/CHANGELOG", "644"],
-] 
+]

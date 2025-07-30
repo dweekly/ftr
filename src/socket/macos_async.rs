@@ -5,6 +5,7 @@
 
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::trace_time;
 use crate::TimingConfig;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -43,12 +44,19 @@ pub struct MacOSAsyncIcmpSocket {
     destination_reached: Arc<Mutex<bool>>,
     pending_count: Arc<Mutex<usize>>,
     timing_config: TimingConfig,
+    verbose: u8,
     _receiver_task: tokio::task::JoinHandle<()>,
 }
 
 impl MacOSAsyncIcmpSocket {
     /// Create a new macOS async ICMP socket
     pub fn new_with_config(timing_config: TimingConfig) -> Result<Self> {
+        let verbose = std::env::var("FTR_VERBOSE")
+            .ok()
+            .and_then(|v| v.parse::<u8>().ok())
+            .unwrap_or(0);
+        trace_time!(verbose, "Creating macOS async ICMP socket");
+
         // Create DGRAM ICMP socket (works without root on macOS)
         let socket = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4))
             .context("Failed to create ICMP socket")?;
@@ -80,6 +88,7 @@ impl MacOSAsyncIcmpSocket {
             let pending_probes = Arc::clone(&pending_probes);
             let destination_reached = Arc::clone(&destination_reached);
             let pending_count = Arc::clone(&pending_count);
+            let v = verbose;
 
             tokio::spawn(async move {
                 Self::receiver_loop(
@@ -88,6 +97,7 @@ impl MacOSAsyncIcmpSocket {
                     pending_probes,
                     destination_reached,
                     pending_count,
+                    v,
                 )
                 .await
             })
@@ -100,6 +110,7 @@ impl MacOSAsyncIcmpSocket {
             destination_reached,
             pending_count,
             timing_config,
+            verbose,
             _receiver_task: receiver_task,
         })
     }
@@ -111,13 +122,16 @@ impl MacOSAsyncIcmpSocket {
         pending_probes: Arc<TokioMutex<HashMap<u16, PendingProbe>>>,
         destination_reached: Arc<Mutex<bool>>,
         pending_count: Arc<Mutex<usize>>,
+        verbose: u8,
     ) {
         let mut buf = vec![0u8; 1500];
+        trace_time!(verbose, "Started async receiver loop");
 
         loop {
             match socket.recv_from(&mut buf).await {
                 Ok((size, addr)) => {
                     let recv_time = Instant::now();
+                    trace_time!(verbose, "Received {} bytes from {}", size, addr);
 
                     let _ = Self::parse_response(
                         &buf[..size],
@@ -127,12 +141,15 @@ impl MacOSAsyncIcmpSocket {
                         &pending_probes,
                         &destination_reached,
                         &pending_count,
+                        verbose,
                     )
                     .await;
                 }
                 Err(e) => {
                     // Log error but continue receiving
-                    eprintln!("Error receiving ICMP response: {}", e);
+                    if verbose > 0 {
+                        eprintln!("Error receiving ICMP response: {}", e);
+                    }
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
             }
@@ -148,6 +165,7 @@ impl MacOSAsyncIcmpSocket {
         pending_probes: &Arc<TokioMutex<HashMap<u16, PendingProbe>>>,
         destination_reached: &Arc<Mutex<bool>>,
         pending_count: &Arc<Mutex<usize>>,
+        verbose: u8,
     ) -> Option<()> {
         // Parse outer IPv4 packet
         let outer_ipv4_packet = Ipv4Packet::new(packet_data)?;
@@ -211,6 +229,15 @@ impl MacOSAsyncIcmpSocket {
         // Look up and remove the pending probe
         let mut pending_probes = pending_probes.lock().await;
         if let Some(pending) = pending_probes.remove(&sequence) {
+            let rtt = recv_time.duration_since(pending.probe_info.sent_at);
+            trace_time!(
+                verbose,
+                "Matched probe seq={} ttl={} rtt={:?}",
+                sequence,
+                pending.probe_info.ttl,
+                rtt
+            );
+
             // Update destination reached status
             if is_destination {
                 *destination_reached.lock().unwrap() = true;
@@ -254,6 +281,7 @@ impl MacOSAsyncIcmpSocket {
 
     /// Send an ICMP echo request
     async fn send_icmp_echo(&self, dest: Ipv4Addr, sequence: u16, ttl: u8) -> Result<()> {
+        let send_start = Instant::now();
         // Set TTL for this probe
         self.set_ttl_internal(ttl).await?;
 
@@ -286,6 +314,15 @@ impl MacOSAsyncIcmpSocket {
             .send_to(echo_req_packet.packet(), dest_addr)
             .await
             .context("Failed to send ICMP packet")?;
+
+        trace_time!(
+            self.verbose,
+            "Sent ICMP echo seq={} ttl={} to {} in {:?}",
+            sequence,
+            ttl,
+            dest,
+            send_start.elapsed()
+        );
 
         Ok(())
     }
@@ -329,13 +366,28 @@ impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
             .await?;
 
         // Wait for response with timeout
+        let wait_start = Instant::now();
         match tokio::time::timeout(self.timing_config.socket_read_timeout, rx).await {
-            Ok(Ok(response)) => Ok(response),
+            Ok(Ok(response)) => {
+                trace_time!(
+                    self.verbose,
+                    "Got response for seq={} in {:?}",
+                    probe.sequence,
+                    wait_start.elapsed()
+                );
+                Ok(response)
+            }
             Ok(Err(_)) => {
                 // Channel was dropped, shouldn't happen
                 Err(anyhow!("Response channel closed unexpectedly"))
             }
             Err(_) => {
+                trace_time!(
+                    self.verbose,
+                    "Timeout for seq={} after {:?}",
+                    probe.sequence,
+                    wait_start.elapsed()
+                );
                 // Timeout occurred
                 // Remove from pending
                 {

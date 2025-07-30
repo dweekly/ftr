@@ -239,7 +239,7 @@ pub fn create_probe_socket_with_mode(
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
 ) -> Result<Box<dyn ProbeSocket>> {
-    create_probe_socket_with_options(target, preferred_protocol, preferred_mode, false)
+    create_probe_socket_with_options(target, preferred_protocol, preferred_mode, 0)
 }
 
 /// Creates a probe socket with the specified options including verbose output.
@@ -247,7 +247,7 @@ pub fn create_probe_socket_with_options(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
-    verbose: bool,
+    verbose: u8,
 ) -> Result<Box<dyn ProbeSocket>> {
     create_probe_socket_with_port(target, preferred_protocol, preferred_mode, verbose, 443)
 }
@@ -257,7 +257,7 @@ pub fn create_probe_socket_with_port(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
-    verbose: bool,
+    verbose: u8,
     port: u16,
 ) -> Result<Box<dyn ProbeSocket>> {
     create_probe_socket_with_config(
@@ -275,7 +275,7 @@ pub fn create_probe_socket_with_config(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
-    verbose: bool,
+    verbose: u8,
     port: u16,
     _timing_config: Option<&crate::TimingConfig>,
 ) -> Result<Box<dyn ProbeSocket>> {
@@ -383,7 +383,7 @@ pub fn create_probe_socket_with_config(
 
                 // If no compatible modes, skip this protocol
                 if compatible_modes.is_empty() {
-                    if verbose && user_specified_protocol {
+                    if verbose > 0 && user_specified_protocol {
                         eprintln!(
                             "No compatible socket modes for {} protocol on {} {}",
                             protocol.description(),
@@ -413,7 +413,7 @@ pub fn create_probe_socket_with_config(
                 Ok(socket) => {
                     #[allow(unused_mut)]
                     let mut socket = socket;
-                    if verbose {
+                    if verbose > 0 {
                         eprintln!("Using {} mode for traceroute", mode.description());
                     }
 
@@ -489,7 +489,7 @@ pub fn create_probe_socket_with_config(
                                 if let Ok(recv_err_sock) =
                                     UdpRecvErrSocket::new_with_config(socket, port, _timing_config)
                                 {
-                                    if verbose {
+                                    if verbose > 0 {
                                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                                     }
                                     return Ok(Box::new(recv_err_sock));
@@ -587,7 +587,7 @@ pub fn create_probe_socket_with_config(
                                      Try running with sudo: sudo {}", 
                                     std::env::args().collect::<Vec<_>>().join(" ")
                                 ));
-                            } else if verbose {
+                            } else if verbose > 0 {
                                 eprintln!(
                                     "Raw {} mode requires root privileges, trying fallback...",
                                     match protocol {
@@ -890,7 +890,7 @@ mod tests {
             ipv4,
             Some(ProbeProtocol::Udp),
             Some(SocketMode::Dgram),
-            false,
+            0,
             12345,
         );
 
@@ -910,7 +910,7 @@ mod tests {
             ipv4,
             Some(ProbeProtocol::Icmp),
             None,
-            true, // verbose
+            1, // verbose
         );
     }
 
