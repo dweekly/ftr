@@ -8,7 +8,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::ptr;
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use windows_sys::Win32::Foundation::{
@@ -69,7 +69,6 @@ struct PendingProbe {
     target: Ipv4Addr,
     event: SafeHandle,
     reply_buffer: Vec<u8>,
-    send_time: Instant,
 }
 
 /// Windows async ICMP socket using IcmpSendEcho2 API
@@ -111,10 +110,17 @@ impl WindowsAsyncIcmpSocket {
 
     /// Process completed probe
     fn process_completed_probe(&self, pending: PendingProbe) -> Result<Option<ProbeResponse>> {
-        let rtt = pending.send_time.elapsed();
-
         // Parse the reply
         let reply = unsafe { &*(pending.reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
+        
+        // Use the RTT provided by Windows ICMP API (in milliseconds)
+        // Windows returns 0 for RTTs less than 1ms, so use a minimum of 0.5ms
+        let rtt_ms = reply.RoundTripTime as u64;
+        let rtt = if rtt_ms == 0 {
+            Duration::from_micros(500) // 0.5ms for sub-millisecond responses
+        } else {
+            Duration::from_millis(rtt_ms)
+        };
 
         // Convert reply address to IpAddr
         let from_addr = IpAddr::V4(Ipv4Addr::from(reply.Address.to_be()));
@@ -236,7 +242,6 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
             target: target_v4,
             event: SafeHandle(event),
             reply_buffer,
-            send_time: Instant::now(),
         };
 
         // Store the pending probe with event handle as key

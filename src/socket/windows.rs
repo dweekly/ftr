@@ -7,7 +7,7 @@ use std::mem;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_INSUFFICIENT_BUFFER, HANDLE};
@@ -153,8 +153,6 @@ impl ProbeSocket for WindowsIcmpSocket {
         // Convert target address
         let dest_addr = u32::from_ne_bytes(target.octets());
 
-        let send_start = Instant::now();
-
         // Send ICMP echo request and wait for reply
         let result = unsafe {
             IcmpSendEcho(
@@ -181,7 +179,15 @@ impl ProbeSocket for WindowsIcmpSocket {
 
         // Parse the reply
         let reply = unsafe { &*(reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
-        let rtt = send_start.elapsed();
+        
+        // Use the RTT provided by Windows ICMP API (in milliseconds)
+        // Windows returns 0 for RTTs less than 1ms, so use a minimum of 0.5ms
+        let rtt_ms = reply.RoundTripTime as u64;
+        let rtt = if rtt_ms == 0 {
+            Duration::from_micros(500) // 0.5ms for sub-millisecond responses
+        } else {
+            Duration::from_millis(rtt_ms)
+        };
 
         // Convert reply address to IpAddr
         let from_addr = IpAddr::V4(Ipv4Addr::from(reply.Address.to_be()));

@@ -4,7 +4,8 @@
       "Bash(cargo build:*)",
       "Bash(cargo test:*)",
       "Bash(cargo check:*)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(./target/debug/ftr.exe:*)"
     ],
     "deny": []
   }
