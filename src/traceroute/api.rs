@@ -232,6 +232,18 @@ pub async fn trace(target: &str) -> Result<TracerouteResult, TracerouteError> {
 pub async fn trace_with_config(
     config: TracerouteConfig,
 ) -> Result<TracerouteResult, TracerouteError> {
+    // Set global timing configuration if it differs from defaults
+    let default_timing = crate::TimingConfig::default();
+    if config.timing.receiver_poll_interval != default_timing.receiver_poll_interval
+        || config.timing.main_loop_poll_interval != default_timing.main_loop_poll_interval
+        || config.timing.enrichment_wait_time != default_timing.enrichment_wait_time
+        || config.timing.socket_read_timeout != default_timing.socket_read_timeout
+        || config.timing.udp_retry_delay != default_timing.udp_retry_delay
+    {
+        // Try to set the global config, ignore if already set (e.g., in tests)
+        let _ = crate::config::timing::set_config(config.timing.clone());
+    }
+    
     Traceroute::new(config)?.run().await
 }
 

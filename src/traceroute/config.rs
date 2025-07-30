@@ -35,12 +35,13 @@ pub struct TimingConfig {
 
 impl Default for TimingConfig {
     fn default() -> Self {
+        use crate::config::timing::*;
         Self {
-            receiver_poll_interval: Duration::from_millis(100),
-            main_loop_poll_interval: Duration::from_millis(10),
-            enrichment_wait_time: Duration::from_millis(100),
-            socket_read_timeout: Duration::from_millis(100),
-            udp_retry_delay: Duration::from_millis(10),
+            receiver_poll_interval: Duration::from_millis(DEFAULT_RECEIVER_POLL_INTERVAL_MS),
+            main_loop_poll_interval: Duration::from_millis(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS),
+            enrichment_wait_time: Duration::from_millis(DEFAULT_ENRICHMENT_WAIT_TIME_MS),
+            socket_read_timeout: Duration::from_millis(DEFAULT_SOCKET_READ_TIMEOUT_MS),
+            udp_retry_delay: Duration::from_millis(DEFAULT_UDP_RETRY_DELAY_MS),
         }
     }
 }

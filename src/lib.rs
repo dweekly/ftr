@@ -106,6 +106,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod asn;
+pub mod config;
 pub mod dns;
 pub mod public_ip;
 pub mod socket;

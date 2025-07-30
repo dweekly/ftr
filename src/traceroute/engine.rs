@@ -6,7 +6,7 @@
 use crate::asn::lookup_asn;
 use crate::dns::reverse_dns_lookup;
 use crate::public_ip::detect_isp_with_default_resolver;
-use crate::socket::{ProbeInfo, ProbeSocket, ResponseType};
+use crate::socket::{ProbeInfo, ProbeResponse, ProbeSocket, ResponseType};
 use crate::traceroute::{
     ClassifiedHopInfo, RawHopInfo, SegmentType, TracerouteConfig, TracerouteProgress,
     TracerouteResult,
@@ -18,6 +18,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, oneshot};
 
 /// Error type for traceroute operations
 ///
@@ -98,6 +99,20 @@ struct EnrichmentResult {
     ip: IpAddr,
     hostname: Option<String>,
     asn_info: Option<crate::traceroute::AsnInfo>,
+}
+
+/// Events that can occur during traceroute
+#[derive(Debug)]
+#[allow(dead_code)]
+enum TracerouteEvent {
+    /// A probe response was received
+    ResponseReceived(ProbeResponse),
+    /// A probe timed out
+    ProbeTimeout { sequence: u16 },
+    /// Destination was reached
+    DestinationReached { ttl: u8 },
+    /// All probes completed (either responded or timed out)
+    AllProbesComplete,
 }
 
 /// Traceroute engine
@@ -320,21 +335,26 @@ impl TracerouteEngine {
         let socket_arc = Arc::clone(&self.socket);
         let icmp_identifier = std::process::id() as u16;
 
+        // Create event channel for communication
+        let (event_tx, mut event_rx) = mpsc::channel::<TracerouteEvent>(256);
+        
+        // Create shutdown signal
+        let (shutdown_tx, mut shutdown_rx) = oneshot::channel::<()>();
+
         // Spawn receiver task
         let recv_socket = Arc::clone(&socket_arc);
         let results_clone = Arc::clone(&self.results);
         let active_probes_clone = Arc::clone(&self.active_probes);
         let destination_reached_clone = Arc::clone(&self.destination_reached);
         let destination_ttl_clone = Arc::clone(&self.destination_ttl);
-
-        let shutdown = Arc::new(Mutex::new(false));
-        let shutdown_clone = Arc::clone(&shutdown);
         let enrichment_enabled = self.config.enable_asn_lookup || self.config.enable_rdns;
         let enable_asn = self.config.enable_asn_lookup;
         let enable_rdns = self.config.enable_rdns;
         let enrichment_results_clone = Arc::clone(&self.enrichment_results);
-        let receiver_poll_interval = self.config.timing.receiver_poll_interval;
+        let receiver_poll_interval = crate::config::timing::receiver_poll_interval();
         let verbose = self.config.verbose;
+        let event_tx_clone = event_tx.clone();
+        let target_ip_v4 = target_ip;
 
         let receiver_handle = tokio::spawn(async move {
             // Set up resolver for enrichment
@@ -343,17 +363,16 @@ impl TracerouteEngine {
             } else {
                 None
             };
+            
             loop {
-                // Check if we should shutdown
-                if *shutdown_clone.lock().expect("mutex poisoned") {
-                    break;
-                }
-
-                // Don't exit early just because destination is reached -
-                // intermediate hops might still be responding
-
-                // Try to receive a response
-                match recv_socket.recv_response(receiver_poll_interval) {
+                // Use select to wait for either a response or shutdown signal
+                tokio::select! {
+                    _ = &mut shutdown_rx => {
+                        break;
+                    }
+                    _ = tokio::time::sleep(Duration::from_millis(0)) => {
+                        // Try to receive a response with a short timeout
+                        match recv_socket.recv_response(receiver_poll_interval) {
                     Ok(Some(response)) => {
                         // Remove from active probes
                         active_probes_clone
@@ -388,10 +407,15 @@ impl TracerouteEngine {
                         }
 
                         // Store result if not already present
-                        let mut results_guard = results_clone.lock().expect("mutex poisoned");
-                        let is_new = !results_guard.contains_key(&ttl);
-                        results_guard.entry(ttl).or_insert(raw_hop);
-                        drop(results_guard);
+                        let is_new = {
+                            let mut results_guard = results_clone.lock().expect("mutex poisoned");
+                            let is_new = !results_guard.contains_key(&ttl);
+                            results_guard.entry(ttl).or_insert(raw_hop);
+                            is_new
+                        };
+                        
+                        // Send response event
+                        let _ = event_tx_clone.send(TracerouteEvent::ResponseReceived(response.clone())).await;
 
                         // Start enrichment immediately if this is a new IP
                         if is_new && enrichment_enabled {
@@ -467,9 +491,11 @@ impl TracerouteEngine {
                     }
                 }
 
-                // Check if destination reached from socket
-                if recv_socket.destination_reached() {
-                    *destination_reached_clone.lock().expect("mutex poisoned") = true;
+                        // Check if destination reached from socket
+                        if recv_socket.destination_reached() {
+                            *destination_reached_clone.lock().expect("mutex poisoned") = true;
+                        }
+                    }
                 }
             }
         });
@@ -536,45 +562,85 @@ impl TracerouteEngine {
             }
         }
 
-        // Wait for responses (overall_timeout is the max time to wait AFTER sending probes)
-        let wait_start_time = Instant::now();
-        loop {
-            // Clean up timed-out probes first
-            {
-                let mut active_guard = self.active_probes.lock().expect("mutex poisoned");
+        // Spawn probe timeout checker task
+        let active_probes_timeout = Arc::clone(&self.active_probes);
+        let probe_timeout = self.config.probe_timeout;
+        let event_tx_timeout = event_tx.clone();
+        let timeout_checker = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(100));
+            loop {
+                interval.tick().await;
                 let now = Instant::now();
-                active_guard.retain(|_, probe| {
-                    now.duration_since(probe.sent_at) < self.config.probe_timeout
-                });
+                let mut timed_out = Vec::new();
+                
+                {
+                    let active_guard = active_probes_timeout.lock().expect("mutex poisoned");
+                    for (seq, probe) in active_guard.iter() {
+                        if now.duration_since(probe.sent_at) >= probe_timeout {
+                            timed_out.push(*seq);
+                        }
+                    }
+                }
+                
+                // Remove timed out probes and send timeout events
+                for seq in timed_out {
+                    active_probes_timeout.lock().expect("mutex poisoned").remove(&seq);
+                    let _ = event_tx_timeout.send(TracerouteEvent::ProbeTimeout { sequence: seq }).await;
+                }
             }
+        });
 
-            let (results_count, active_empty, dest_reached) = {
-                let results_guard = self.results.lock().expect("mutex poisoned");
-                let active_guard = self.active_probes.lock().expect("mutex poisoned");
-                let dest_guard = self.destination_reached.lock().expect("mutex poisoned");
-                (results_guard.len(), active_guard.is_empty(), *dest_guard)
-            };
-
-            // Only exit if all probes have been processed (responded or timed out)
-            // Don't exit early just because we found the destination -
-            // intermediate hops might still be responding
-
-            if (dest_reached && active_empty)
-                || (results_count >= (self.config.max_hops - self.config.start_ttl + 1) as usize
-                    && active_empty)
-            {
-                break;
+        // Wait for responses using event-driven approach
+        let overall_timeout = tokio::time::timeout(self.config.overall_timeout, async {
+            loop {
+                tokio::select! {
+                    Some(event) = event_rx.recv() => {
+                        match event {
+                            TracerouteEvent::ResponseReceived(_) => {
+                                // Check if we should continue
+                                let (results_count, active_empty, dest_reached) = {
+                                    let results_guard = self.results.lock().expect("mutex poisoned");
+                                    let active_guard = self.active_probes.lock().expect("mutex poisoned");
+                                    let dest_guard = self.destination_reached.lock().expect("mutex poisoned");
+                                    (results_guard.len(), active_guard.is_empty(), *dest_guard)
+                                };
+                                
+                                if (dest_reached && active_empty)
+                                    || (results_count >= (self.config.max_hops - self.config.start_ttl + 1) as usize
+                                        && active_empty)
+                                {
+                                    let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
+                                    break;
+                                }
+                            }
+                            TracerouteEvent::ProbeTimeout { .. } => {
+                                // Check if all probes are done
+                                let active_empty = self.active_probes.lock().expect("mutex poisoned").is_empty();
+                                let dest_reached = *self.destination_reached.lock().expect("mutex poisoned");
+                                
+                                if active_empty && dest_reached {
+                                    let _ = event_tx.send(TracerouteEvent::AllProbesComplete).await;
+                                    break;
+                                }
+                            }
+                            TracerouteEvent::DestinationReached { ttl } => {
+                                *self.destination_ttl.lock().expect("mutex poisoned") = Some(ttl);
+                            }
+                            TracerouteEvent::AllProbesComplete => {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
-
-            if wait_start_time.elapsed() > self.config.overall_timeout {
-                break;
-            }
-
-            tokio::time::sleep(self.config.timing.main_loop_poll_interval).await;
-        }
-
-        // Signal receiver to shutdown
-        *shutdown.lock().expect("mutex poisoned") = true;
+        });
+        
+        // Wait for completion or timeout
+        let _ = overall_timeout.await;
+        
+        // Signal shutdown
+        let _ = shutdown_tx.send(());
+        timeout_checker.abort();
 
         // Wait for receiver to finish
         let _ = receiver_handle.await;
@@ -588,7 +654,7 @@ impl TracerouteEngine {
             let mut dest_ttl = self.config.max_hops;
             for ttl in self.config.start_ttl..=self.config.max_hops {
                 if let Some(hop) = results_guard.get(&ttl) {
-                    if hop.addr == Some(IpAddr::V4(target_ip)) {
+                    if hop.addr == Some(IpAddr::V4(target_ip_v4)) {
                         dest_ttl = ttl;
                         break;
                     }
@@ -621,7 +687,7 @@ impl TracerouteEngine {
         _target_ip: Ipv4Addr,
     ) -> Result<Vec<ClassifiedHopInfo>, TracerouteError> {
         // Wait a bit for any remaining enrichment tasks to complete
-        tokio::time::sleep(self.config.timing.enrichment_wait_time).await;
+        tokio::time::sleep(crate::config::timing::enrichment_wait_time()).await;
 
         // Get enrichment results
         let enrichment_results = self.enrichment_results.lock().expect("mutex poisoned");

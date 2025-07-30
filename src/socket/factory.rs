@@ -425,7 +425,7 @@ pub fn create_probe_socket_with_config(
                                 // On Windows, use our async Windows-specific implementation
                                 use super::windows_async::WindowsAsyncIcmpSocket;
                                 let socket =
-                                    WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
+                                    WindowsAsyncIcmpSocket::new_with_config(_timing_config)?;
                                 return Ok(Box::new(socket));
                             }
                             #[cfg(target_os = "macos")]
@@ -436,12 +436,12 @@ pub fn create_probe_socket_with_config(
                                 socket
                                     .bind(&bind_addr.into())
                                     .context("Failed to bind socket")?;
-                                return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(socket, _timing_config)?));
                             }
                             #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                             {
                                 // Raw socket doesn't need explicit binding
-                                return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(RawIcmpV4Socket::new_with_config(socket, _timing_config)?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
@@ -458,7 +458,7 @@ pub fn create_probe_socket_with_config(
                                     .bind(&bind_addr.into())
                                     .context("Failed to bind ICMP socket")?;
 
-                                return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(socket, _timing_config)?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Udp, SocketMode::Dgram) => {
@@ -477,7 +477,7 @@ pub fn create_probe_socket_with_config(
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
                             {
-                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket, port) {
+                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new_with_config(socket, port, _timing_config) {
                                     if verbose {
                                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                                     }
@@ -519,10 +519,11 @@ pub fn create_probe_socket_with_config(
                                 };
 
                                 if icmp_socket.is_some() {
-                                    return Ok(Box::new(UdpWithIcmpSocket::new(
+                                    return Ok(Box::new(UdpWithIcmpSocket::new_with_config(
                                         socket,
                                         icmp_socket,
                                         port,
+                                        _timing_config,
                                     )?));
                                 } else {
                                     // UDP without ICMP receive capability is not functional

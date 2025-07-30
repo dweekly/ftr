@@ -78,7 +78,6 @@ pub struct WindowsAsyncIcmpSocket {
     mode: ProbeMode,
     destination_reached: Arc<Mutex<bool>>,
     pending_probes: Arc<Mutex<HashMap<usize, PendingProbe>>>,
-    timing_config: crate::TimingConfig,
 }
 
 impl WindowsAsyncIcmpSocket {
@@ -88,7 +87,7 @@ impl WindowsAsyncIcmpSocket {
     }
 
     /// Create a new Windows async ICMP socket with timing configuration
-    pub fn new_with_config(timing_config: Option<&crate::TimingConfig>) -> io::Result<Self> {
+    pub fn new_with_config(_timing_config: Option<&crate::TimingConfig>) -> io::Result<Self> {
         // Ensure Winsock is initialized
         ensure_winsock_initialized()?;
 
@@ -107,7 +106,6 @@ impl WindowsAsyncIcmpSocket {
             },
             destination_reached: Arc::new(Mutex::new(false)),
             pending_probes: Arc::new(Mutex::new(HashMap::new())),
-            timing_config: timing_config.cloned().unwrap_or_default(),
         })
     }
 
@@ -221,7 +219,7 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
                 &mut ip_options as *mut IP_OPTION_INFORMATION,
                 reply_buffer.as_mut_ptr() as *mut c_void,
                 reply_size as u32,
-                self.timing_config.socket_read_timeout.as_millis() as u32,
+                crate::config::timing::socket_read_timeout().as_millis() as u32,
             )
         };
 
@@ -309,8 +307,8 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
 
-    fn set_timing_config(&mut self, config: &crate::TimingConfig) -> Result<()> {
-        self.timing_config = config.clone();
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
         Ok(())
     }
 }

@@ -36,8 +36,13 @@ pub struct DgramIcmpV4Socket {
 impl DgramIcmpV4Socket {
     /// Create a new DGRAM ICMP socket
     pub fn new(socket: Socket2) -> Result<Self> {
-        // Set socket options
-        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+        Self::new_with_config(socket, None)
+    }
+
+    /// Create a new DGRAM ICMP socket with timing configuration
+    pub fn new_with_config(socket: Socket2, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
+        // Set socket options using global config
+        socket.set_read_timeout(Some(crate::config::timing::socket_read_timeout()))?;
 
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
@@ -216,7 +221,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
             }
 
             self.socket
-                .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+                .set_read_timeout(Some(remaining.min(crate::config::timing::socket_read_timeout())))?;
 
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
@@ -255,6 +260,11 @@ impl ProbeSocket for DgramIcmpV4Socket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
+    
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
+    }
 }
 
 /// Raw ICMP socket for IPv4 (full IP packet control)
@@ -269,8 +279,13 @@ pub struct RawIcmpV4Socket {
 impl RawIcmpV4Socket {
     /// Create a new Raw ICMP socket
     pub fn new(socket: Socket2) -> Result<Self> {
-        // Set socket options
-        socket.set_read_timeout(Some(Duration::from_millis(100)))?;
+        Self::new_with_config(socket, None)
+    }
+
+    /// Create a new Raw ICMP socket with timing configuration
+    pub fn new_with_config(socket: Socket2, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
+        // Set socket options using global config
+        socket.set_read_timeout(Some(crate::config::timing::socket_read_timeout()))?;
 
         // Enable IP_HDRINCL to include IP header
         #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd"))]
@@ -518,7 +533,7 @@ impl ProbeSocket for RawIcmpV4Socket {
             }
 
             self.socket
-                .set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+                .set_read_timeout(Some(remaining.min(crate::config::timing::socket_read_timeout())))?;
 
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
@@ -556,6 +571,11 @@ impl ProbeSocket for RawIcmpV4Socket {
 
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
+    }
+    
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
     }
 }
 

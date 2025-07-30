@@ -61,6 +61,11 @@ pub struct UdpRecvErrSocket {
 impl UdpRecvErrSocket {
     /// Create a new UDP socket with IP_RECVERR enabled
     pub fn new(_socket: Socket2, port: u16) -> Result<Self> {
+        Self::new_with_config(_socket, port, None)
+    }
+
+    /// Create a new UDP socket with IP_RECVERR enabled and timing configuration
+    pub fn new_with_config(_socket: Socket2, port: u16, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
         // We don't store a single socket anymore - each probe will create its own
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
@@ -311,8 +316,8 @@ impl ProbeSocket for UdpRecvErrSocket {
                 }
             }
 
-            // Sleep briefly before next iteration
-            std::thread::sleep(Duration::from_millis(10));
+            // Sleep briefly before next iteration using global config
+            std::thread::sleep(crate::config::timing::udp_retry_delay());
 
             if Instant::now() >= deadline {
                 return Ok(None);
@@ -322,6 +327,11 @@ impl ProbeSocket for UdpRecvErrSocket {
 
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
+    }
+    
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
     }
 }
 
@@ -339,6 +349,11 @@ pub struct UdpWithIcmpSocket {
 impl UdpWithIcmpSocket {
     /// Create a new UDP socket with optional ICMP receiver
     pub fn new(_udp_socket: Socket2, icmp_socket: Option<Socket2>, port: u16) -> Result<Self> {
+        Self::new_with_config(_udp_socket, icmp_socket, port, None)
+    }
+
+    /// Create a new UDP socket with optional ICMP receiver and timing configuration
+    pub fn new_with_config(_udp_socket: Socket2, icmp_socket: Option<Socket2>, port: u16, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
         // We don't store the UDP socket anymore - each probe will create its own
         if let Some(ref icmp) = icmp_socket {
             icmp.set_nonblocking(true)?;
@@ -531,7 +546,7 @@ impl ProbeSocket for UdpWithIcmpSocket {
                     return Ok(None);
                 }
 
-                icmp_socket.set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+                icmp_socket.set_read_timeout(Some(remaining.min(crate::config::timing::socket_read_timeout())))?;
 
                 match icmp_socket.recv_from(&mut recv_buf) {
                     Ok((size, socket_addr)) => {
@@ -570,6 +585,11 @@ impl ProbeSocket for UdpWithIcmpSocket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
+    
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -583,7 +603,7 @@ mod tests {
         let socket1 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
         let socket2 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
 
-        let udp_socket1 = UdpWithIcmpSocket::new(socket1, None, 53).unwrap();
+        let udp_socket1 = UdpWithIcmpSocket::new_with_config(socket1, None, 53, None).unwrap();
         let udp_socket2 = UdpWithIcmpSocket::new(socket2, None, 443).unwrap();
 
         assert_eq!(udp_socket1.get_dest_port(), 53);
