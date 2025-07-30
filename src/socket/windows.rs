@@ -7,7 +7,7 @@ use std::mem;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use windows_sys::Win32::Foundation::{GetLastError, ERROR_INSUFFICIENT_BUFFER, HANDLE};
@@ -153,6 +153,9 @@ impl ProbeSocket for WindowsIcmpSocket {
         // Convert target address
         let dest_addr = u32::from_ne_bytes(target.octets());
 
+        // Track send time for fallback RTT calculation
+        let send_time = Instant::now();
+        
         // Send ICMP echo request and wait for reply
         let result = unsafe {
             IcmpSendEcho(
@@ -181,12 +184,23 @@ impl ProbeSocket for WindowsIcmpSocket {
         let reply = unsafe { &*(reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         
         // Use the RTT provided by Windows ICMP API (in milliseconds)
-        // Windows returns 0 for RTTs less than 1ms, so use a minimum of 0.5ms
-        let rtt_ms = reply.RoundTripTime as u64;
-        let rtt = if rtt_ms == 0 {
-            Duration::from_micros(500) // 0.5ms for sub-millisecond responses
-        } else {
-            Duration::from_millis(rtt_ms)
+        // The API provides valid RTT for both successful replies and TTL expired
+        // Only use elapsed time for actual failures (unreachable, etc.)
+        let rtt = match reply.Status {
+            IP_SUCCESS | IP_TTL_EXPIRED_TRANSIT => {
+                let rtt_ms = reply.RoundTripTime as u64;
+                if rtt_ms == 0 {
+                    // 0 can mean sub-millisecond response for successful requests
+                    // For TTL expired, it shouldn't be 0, but handle it anyway
+                    Duration::from_micros(500)
+                } else {
+                    Duration::from_millis(rtt_ms)
+                }
+            }
+            _ => {
+                // For actual failures (unreachable, etc.), use elapsed time
+                send_time.elapsed()
+            }
         };
 
         // Convert reply address to IpAddr

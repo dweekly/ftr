@@ -114,12 +114,24 @@ impl WindowsAsyncIcmpSocket {
         let reply = unsafe { &*(pending.reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         
         // Use the RTT provided by Windows ICMP API (in milliseconds)
-        // Windows returns 0 for RTTs less than 1ms, so use a minimum of 0.5ms
-        let rtt_ms = reply.RoundTripTime as u64;
-        let rtt = if rtt_ms == 0 {
-            Duration::from_micros(500) // 0.5ms for sub-millisecond responses
-        } else {
-            Duration::from_millis(rtt_ms)
+        // The API provides valid RTT for both successful replies and TTL expired
+        // Only use elapsed time for actual failures (unreachable, etc.)
+        let rtt = match reply.Status {
+            IP_SUCCESS | IP_TTL_EXPIRED_TRANSIT => {
+                let rtt_ms = reply.RoundTripTime as u64;
+                if rtt_ms == 0 {
+                    // 0 can mean sub-millisecond response for successful requests
+                    // For TTL expired, it shouldn't be 0, but handle it anyway
+                    Duration::from_micros(500)
+                } else {
+                    Duration::from_millis(rtt_ms)
+                }
+            }
+            _ => {
+                // For actual failures (unreachable, etc.), the RTT isn't meaningful
+                // Use a nominal value
+                Duration::from_millis(1)
+            }
         };
 
         // Convert reply address to IpAddr
