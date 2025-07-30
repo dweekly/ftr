@@ -222,8 +222,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Warn if port was specified but won't be used
-    if args.port != 443 && preferred_protocol == Some(ProbeProtocol::Icmp) {
+    // Warn if port was explicitly specified but won't be used
+    if args.port != 33434 && preferred_protocol == Some(ProbeProtocol::Icmp) {
         eprintln!(
             "Warning: Port {} specified but will be ignored for ICMP protocol",
             args.port

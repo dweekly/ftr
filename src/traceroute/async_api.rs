@@ -3,7 +3,7 @@
 //! This module provides the async API for performing traceroute operations
 //! with immediate response processing using Tokio.
 
-use crate::socket::async_factory::create_async_probe_socket;
+use crate::socket::async_factory::create_async_probe_socket_with_options;
 use crate::traceroute::fully_parallel_async_engine::FullyParallelAsyncEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
 use anyhow::Result;
@@ -68,10 +68,15 @@ impl AsyncTraceroute {
             std::env::set_var("FTR_VERBOSE", self.config.verbose.to_string());
         }
 
-        // Create async socket
-        let socket = create_async_probe_socket(self.target_ip, timing_config)
-            .await
-            .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
+        // Create async socket with protocol preference
+        let socket = create_async_probe_socket_with_options(
+            self.target_ip,
+            timing_config,
+            self.config.protocol,
+            self.config.socket_mode,
+        )
+        .await
+        .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
 
         // Create and run fully parallel async engine
         let engine = FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)

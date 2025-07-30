@@ -97,7 +97,6 @@ pub enum TracerouteError {
 /// Enrichment result for a hop
 #[derive(Clone)]
 struct EnrichmentResult {
-    ip: IpAddr,
     hostname: Option<String>,
     asn_info: Option<crate::traceroute::AsnInfo>,
 }
@@ -214,7 +213,6 @@ impl TracerouteEngine {
                     enrichment_results.lock().expect("mutex poisoned").insert(
                         public_ip,
                         EnrichmentResult {
-                            ip: public_ip,
                             hostname: hostname.clone(),
                             asn_info: asn_info.clone(),
                         },
@@ -232,25 +230,7 @@ impl TracerouteEngine {
         // Run the traceroute probes
         let raw_hops = self.run_probes(target_ipv4).await?;
 
-        // Process results
-        let classified_hops = if self.config.enable_asn_lookup || self.config.enable_rdns {
-            self.process_hops(raw_hops, target_ipv4).await?
-        } else {
-            // Convert raw hops to classified without enrichment
-            raw_hops
-                .into_iter()
-                .map(|hop| ClassifiedHopInfo {
-                    ttl: hop.ttl,
-                    segment: SegmentType::Unknown,
-                    hostname: None,
-                    addr: hop.addr,
-                    asn_info: None,
-                    rtt: hop.rtt,
-                })
-                .collect()
-        };
-
-        // Get ISP info from parallel detection or provided IP
+        // Get ISP info from parallel detection or provided IP (before processing hops)
         let isp_info = if self.config.enable_asn_lookup {
             if let Some(public_ip) = self.config.public_ip {
                 // Use provided public IP - check if we already have enrichment for it
@@ -317,6 +297,27 @@ impl TracerouteEngine {
             }
         } else {
             None
+        };
+
+        // Extract ISP ASN for hop classification
+        let isp_asn = isp_info.as_ref().map(|info| info.asn);
+
+        // Process results with ISP ASN
+        let classified_hops = if self.config.enable_asn_lookup || self.config.enable_rdns {
+            self.process_hops(raw_hops, target_ipv4, isp_asn).await?
+        } else {
+            // Convert raw hops to classified without enrichment
+            raw_hops
+                .into_iter()
+                .map(|hop| ClassifiedHopInfo {
+                    ttl: hop.ttl,
+                    segment: SegmentType::Unknown,
+                    hostname: None,
+                    addr: hop.addr,
+                    asn_info: None,
+                    rtt: hop.rtt,
+                })
+                .collect()
         };
 
         // Check if destination was reached
@@ -483,7 +484,6 @@ impl TracerouteEngine {
                                         .insert(
                                             ip,
                                             EnrichmentResult {
-                                                ip,
                                                 hostname,
                                                 asn_info,
                                             },
@@ -769,6 +769,7 @@ impl TracerouteEngine {
         &self,
         raw_hops: Vec<RawHopInfo>,
         _target_ip: Ipv4Addr,
+        isp_asn: Option<u32>,
     ) -> Result<Vec<ClassifiedHopInfo>, TracerouteError> {
         // Wait a bit for any remaining enrichment tasks to complete
         tokio::time::sleep(crate::config::timing::enrichment_wait_time()).await;
@@ -776,38 +777,10 @@ impl TracerouteEngine {
         // Get enrichment results
         let enrichment_results = self.enrichment_results.lock().expect("mutex poisoned");
 
-        // Find the public IP enrichment result to get ISP ASN
-        let isp_asn = if self.config.enable_asn_lookup {
-            // Look for the public IP in enrichment results
-            let public_ip = if let Some(ip) = self.config.public_ip {
-                Some(ip)
-            } else {
-                // Find the first non-private IP with ASN info - that's likely our public IP
-                enrichment_results
-                    .values()
-                    .find(|e| {
-                        if let (IpAddr::V4(ipv4), Some(asn)) = (e.ip, &e.asn_info) {
-                            !crate::traceroute::is_internal_ip(&ipv4) && asn.asn != 0
-                        } else {
-                            false
-                        }
-                    })
-                    .map(|e| e.ip)
-            };
-
-            public_ip.and_then(|ip| {
-                enrichment_results
-                    .get(&ip)
-                    .and_then(|e| e.asn_info.as_ref())
-                    .map(|asn| asn.asn)
-            })
-        } else {
-            None
-        };
+        // Use the ISP ASN passed from the run() method
 
         // Build final classified hops
         let mut classified_hops = Vec::new();
-        let mut in_isp_segment = false;
 
         for raw_hop in raw_hops {
             // Get pre-computed enrichment data for this hop
@@ -828,19 +801,17 @@ impl TracerouteEngine {
                     SegmentType::Lan
                 } else if crate::traceroute::is_cgnat(&ipv4) {
                     // CGNAT addresses belong to ISP, not LAN
-                    in_isp_segment = true;
                     SegmentType::Isp
                 } else if let Some(ref isp) = isp_asn {
                     if let Some(ref asn) = asn_info {
                         if asn.asn == *isp {
-                            in_isp_segment = true;
                             SegmentType::Isp
                         } else {
+                            // We've left the ISP network
                             SegmentType::Beyond
                         }
-                    } else if in_isp_segment {
-                        SegmentType::Isp
                     } else {
+                        // No ASN info - can't determine segment
                         SegmentType::Unknown
                     }
                 } else {

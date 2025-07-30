@@ -17,6 +17,10 @@ This file tracks planned work for the ftr project.
   - Add integration tests for library API
   - Add property-based tests for parsers
   - Test concurrent operations and edge cases
+- [ ] Enhanced path segment labeling
+  - Add "TARGET" segment for hops in the same ASN as the destination
+  - Consider renaming "BEYOND" to something more descriptive (e.g., "TRANSIT", "INTERNET", "BACKBONE")
+  - Example: LAN → ISP → TRANSIT → TARGET (for hops within Google's network when tracing to 8.8.8.8)
 
 ## Medium Priority
 

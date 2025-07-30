@@ -11,7 +11,8 @@
       "Bash(time:*)",
       "Bash(/dev/null)",
       "Bash(./target/release/ftr google.com --async-mode)",
-      "Bash(cargo machete:*)"
+      "Bash(cargo machete:*)",
+      "Bash(ssh:*)"
     ],
     "deny": []
   }

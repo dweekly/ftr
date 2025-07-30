@@ -21,6 +21,8 @@ pub mod windows_iocp;
 pub mod async_factory;
 #[cfg(feature = "async")]
 pub mod async_trait;
+#[cfg(all(feature = "async", target_os = "linux"))]
+pub mod linux_async;
 #[cfg(all(feature = "async", target_os = "macos"))]
 pub mod macos_async;
 #[cfg(all(feature = "async", target_os = "windows"))]
