@@ -73,7 +73,7 @@ jobs:
       with:
         tool: cargo-tarpaulin
     - name: Run coverage
-      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml --exclude-files "*/tests/*" --exclude-files "*/examples/*"
+      run: cargo tarpaulin --engine llvm --verbose --all-features --workspace --timeout 120 --out xml --exclude-files "*/tests/*" --exclude-files "*/examples/*"
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       with:
