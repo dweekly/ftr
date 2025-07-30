@@ -1,10 +1,10 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ftr::{TracerouteConfig, trace_with_config};
+use ftr::{trace_with_config, TracerouteConfig};
 use std::time::Duration;
 
 fn benchmark_traceroute_local(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("traceroute_localhost", |b| {
         b.iter(|| {
             runtime.block_on(async {
@@ -17,7 +17,7 @@ fn benchmark_traceroute_local(c: &mut Criterion) {
                     .enable_rdns(false)
                     .build()
                     .unwrap();
-                
+
                 let _ = trace_with_config(black_box(config)).await;
             })
         })
@@ -26,7 +26,7 @@ fn benchmark_traceroute_local(c: &mut Criterion) {
 
 fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("traceroute_8.8.8.8_enriched", |b| {
         b.iter(|| {
             runtime.block_on(async {
@@ -39,7 +39,7 @@ fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
                     .enable_rdns(true)
                     .build()
                     .unwrap();
-                
+
                 let _ = trace_with_config(black_box(config)).await;
             })
         })
@@ -48,7 +48,7 @@ fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
 
 fn benchmark_traceroute_no_enrichment(c: &mut Criterion) {
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    
+
     c.bench_function("traceroute_8.8.8.8_raw", |b| {
         b.iter(|| {
             runtime.block_on(async {
@@ -61,12 +61,17 @@ fn benchmark_traceroute_no_enrichment(c: &mut Criterion) {
                     .enable_rdns(false)
                     .build()
                     .unwrap();
-                
+
                 let _ = trace_with_config(black_box(config)).await;
             })
         })
     });
 }
 
-criterion_group!(benches, benchmark_traceroute_local, benchmark_traceroute_no_enrichment, benchmark_traceroute_with_enrichment);
+criterion_group!(
+    benches,
+    benchmark_traceroute_local,
+    benchmark_traceroute_no_enrichment,
+    benchmark_traceroute_with_enrichment
+);
 criterion_main!(benches);

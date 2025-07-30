@@ -18,11 +18,13 @@ pub mod windows_iocp;
 
 // Async socket modules
 #[cfg(feature = "async")]
+pub mod async_factory;
+#[cfg(feature = "async")]
 pub mod async_trait;
+#[cfg(all(feature = "async", target_os = "macos"))]
+pub mod macos_async;
 #[cfg(all(feature = "async", target_os = "windows"))]
 pub mod windows_async_tokio;
-#[cfg(feature = "async")]
-pub mod async_factory;
 
 use serde::{Deserialize, Serialize};
 

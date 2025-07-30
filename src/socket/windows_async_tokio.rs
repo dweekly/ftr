@@ -5,8 +5,8 @@
 //! response notification.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::TimingConfig;
 use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::TimingConfig;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::ffi::c_void;
@@ -16,10 +16,12 @@ use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
-use windows_sys::Win32::Foundation::{CloseHandle, ERROR_IO_PENDING, HANDLE, WAIT_OBJECT_0, GetLastError};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_IO_PENDING, HANDLE, WAIT_OBJECT_0,
+};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2, ICMP_ECHO_REPLY,
-    IP_OPTION_INFORMATION, IP_SUCCESS,
+    IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2, ICMP_ECHO_REPLY, IP_OPTION_INFORMATION,
+    IP_SUCCESS,
 };
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
@@ -190,11 +192,11 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
             let event = event_handle as HANDLE; // Convert back to HANDLE
             let result = unsafe { WaitForSingleObject(event, 0xFFFFFFFF) }; // INFINITE
             unsafe { CloseHandle(event) };
-            
+
             // Decrement pending count
             let mut count = pending_count.lock().unwrap();
             *count = count.saturating_sub(1);
-            
+
             if result == WAIT_OBJECT_0 {
                 // Send the buffer back through the channel
                 tx.send(Ok(reply_buffer)).ok();
@@ -204,7 +206,8 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
         });
 
         // Wait for the event to be signaled and get the buffer back
-        let reply_buffer = rx.await
+        let reply_buffer = rx
+            .await
             .map_err(|_| anyhow!("Event wait cancelled"))?
             .map_err(|e| anyhow!("Event wait error: {}", e))?;
 

@@ -107,7 +107,16 @@
 
 pub mod asn;
 pub mod config;
-pub mod debug;
+/// Simple debug print macro for conditional debug output
+#[macro_export]
+macro_rules! debug_print {
+    ($level:expr, $($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("[DEBUG {}] {}", $level, format!($($arg)*));
+        }
+    };
+}
 pub mod dns;
 pub mod enrichment;
 #[cfg(feature = "async")]

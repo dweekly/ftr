@@ -23,14 +23,14 @@
 //! parsing error strings.
 
 pub mod api;
+#[cfg(feature = "async")]
+pub mod async_api;
+#[cfg(feature = "async")]
+pub mod async_engine;
 pub mod config;
 pub mod engine;
 pub mod result;
 pub mod types;
-#[cfg(feature = "async")]
-pub mod async_engine;
-#[cfg(feature = "async")]
-pub mod async_api;
 
 #[cfg(test)]
 mod caching_test;

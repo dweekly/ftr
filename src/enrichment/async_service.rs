@@ -67,10 +67,10 @@ impl AsyncEnrichmentService {
     pub async fn start_background_enrichment(self: Arc<Self>) -> HashMap<IpAddr, EnrichmentResult> {
         let mut results = HashMap::new();
         let mut enrichment_futures = FuturesUnordered::new();
-        
+
         // Take ownership of the receiver
         let mut rx = self.enrichment_rx.write().await;
-        
+
         // Process enrichment queue
         loop {
             tokio::select! {
@@ -78,29 +78,29 @@ impl AsyncEnrichmentService {
                 Some(addr) = rx.recv() => {
                     let dns_resolver = Arc::clone(&self.dns_resolver);
                     let asn_cache = Arc::clone(&self.asn_cache);
-                    
+
                     // Spawn parallel DNS and ASN lookups
                     let enrichment_future = async move {
                         let dns_future = lookup_dns(dns_resolver, addr);
                         let asn_future = lookup_asn(asn_cache, addr);
-                        
+
                         let (hostname, asn_info) = tokio::join!(dns_future, asn_future);
-                        
+
                         EnrichmentResult {
                             addr,
                             hostname,
                             asn_info,
                         }
                     };
-                    
+
                     enrichment_futures.push(enrichment_future);
                 }
-                
+
                 // Collect completed enrichments
                 Some(result) = enrichment_futures.next() => {
                     results.insert(result.addr, result);
                 }
-                
+
                 // Exit when queue is empty and all futures are done
                 else => {
                     if enrichment_futures.is_empty() {
@@ -109,39 +109,42 @@ impl AsyncEnrichmentService {
                 }
             }
         }
-        
+
         results
     }
 
     /// Enrich a set of IP addresses and wait for results
-    pub async fn enrich_addresses(&self, addresses: Vec<IpAddr>) -> HashMap<IpAddr, EnrichmentResult> {
+    pub async fn enrich_addresses(
+        &self,
+        addresses: Vec<IpAddr>,
+    ) -> HashMap<IpAddr, EnrichmentResult> {
         let mut enrichment_futures = FuturesUnordered::new();
-        
+
         for addr in addresses {
             let dns_resolver = Arc::clone(&self.dns_resolver);
             let asn_cache = Arc::clone(&self.asn_cache);
-            
+
             let enrichment_future = async move {
                 let dns_future = lookup_dns(dns_resolver, addr);
                 let asn_future = lookup_asn(asn_cache, addr);
-                
+
                 let (hostname, asn_info) = tokio::join!(dns_future, asn_future);
-                
+
                 EnrichmentResult {
                     addr,
                     hostname,
                     asn_info,
                 }
             };
-            
+
             enrichment_futures.push(enrichment_future);
         }
-        
+
         let mut results = HashMap::new();
         while let Some(result) = enrichment_futures.next().await {
             results.insert(result.addr, result);
         }
-        
+
         results
     }
 }
@@ -164,7 +167,7 @@ async fn lookup_asn(asn_cache: Arc<AsnCache>, addr: IpAddr) -> Option<AsnInfo> {
         if let Some(asn_info) = asn_cache.get(&ipv4) {
             return Some(asn_info);
         }
-        
+
         // If not in cache, perform lookup
         if let Ok(asn_info) = crate::asn::lookup::lookup_asn(ipv4, None).await {
             // Cache the result

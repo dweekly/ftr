@@ -63,7 +63,7 @@ pub fn enrichment_wait_time() -> Duration {
 }
 
 /// Set the global timing configuration
-/// 
+///
 /// This should be called once at program startup if custom timing is needed.
 /// Returns an error if the configuration has already been set.
 pub fn set_config(config: crate::TimingConfig) -> Result<(), crate::TimingConfig> {

@@ -40,7 +40,10 @@ impl DgramIcmpV4Socket {
     }
 
     /// Create a new DGRAM ICMP socket with timing configuration
-    pub fn new_with_config(socket: Socket2, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
+    pub fn new_with_config(
+        socket: Socket2,
+        _timing_config: Option<&crate::TimingConfig>,
+    ) -> Result<Self> {
         // Set socket options using global config
         socket.set_read_timeout(Some(crate::config::timing::socket_read_timeout()))?;
 
@@ -220,8 +223,9 @@ impl ProbeSocket for DgramIcmpV4Socket {
                 return Ok(None);
             }
 
-            self.socket
-                .set_read_timeout(Some(remaining.min(crate::config::timing::socket_read_timeout())))?;
+            self.socket.set_read_timeout(Some(
+                remaining.min(crate::config::timing::socket_read_timeout()),
+            ))?;
 
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
@@ -260,7 +264,7 @@ impl ProbeSocket for DgramIcmpV4Socket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
-    
+
     fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
         // No-op since we use global config now
         Ok(())
@@ -283,7 +287,10 @@ impl RawIcmpV4Socket {
     }
 
     /// Create a new Raw ICMP socket with timing configuration
-    pub fn new_with_config(socket: Socket2, _timing_config: Option<&crate::TimingConfig>) -> Result<Self> {
+    pub fn new_with_config(
+        socket: Socket2,
+        _timing_config: Option<&crate::TimingConfig>,
+    ) -> Result<Self> {
         // Set socket options using global config
         socket.set_read_timeout(Some(crate::config::timing::socket_read_timeout()))?;
 
@@ -532,8 +539,9 @@ impl ProbeSocket for RawIcmpV4Socket {
                 return Ok(None);
             }
 
-            self.socket
-                .set_read_timeout(Some(remaining.min(crate::config::timing::socket_read_timeout())))?;
+            self.socket.set_read_timeout(Some(
+                remaining.min(crate::config::timing::socket_read_timeout()),
+            ))?;
 
             match self.socket.recv_from(&mut recv_buf) {
                 Ok((size, socket_addr)) => {
@@ -572,7 +580,7 @@ impl ProbeSocket for RawIcmpV4Socket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
-    
+
     fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
         // No-op since we use global config now
         Ok(())

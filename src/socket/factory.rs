@@ -436,12 +436,18 @@ pub fn create_probe_socket_with_config(
                                 socket
                                     .bind(&bind_addr.into())
                                     .context("Failed to bind socket")?;
-                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(socket, _timing_config)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
                             }
                             #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                             {
                                 // Raw socket doesn't need explicit binding
-                                return Ok(Box::new(RawIcmpV4Socket::new_with_config(socket, _timing_config)?));
+                                return Ok(Box::new(RawIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
@@ -458,7 +464,10 @@ pub fn create_probe_socket_with_config(
                                     .bind(&bind_addr.into())
                                     .context("Failed to bind ICMP socket")?;
 
-                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(socket, _timing_config)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Udp, SocketMode::Dgram) => {
@@ -477,7 +486,9 @@ pub fn create_probe_socket_with_config(
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
                             {
-                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new_with_config(socket, port, _timing_config) {
+                                if let Ok(recv_err_sock) =
+                                    UdpRecvErrSocket::new_with_config(socket, port, _timing_config)
+                                {
                                     if verbose {
                                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                                     }

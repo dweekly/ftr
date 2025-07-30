@@ -155,7 +155,7 @@ impl ProbeSocket for WindowsIcmpSocket {
 
         // Track send time for fallback RTT calculation
         let send_time = Instant::now();
-        
+
         // Send ICMP echo request and wait for reply
         let result = unsafe {
             IcmpSendEcho(
@@ -182,7 +182,7 @@ impl ProbeSocket for WindowsIcmpSocket {
 
         // Parse the reply
         let reply = unsafe { &*(reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
-        
+
         // Use the RTT provided by Windows ICMP API (in milliseconds)
         // The API provides valid RTT for both successful replies and TTL expired
         // Only use elapsed time for actual failures (unreachable, etc.)

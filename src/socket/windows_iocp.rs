@@ -8,10 +8,11 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::ptr;
 use std::sync::OnceLock;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Result;
+use tokio::sync::mpsc;
 use windows_sys::Win32::Foundation::{
     CloseHandle, GetLastError, ERROR_IO_PENDING, HANDLE, INVALID_HANDLE_VALUE,
 };
@@ -21,15 +22,13 @@ use windows_sys::Win32::NetworkManagement::IpHelper::{
     IP_OPTION_INFORMATION, IP_SUCCESS, IP_TTL_EXPIRED_TRANSIT,
 };
 use windows_sys::Win32::Networking::WinSock::{WSAStartup, WSADATA};
+use windows_sys::Win32::System::Threading::CreateEventW;
 use windows_sys::Win32::System::IO::{
-    CreateIoCompletionPort, GetQueuedCompletionStatus, PostQueuedCompletionStatus,
-    OVERLAPPED,
+    CreateIoCompletionPort, GetQueuedCompletionStatus, PostQueuedCompletionStatus, OVERLAPPED,
 };
-use windows_sys::Win32::System::Threading::{CreateEventW};
-use tokio::sync::mpsc;
 
-use crate::socket::{ProbeInfo, ProbeMode, ProbeResponse, ProbeSocket, ResponseType};
 use crate::debug_print;
+use crate::socket::{ProbeInfo, ProbeMode, ProbeResponse, ProbeSocket, ResponseType};
 
 // ICMP status codes not provided by windows-sys
 const IP_REQ_TIMED_OUT: u32 = 11010;
@@ -122,7 +121,9 @@ impl WindowsIocpIcmpSocket {
             )
         };
         if iocp_handle.is_null() || iocp_handle == INVALID_HANDLE_VALUE {
-            unsafe { IcmpCloseHandle(icmp_handle); }
+            unsafe {
+                IcmpCloseHandle(icmp_handle);
+            }
             return Err(io::Error::last_os_error());
         }
 
@@ -132,19 +133,19 @@ impl WindowsIocpIcmpSocket {
 
         // Wrap handles
         let iocp_handle = SafeHandle(iocp_handle);
-        
+
         // Start IOCP worker thread - convert handle to usize for Send
         let iocp_handle_usize = iocp_handle.0 as usize;
         let dest_reached_clone = Arc::clone(&destination_reached);
         let pending_probes_clone = Arc::clone(&pending_probes);
         let tx_clone = response_tx.clone();
-        
+
         let worker_thread = thread::spawn(move || {
             Self::iocp_worker_thread(
-                iocp_handle_usize as HANDLE, 
-                dest_reached_clone, 
+                iocp_handle_usize as HANDLE,
+                dest_reached_clone,
                 pending_probes_clone,
-                tx_clone
+                tx_clone,
             );
         });
 
@@ -191,7 +192,11 @@ impl WindowsIocpIcmpSocket {
                 let error = unsafe { GetLastError() };
                 if overlapped_ptr.is_null() && completion_key == 0 {
                     // This can happen on shutdown
-                    debug_print!(2, "GetQueuedCompletionStatus returned with no data, error={}", error);
+                    debug_print!(
+                        2,
+                        "GetQueuedCompletionStatus returned with no data, error={}",
+                        error
+                    );
                     continue;
                 }
             }
@@ -210,14 +215,16 @@ impl WindowsIocpIcmpSocket {
                 };
 
                 if let Some(probe) = pending_probe {
-                    debug_print!(2, "IOCP: Event signaled for probe seq={}", 
-                        probe.probe_info.sequence);
+                    debug_print!(
+                        2,
+                        "IOCP: Event signaled for probe seq={}",
+                        probe.probe_info.sequence
+                    );
 
                     // Process the response
-                    if let Some(response) = Self::process_icmp_response(
-                        &probe,
-                        &destination_reached,
-                    ) {
+                    if let Some(response) =
+                        Self::process_icmp_response(&probe, &destination_reached)
+                    {
                         let _ = response_tx.send(response);
                     }
                 }
@@ -232,17 +239,21 @@ impl WindowsIocpIcmpSocket {
     ) -> Option<ProbeResponse> {
         // Parse the reply
         let reply = unsafe { &*(pending.reply_buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
-        
+
         // Check for timeout or failure
         match reply.Status {
             IP_REQ_TIMED_OUT | IP_GENERAL_FAILURE => {
-                debug_print!(2, "Probe seq={} timed out or failed, status={}", 
-                    pending.probe_info.sequence, reply.Status);
+                debug_print!(
+                    2,
+                    "Probe seq={} timed out or failed, status={}",
+                    pending.probe_info.sequence,
+                    reply.Status
+                );
                 return None;
             }
             _ => {}
         }
-        
+
         // Use the RTT provided by Windows ICMP API
         let rtt = match reply.Status {
             IP_SUCCESS | IP_TTL_EXPIRED_TRANSIT => {
@@ -273,8 +284,12 @@ impl WindowsIocpIcmpSocket {
             IP_DEST_PROT_UNREACHABLE => ResponseType::DestinationUnreachable(2),
             IP_DEST_PORT_UNREACHABLE => ResponseType::DestinationUnreachable(3),
             _ => {
-                debug_print!(2, "Unknown response status {} for probe seq={}", 
-                    reply.Status, pending.probe_info.sequence);
+                debug_print!(
+                    2,
+                    "Unknown response status {} for probe seq={}",
+                    reply.Status,
+                    pending.probe_info.sequence
+                );
                 return None;
             }
         };
@@ -292,12 +307,7 @@ impl Drop for WindowsIocpIcmpSocket {
     fn drop(&mut self) {
         // Signal shutdown to worker thread
         unsafe {
-            PostQueuedCompletionStatus(
-                self.iocp_handle.0,
-                0,
-                SHUTDOWN_KEY,
-                ptr::null_mut(),
-            );
+            PostQueuedCompletionStatus(self.iocp_handle.0, 0, SHUTDOWN_KEY, ptr::null_mut());
         }
 
         // Wait for worker thread to finish
@@ -352,7 +362,9 @@ impl ProbeSocket for WindowsIocpIcmpSocket {
             )
         };
         if result.is_null() {
-            unsafe { CloseHandle(event); }
+            unsafe {
+                CloseHandle(event);
+            }
             return Err(io::Error::last_os_error().into());
         }
 
@@ -380,7 +392,7 @@ impl ProbeSocket for WindowsIocpIcmpSocket {
             IcmpSendEcho2(
                 self.icmp_handle.0,
                 event,
-                None, // No APC routine
+                None,        // No APC routine
                 ptr::null(), // No APC context
                 dest_addr,
                 send_data.as_ptr() as *const c_void,
@@ -391,18 +403,29 @@ impl ProbeSocket for WindowsIocpIcmpSocket {
                 crate::config::timing::socket_read_timeout().as_millis() as u32,
             )
         };
-        
+
         if result == 0 {
             let error = unsafe { GetLastError() };
-            debug_print!(2, "IcmpSendEcho2 returned 0 for TTL={}, seq={}, error={}", 
-                probe_info.ttl, probe_info.sequence, error);
+            debug_print!(
+                2,
+                "IcmpSendEcho2 returned 0 for TTL={}, seq={}, error={}",
+                probe_info.ttl,
+                probe_info.sequence,
+                error
+            );
             if error != ERROR_IO_PENDING {
-                unsafe { CloseHandle(event); }
+                unsafe {
+                    CloseHandle(event);
+                }
                 return Err(io::Error::from_raw_os_error(error as i32).into());
             }
         } else {
-            debug_print!(2, "IcmpSendEcho2 succeeded immediately for TTL={}, seq={}", 
-                probe_info.ttl, probe_info.sequence);
+            debug_print!(
+                2,
+                "IcmpSendEcho2 succeeded immediately for TTL={}, seq={}",
+                probe_info.ttl,
+                probe_info.sequence
+            );
             // Even if it succeeded immediately, the event will be signaled
         }
 
@@ -425,12 +448,17 @@ impl ProbeSocket for WindowsIocpIcmpSocket {
     fn recv_response(&self, _timeout: Duration) -> Result<Option<ProbeResponse>> {
         // Try to receive from the channel
         let mut rx = self.response_rx.lock().expect("mutex poisoned");
-        
+
         match rx.try_recv() {
             Ok(response) => {
-                debug_print!(2, "Received response: from={:?}, TTL={}, seq={}, RTT={:?}", 
-                    response.from_addr, response.probe_info.ttl, 
-                    response.probe_info.sequence, response.rtt);
+                debug_print!(
+                    2,
+                    "Received response: from={:?}, TTL={}, seq={}, RTT={:?}",
+                    response.from_addr,
+                    response.probe_info.ttl,
+                    response.probe_info.sequence,
+                    response.rtt
+                );
                 Ok(Some(response))
             }
             Err(_) => Ok(None),

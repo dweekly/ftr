@@ -209,17 +209,17 @@ impl EnrichmentService {
 
 ## Implementation Phases
 
-### Phase 1: Core Async Infrastructure (Week 1)
-1. Add tokio dependency with Windows, macOS, Linux features
-2. Create AsyncProbeSocket trait
-3. Implement AsyncEvent wrapper for Windows events
-4. Set up async runtime in main.rs
+### Phase 1: Core Async Infrastructure (Week 1) ✅
+1. ✅ Add tokio dependency with Windows, macOS, Linux features
+2. ✅ Create AsyncProbeSocket trait
+3. ✅ Implement AsyncEvent wrapper for Windows events
+4. ✅ Set up async runtime in main.rs
 
-### Phase 2: Platform Implementations (Week 2)
-1. AsyncWindowsIcmpSocket using IcmpSendEcho2 + async events
-2. AsyncDgramIcmpSocket for Linux/macOS
-3. AsyncUdpSocket for Linux IP_RECVERR
-4. Factory to select appropriate implementation
+### Phase 2: Platform Implementations (Week 2) 
+1. ✅ AsyncWindowsIcmpSocket using IcmpSendEcho2 + async events
+2. ✅ AsyncDgramIcmpSocket for macOS (completed 2025-07-30)
+3. ⏳ AsyncUdpSocket for Linux IP_RECVERR
+4. ✅ Factory to select appropriate implementation
 
 ### Phase 3: Async Engine (Week 3)
 1. Convert TracerouteEngine to async
@@ -316,6 +316,37 @@ windows-sys = { version = "0.52", features = [
 3. Set up tokio dependencies
 4. Start with Phase 1 implementation
 5. Weekly progress reviews
+
+## Platform Implementation Details
+
+### macOS Implementation (Completed 2025-07-30)
+
+The macOS async implementation uses DGRAM ICMP sockets with Tokio for immediate response notification:
+
+#### Key Features:
+- **Socket Type**: DGRAM ICMP (works without root on macOS)
+- **Async Model**: Tokio UdpSocket with background receiver task
+- **Response Handling**: Oneshot channels for per-probe response delivery
+- **Performance**: 16-115x faster than synchronous implementation
+
+#### Architecture:
+1. **Background Receiver**: Dedicated task continuously receives ICMP responses
+2. **Oneshot Channels**: Each probe gets a dedicated channel for its response
+3. **Immediate Notification**: Responses wake up waiting futures immediately
+4. **Zero Polling**: No polling loops or sleep delays
+
+#### Performance Results:
+- **Sync mode**: ~1.15 seconds average
+- **Async mode**: ~0.01-0.07 seconds average
+- **Improvement**: Response processing latency reduced from 200ms+ to <1ms
+
+### Windows Implementation (Completed earlier)
+
+Uses IcmpSendEcho2 with Windows events wrapped in Tokio async primitives.
+
+### Linux Implementation (Pending)
+
+Will use either DGRAM ICMP or UDP with IP_RECVERR for non-root operation.
 
 ## Conclusion
 

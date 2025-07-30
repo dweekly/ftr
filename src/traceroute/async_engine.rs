@@ -4,16 +4,18 @@
 //! Tokio for immediate response processing.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
+use crate::public_ip::detect_isp_with_default_resolver;
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
-use crate::traceroute::{ClassifiedHopInfo, TracerouteResult, SegmentType};
+use crate::traceroute::{ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
 use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::time::timeout;
+use tokio::sync::mpsc;
+use tokio::time::{sleep, timeout};
 
 /// Async traceroute engine
 pub struct AsyncTracerouteEngine {
@@ -43,6 +45,10 @@ impl AsyncTracerouteEngine {
         let mut responses: Vec<ProbeResponse> = Vec::new();
         let mut sequence = 1u16;
 
+        // Track which TTLs have received at least one response
+        let mut ttl_responses: HashMap<u8, usize> = HashMap::new();
+        let mut destination_ttl: Option<u8> = None;
+
         // Send all probes concurrently
         for ttl in self.config.start_ttl..=self.config.max_hops {
             for _query in 0..self.config.queries_per_hop {
@@ -55,85 +61,104 @@ impl AsyncTracerouteEngine {
 
                 let socket = Arc::clone(&self.socket);
                 let target = self.target;
-                let timeout_duration = self.config.probe_timeout;
 
-                // Create future for this probe with timeout
-                let probe_future = async move {
-                    match timeout(timeout_duration, socket.send_probe_and_recv(target, probe)).await {
-                        Ok(Ok(response)) => Some(response),
-                        Ok(Err(_)) | Err(_) => {
-                            // Timeout or error - create timeout response
-                            Some(ProbeResponse {
-                                from_addr: target,
-                                sequence: probe.sequence,
-                                ttl: probe.ttl,
-                                rtt: timeout_duration,
-                                received_at: Instant::now(),
-                                is_destination: false,
-                                is_timeout: true,
-                            })
-                        }
-                    }
-                };
+                // Create future for this probe - the socket implementation handles timeouts
+                let probe_future =
+                    async move { socket.send_probe_and_recv(target, probe).await.ok() };
 
                 probe_futures.push(probe_future);
             }
         }
 
-        // Set overall timeout for all probes
-        let overall_timeout = timeout(
-            Duration::from_secs(self.config.max_hops as u64 * 2),
-            async {
-                // Collect responses as they arrive - IMMEDIATELY
-                while let Some(response) = probe_futures.next().await {
-                    if let Some(resp) = response {
-                        let is_destination = resp.is_destination;
-                        responses.push(resp);
+        // Collect responses
+        let collection_future = async {
+            while let Some(response) = probe_futures.next().await {
+                if let Some(resp) = response {
+                    let ttl = resp.ttl;
+                    let is_destination = resp.is_destination;
 
-                        // Check if we should stop early
-                        if is_destination && self.should_stop(&responses) {
+                    // Track responses per TTL
+                    *ttl_responses.entry(ttl).or_insert(0) += 1;
+
+                    // Update destination TTL if we found it
+                    if is_destination && destination_ttl.is_none() {
+                        destination_ttl = Some(ttl);
+                    }
+
+                    responses.push(resp);
+
+                    // Check if we can exit early:
+                    // We need at least one response from each TTL up to the destination
+                    if let Some(dest_ttl) = destination_ttl {
+                        let mut can_exit = true;
+                        for check_ttl in self.config.start_ttl..=dest_ttl {
+                            if ttl_responses.get(&check_ttl).copied().unwrap_or(0) == 0 {
+                                can_exit = false;
+                                break;
+                            }
+                        }
+                        if can_exit {
+                            // We have responses from all TTLs up to destination
+                            // But we still need to wait a bit for any in-flight responses
+                            // from intermediate hops that might arrive late
+                            sleep(Duration::from_millis(100)).await;
+
+                            // Collect any remaining responses that arrived
+                            while let Ok(Some(response)) =
+                                timeout(Duration::from_millis(10), probe_futures.next()).await
+                            {
+                                if let Some(resp) = response {
+                                    responses.push(resp);
+                                }
+                            }
                             break;
                         }
                     }
                 }
-            },
-        );
+            }
+        };
 
-        // Execute with timeout
-        let _ = overall_timeout.await;
+        // Execute with overall timeout
+        let _ = timeout(self.config.overall_timeout, collection_future).await;
 
         // Build the result
         let elapsed = start_time.elapsed();
-        self.build_result(responses, elapsed)
-    }
-
-    /// Check if we should stop sending probes
-    fn should_stop(&self, responses: &[ProbeResponse]) -> bool {
-        // Stop if we've reached the destination with enough responses
-        let destination_responses = responses
-            .iter()
-            .filter(|r| r.is_destination)
-            .count();
-
-        destination_responses >= self.config.queries_per_hop as usize
+        self.build_result(responses, elapsed).await
     }
 
     /// Build the final traceroute result
-    fn build_result(&self, responses: Vec<ProbeResponse>, elapsed: Duration) -> Result<TracerouteResult> {
+    async fn build_result(
+        &self,
+        responses: Vec<ProbeResponse>,
+        elapsed: Duration,
+    ) -> Result<TracerouteResult> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
-        // Check if destination was reached before consuming responses
+        // Check if destination was reached and find destination TTL
         let destination_reached = responses.iter().any(|r| r.is_destination);
+        let destination_ttl = responses
+            .iter()
+            .filter(|r| r.is_destination)
+            .map(|r| r.ttl)
+            .min()
+            .unwrap_or(self.config.max_hops);
 
         // Group responses by TTL
         for response in responses {
             hops.entry(response.ttl).or_default().push(response);
         }
 
+        // Determine the actual max TTL to process (up to destination or max_hops)
+        let display_max_ttl = if destination_reached {
+            destination_ttl
+        } else {
+            self.config.max_hops
+        };
+
         // Convert to ClassifiedHopInfo
         let mut hop_infos: Vec<ClassifiedHopInfo> = Vec::new();
-        
-        for ttl in self.config.start_ttl..=self.config.max_hops {
+
+        for ttl in self.config.start_ttl..=display_max_ttl {
             if let Some(ttl_responses) = hops.get(&ttl) {
                 if !ttl_responses.is_empty() {
                     // Get unique addresses for this hop
@@ -153,19 +178,18 @@ impl AsyncTracerouteEngine {
 
                         // Calculate average RTT for this hop
                         let rtt = if !addr_responses.is_empty() {
-                            let total_rtt: Duration = addr_responses
-                                .iter()
-                                .map(|r| r.rtt)
-                                .sum();
+                            let total_rtt: Duration = addr_responses.iter().map(|r| r.rtt).sum();
                             Some(total_rtt / addr_responses.len() as u32)
                         } else {
                             None
                         };
 
+                        // Note: Without enrichment here, we can't properly classify segments
+                        // This will be fixed when enrichment is moved into the engine
                         let hop_info = ClassifiedHopInfo {
                             ttl,
-                            segment: classify_segment(&addr), // Simple classification for now
-                            hostname: None, // Will be enriched later
+                            segment: SegmentType::Unknown, // Will be properly classified with enrichment
+                            hostname: None,                // Will be enriched later
                             addr: Some(addr),
                             asn_info: None, // Will be enriched later
                             rtt,
@@ -189,6 +213,16 @@ impl AsyncTracerouteEngine {
                         hop_infos.push(timeout_hop);
                     }
                 }
+            } else {
+                // Add blank hop for missing TTL
+                hop_infos.push(ClassifiedHopInfo {
+                    ttl,
+                    segment: SegmentType::Unknown,
+                    hostname: None,
+                    addr: None,
+                    asn_info: None,
+                    rtt: None,
+                });
             }
         }
 
@@ -211,31 +245,26 @@ impl AsyncTracerouteEngine {
             }
         };
 
+        // Public IP detection for ISP info (if ASN lookup is enabled)
+        let isp_info = if self.config.enable_asn_lookup {
+            // Try to detect public IP and ISP info
+            match detect_isp_with_default_resolver().await {
+                Ok(isp) => Some(isp),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
         Ok(TracerouteResult {
             target: self.config.target.clone(),
             target_ip: self.target,
             hops: hop_infos,
-            isp_info: None, // Will be enriched later
+            isp_info,
             protocol_used,
             socket_mode_used,
             destination_reached,
             total_duration: elapsed,
         })
-    }
-}
-
-/// Simple segment classification based on IP address
-fn classify_segment(addr: &IpAddr) -> SegmentType {
-    match addr {
-        IpAddr::V4(ipv4) => {
-            if crate::traceroute::is_internal_ip(ipv4) {
-                SegmentType::Lan
-            } else if crate::traceroute::is_cgnat(ipv4) {
-                SegmentType::Isp
-            } else {
-                SegmentType::Beyond
-            }
-        }
-        IpAddr::V6(_) => SegmentType::Unknown,
     }
 }

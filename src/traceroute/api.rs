@@ -243,7 +243,7 @@ pub async fn trace_with_config(
         // Try to set the global config, ignore if already set (e.g., in tests)
         let _ = crate::config::timing::set_config(config.timing.clone());
     }
-    
+
     Traceroute::new(config)?.run().await
 }
 

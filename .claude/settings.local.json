@@ -5,7 +5,12 @@
       "Bash(cargo test:*)",
       "Bash(cargo check:*)",
       "Bash(cargo run:*)",
-      "Bash(./target/debug/ftr.exe:*)"
+      "Bash(./target/debug/ftr.exe:*)",
+      "Bash(cargo build:*)",
+      "Bash(./target/debug/ftr:*)",
+      "Bash(time:*)",
+      "Bash(/dev/null)",
+      "Bash(./target/release/ftr google.com --async-mode)"
     ],
     "deny": []
   }

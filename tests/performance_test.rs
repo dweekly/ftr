@@ -1,10 +1,10 @@
-use ftr::{TracerouteConfig, trace_with_config};
+use ftr::{trace_with_config, TracerouteConfig};
 use std::time::{Duration, Instant};
 
 #[tokio::test]
 async fn test_traceroute_performance_localhost() {
     let start = Instant::now();
-    
+
     let config = TracerouteConfig::builder()
         .target("127.0.0.1")
         .max_hops(5)
@@ -14,20 +14,24 @@ async fn test_traceroute_performance_localhost() {
         .enable_rdns(false)
         .build()
         .unwrap();
-    
+
     let result = trace_with_config(config).await;
     let elapsed = start.elapsed();
-    
+
     println!("Localhost traceroute took: {:?}", elapsed);
     assert!(result.is_ok(), "Traceroute failed: {:?}", result);
-    assert!(elapsed < Duration::from_secs(1), "Traceroute took too long: {:?}", elapsed);
+    assert!(
+        elapsed < Duration::from_secs(1),
+        "Traceroute took too long: {:?}",
+        elapsed
+    );
 }
 
 #[tokio::test]
 #[ignore] // Requires network
 async fn test_traceroute_performance_remote() {
     let start = Instant::now();
-    
+
     let config = TracerouteConfig::builder()
         .target("8.8.8.8")
         .max_hops(10)
@@ -37,19 +41,25 @@ async fn test_traceroute_performance_remote() {
         .enable_rdns(false)
         .build()
         .unwrap();
-    
+
     let result = trace_with_config(config).await;
     let elapsed = start.elapsed();
-    
+
     println!("Remote traceroute (no enrichment) took: {:?}", elapsed);
     assert!(result.is_ok(), "Traceroute failed: {:?}", result);
-    
+
     // Count actual hops discovered
     if let Ok(trace_result) = result {
-        let hops_with_responses = trace_result.hops.iter()
+        let hops_with_responses = trace_result
+            .hops
+            .iter()
             .filter(|h| h.addr.is_some())
             .count();
-        println!("Discovered {} hops out of {}", hops_with_responses, trace_result.hops.len());
+        println!(
+            "Discovered {} hops out of {}",
+            hops_with_responses,
+            trace_result.hops.len()
+        );
     }
 }
 
@@ -60,9 +70,9 @@ async fn test_event_driven_efficiency() {
     // by running multiple concurrent traceroutes
     let targets = vec!["1.1.1.1", "8.8.8.8", "9.9.9.9"];
     let start = Instant::now();
-    
+
     let mut handles = vec![];
-    
+
     for target in targets {
         let handle = tokio::spawn(async move {
             let config = TracerouteConfig::builder()
@@ -74,12 +84,12 @@ async fn test_event_driven_efficiency() {
                 .enable_rdns(false)
                 .build()
                 .unwrap();
-            
+
             trace_with_config(config).await
         });
         handles.push(handle);
     }
-    
+
     // Wait for all to complete
     let mut success_count = 0;
     for handle in handles {
@@ -87,11 +97,14 @@ async fn test_event_driven_efficiency() {
             success_count += 1;
         }
     }
-    
+
     let elapsed = start.elapsed();
     println!("Concurrent traceroutes (3 targets) took: {:?}", elapsed);
     println!("Successful: {}/3", success_count);
-    
+
     // With event-driven approach, concurrent traces should be efficient
-    assert!(elapsed < Duration::from_secs(3), "Concurrent traces took too long");
+    assert!(
+        elapsed < Duration::from_secs(3),
+        "Concurrent traces took too long"
+    );
 }

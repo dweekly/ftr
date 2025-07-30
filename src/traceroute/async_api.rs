@@ -7,7 +7,7 @@
 use crate::enrichment::AsyncEnrichmentService;
 use crate::socket::async_factory::create_async_probe_socket;
 use crate::traceroute::async_engine::AsyncTracerouteEngine;
-use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
+use crate::traceroute::{SegmentType, TracerouteConfig, TracerouteError, TracerouteResult};
 use anyhow::Result;
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
@@ -40,10 +40,9 @@ impl AsyncTraceroute {
                 .await
                 .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
 
-            response
-                .iter()
-                .find(|ip| ip.is_ipv4())
-                .ok_or_else(|| TracerouteError::ResolutionError("No IPv4 address found".to_string()))?
+            response.iter().find(|ip| ip.is_ipv4()).ok_or_else(|| {
+                TracerouteError::ResolutionError("No IPv4 address found".to_string())
+            })?
         };
 
         // IPv6 check
@@ -88,16 +87,16 @@ impl AsyncTraceroute {
             );
 
             // Collect unique addresses for enrichment
-            let addresses: Vec<IpAddr> = result
-                .hops
-                .iter()
-                .filter_map(|hop| hop.addr)
-                .collect();
+            let addresses: Vec<IpAddr> = result.hops.iter().filter_map(|hop| hop.addr).collect();
 
             // Enrich addresses
             let enrichment_results = enrichment_service.enrich_addresses(addresses).await;
 
-            // Apply enrichment results to hops
+            // Get ISP ASN from public IP info
+            let isp_asn = result.isp_info.as_ref().map(|isp| isp.asn);
+            let mut in_isp_segment = false;
+
+            // Apply enrichment results to hops and fix segment classification
             for hop in &mut result.hops {
                 if let Some(addr) = hop.addr {
                     if let Some(enrichment) = enrichment_results.get(&addr) {
@@ -106,6 +105,31 @@ impl AsyncTraceroute {
                         }
                         if self.config.enable_asn_lookup {
                             hop.asn_info = enrichment.asn_info.clone();
+                        }
+                    }
+
+                    // Now properly classify the segment with enrichment data
+                    if let IpAddr::V4(ipv4) = addr {
+                        if crate::traceroute::is_internal_ip(&ipv4) {
+                            hop.segment = SegmentType::Lan;
+                        } else if crate::traceroute::is_cgnat(&ipv4) {
+                            in_isp_segment = true;
+                            hop.segment = SegmentType::Isp;
+                        } else if let Some(isp) = isp_asn {
+                            if let Some(ref asn_info) = hop.asn_info {
+                                if asn_info.asn == isp {
+                                    in_isp_segment = true;
+                                    hop.segment = SegmentType::Isp;
+                                } else {
+                                    hop.segment = SegmentType::Beyond;
+                                }
+                            } else if in_isp_segment {
+                                hop.segment = SegmentType::Isp;
+                            } else {
+                                hop.segment = SegmentType::Unknown;
+                            }
+                        } else {
+                            hop.segment = SegmentType::Unknown;
                         }
                     }
                 }
@@ -118,13 +142,17 @@ impl AsyncTraceroute {
 
 /// Run an async traceroute with the given configuration
 pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteError> {
-    let config = TracerouteConfig::builder().target(target).build()
+    let config = TracerouteConfig::builder()
+        .target(target)
+        .build()
         .map_err(|e| TracerouteError::ConfigError(e))?;
     trace_with_config_async(config).await
 }
 
 /// Run an async traceroute with a custom configuration
-pub async fn trace_with_config_async(config: TracerouteConfig) -> Result<TracerouteResult, TracerouteError> {
+pub async fn trace_with_config_async(
+    config: TracerouteConfig,
+) -> Result<TracerouteResult, TracerouteError> {
     let traceroute = AsyncTraceroute::new(config).await?;
     traceroute.run().await
 }

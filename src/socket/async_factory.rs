@@ -21,16 +21,23 @@ pub async fn create_async_probe_socket(
                 let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
                 Ok(Box::new(socket))
             }
-            
-            #[cfg(not(target_os = "windows"))]
+
+            #[cfg(target_os = "macos")]
+            {
+                use super::macos_async::MacOSAsyncIcmpSocket;
+                let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
+                Ok(Box::new(socket))
+            }
+
+            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
             {
                 // Placeholder for other platforms
-                Err(anyhow!("Async socket implementation not yet available for this platform"))
+                Err(anyhow!(
+                    "Async socket implementation not yet available for this platform"
+                ))
             }
         }
-        IpAddr::V6(_) => {
-            Err(anyhow!("IPv6 is not yet supported"))
-        }
+        IpAddr::V6(_) => Err(anyhow!("IPv6 is not yet supported")),
     }
 }
 
@@ -40,15 +47,28 @@ pub async fn create_async_probe_socket_with_mode(
     timing_config: TimingConfig,
     preferred_mode: Option<ProbeMode>,
 ) -> Result<Box<dyn AsyncProbeSocket>> {
-    // For now, we only support Windows ICMP mode
+    // Check platform-specific mode support
     #[cfg(target_os = "windows")]
     {
         if let Some(mode) = preferred_mode {
             if mode != ProbeMode::WindowsIcmp {
-                return Err(anyhow!("Only Windows ICMP mode is currently supported for async"));
+                return Err(anyhow!(
+                    "Only Windows ICMP mode is currently supported for async on Windows"
+                ));
             }
         }
     }
-    
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(mode) = preferred_mode {
+            if mode != ProbeMode::DgramIcmp {
+                return Err(anyhow!(
+                    "Only DGRAM ICMP mode is currently supported for async on macOS"
+                ));
+            }
+        }
+    }
+
     create_async_probe_socket(target, timing_config).await
 }
