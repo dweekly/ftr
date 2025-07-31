@@ -90,6 +90,37 @@ pub async fn detect_isp_with_default_resolver() -> Result<IspInfo, PublicIpError
     detect_isp_stun(Some(resolver)).await
 }
 
+/// Detect ISP from a provided public IP address
+pub async fn detect_isp_from_ip(
+    public_ip: std::net::IpAddr,
+    resolver: Option<Arc<TokioResolver>>,
+) -> Result<IspInfo, PublicIpError> {
+    // Only handle IPv4 for now
+    let ipv4 = match public_ip {
+        std::net::IpAddr::V4(ip) => ip,
+        std::net::IpAddr::V6(_) => {
+            return Err(PublicIpError::UnsupportedIpVersion);
+        }
+    };
+
+    // Look up ASN information
+    let asn_info = lookup_asn(ipv4, resolver.clone())
+        .await
+        .map_err(|e| PublicIpError::AsnLookupFailed(e.to_string()))?;
+
+    // Look up reverse DNS for the public IP
+    let hostname = crate::dns::reverse_dns_lookup(public_ip, resolver)
+        .await
+        .ok();
+
+    Ok(IspInfo {
+        public_ip,
+        asn: asn_info.asn,
+        name: asn_info.name,
+        hostname,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

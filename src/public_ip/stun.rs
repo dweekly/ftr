@@ -54,19 +54,49 @@ pub enum StunError {
 
 /// Get public IP using STUN protocol
 pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAddr, StunError> {
+    let verbose = std::env::var("FTR_VERBOSE")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(0);
+    
+    if verbose >= 2 {
+        eprintln!("[STUN] Attempting to contact STUN server: {}", server);
+    }
+
     // Get server addresses from cache
     let server_addrs = crate::public_ip::stun_cache::get_stun_server_addrs(server)
         .await
-        .map_err(StunError::IoError)?;
+        .map_err(|e| {
+            if verbose >= 2 {
+                eprintln!("[STUN] Failed to resolve {}: {}", server, e);
+            }
+            StunError::IoError(e)
+        })?;
 
     // Try each address until one works
     for server_addr in server_addrs {
+        if verbose >= 2 {
+            eprintln!("[STUN] Trying {} (resolved from {})", server_addr, server);
+        }
         match get_public_ip_stun_addr(server_addr, timeout).await {
-            Ok(ip) => return Ok(ip),
-            Err(_) => continue, // Try next address
+            Ok(ip) => {
+                if verbose >= 2 {
+                    eprintln!("[STUN] Successfully obtained public IP {} from {}", ip, server);
+                }
+                return Ok(ip);
+            }
+            Err(e) => {
+                if verbose >= 2 {
+                    eprintln!("[STUN] Failed to get IP from {}: {:?}", server_addr, e);
+                }
+                continue; // Try next address
+            }
         }
     }
 
+    if verbose >= 2 {
+        eprintln!("[STUN] All addresses for {} failed", server);
+    }
     Err(StunError::Timeout)
 }
 
@@ -86,9 +116,13 @@ async fn get_public_ip_stun_addr(
 
     // Receive response with timeout
     let mut buf = vec![0u8; 1024];
-    let (size, _) = tokio::time::timeout(timeout, socket.recv_from(&mut buf))
-        .await
-        .map_err(|_| StunError::Timeout)??;
+    let result = tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await;
+    
+    let (size, _) = match result {
+        Ok(Ok(data)) => data,
+        Ok(Err(e)) => return Err(StunError::IoError(e)),
+        Err(_) => return Err(StunError::Timeout),
+    };
 
     // Parse response
     parse_stun_response(&buf[..size])
@@ -98,6 +132,14 @@ async fn get_public_ip_stun_addr(
 pub async fn get_public_ip_stun_with_fallback(timeout: Duration) -> Result<IpAddr, StunError> {
     // Pre-warm cache if not already done (this is fast if already cached)
     let _ = crate::public_ip::stun_cache::prewarm_stun_cache().await;
+
+    // Check for custom STUN server from environment
+    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
+        if let Ok(ip) = get_public_ip_stun(&custom_server, timeout).await {
+            return Ok(ip);
+        }
+        // If custom server fails, fall back to default servers
+    }
 
     // Try primary server first (Google's is most reliable)
     if let Ok(ip) = get_public_ip_stun(STUN_SERVERS[0], timeout).await {

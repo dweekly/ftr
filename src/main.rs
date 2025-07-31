@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError, TracerouteResult};
 use std::net::IpAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Get the version string for ftr
 fn get_version() -> &'static str {
@@ -84,6 +84,14 @@ struct Args {
     /// Use synchronous implementation (legacy mode)
     #[clap(long)]
     sync_mode: bool,
+
+    /// Specify public IP address (skip STUN detection)
+    #[clap(long)]
+    public_ip: Option<String>,
+
+    /// Custom STUN server address (e.g., stun.l.google.com:19302)
+    #[clap(long)]
+    stun_server: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -130,19 +138,49 @@ struct JsonIsp {
     hostname: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Check if user is asking for version explicitly
-    if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
-        println!("ftr {}", get_version());
-        std::process::exit(0);
+fn main() {
+    let process_start = Instant::now();
+    
+    // Quick check for help/version before starting async runtime
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+        // Clap will handle this
+        let _ = Args::parse();
+        return;
     }
+    if args.len() == 2 && (args[1] == "--version" || args[1] == "-V") {
+        println!("ftr {}", get_version());
+        return;
+    }
+    
+    // Create single-threaded tokio runtime for lower overhead
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+        
+    let result = runtime.block_on(async_main(process_start));
+        
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
 
+async fn async_main(_process_start: Instant) -> Result<()> {
     let args = Args::parse();
 
-    // Pre-warm STUN cache immediately for faster public IP detection
+    // Handle public IP option - skip STUN if provided
     #[cfg(feature = "async")]
-    let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+    if args.public_ip.is_none() {
+        // Set custom STUN server if provided
+        if let Some(stun_server) = &args.stun_server {
+            std::env::set_var("FTR_STUN_SERVER", stun_server);
+        }
+        
+        // Pre-warm STUN cache immediately for faster public IP detection
+        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+    }
 
     // Initialize debug mode if requested
     // ftr::debug::init_debug(args.verbose);
@@ -192,7 +230,7 @@ async fn main() -> Result<()> {
 
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
     #[cfg(feature = "async")]
-    {
+    if !args.no_enrich || !args.no_rdns {
         let target_ip_clone = target_ip;
         tokio::spawn(async move {
             // Pre-warm DNS reverse lookup
@@ -212,8 +250,21 @@ async fn main() -> Result<()> {
         });
     }
 
+    // Parse public IP if provided
+    let public_ip = if let Some(ip_str) = &args.public_ip {
+        match ip_str.parse::<IpAddr>() {
+            Ok(ip) => Some(ip),
+            Err(_) => {
+                eprintln!("Error: Invalid public IP address: {}", ip_str);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
     // Build configuration
-    let config = TracerouteConfigBuilder::new()
+    let mut builder = TracerouteConfigBuilder::new()
         .target(&args.host)
         .target_ip(target_ip)
         .start_ttl(args.start_ttl)
@@ -225,8 +276,14 @@ async fn main() -> Result<()> {
         .enable_asn_lookup(!args.no_enrich)
         .enable_rdns(!args.no_rdns)
         .verbose(args.verbose)
-        .port(args.port)
-        .build();
+        .port(args.port);
+    
+    // Add public IP if provided
+    if let Some(ip) = public_ip {
+        builder = builder.public_ip(ip);
+    }
+    
+    let config = builder.build();
 
     let config = match config {
         Ok(mut cfg) => {
@@ -415,8 +472,9 @@ async fn main() -> Result<()> {
     } else {
         display_text_results(result);
     }
-
-    Ok(())
+    
+    // Quick exit to avoid cleanup overhead on Windows
+    std::process::exit(0);
 }
 
 /// Resolve target hostname to IP address

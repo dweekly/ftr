@@ -8,7 +8,7 @@
 
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::public_ip::detect_isp_with_default_resolver;
+use crate::public_ip::{detect_isp_with_default_resolver, detect_isp_from_ip};
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::trace_time;
@@ -68,21 +68,42 @@ impl FullyParallelAsyncEngine {
 
         // 1. Start ISP detection immediately (if enabled)
         let isp_future = if self.config.enable_asn_lookup {
-            trace_time!(
-                self.config.verbose,
-                "Starting ISP detection (STUN) in parallel"
-            );
-            let verbose = self.config.verbose;
-            Some(tokio::spawn(async move {
-                let isp_start = Instant::now();
-                let result = detect_isp_with_default_resolver().await;
+            if let Some(public_ip) = self.config.public_ip {
+                // Use provided public IP
                 trace_time!(
-                    verbose,
-                    "ISP detection completed in {:?}",
-                    isp_start.elapsed()
+                    self.config.verbose,
+                    "Using provided public IP: {}",
+                    public_ip
                 );
-                result
-            }))
+                let verbose = self.config.verbose;
+                Some(tokio::spawn(async move {
+                    let isp_start = Instant::now();
+                    let result = detect_isp_from_ip(public_ip, None).await;
+                    trace_time!(
+                        verbose,
+                        "ISP detection from provided IP completed in {:?}",
+                        isp_start.elapsed()
+                    );
+                    result
+                }))
+            } else {
+                // Use STUN detection
+                trace_time!(
+                    self.config.verbose,
+                    "Starting ISP detection (STUN) in parallel"
+                );
+                let verbose = self.config.verbose;
+                Some(tokio::spawn(async move {
+                    let isp_start = Instant::now();
+                    let result = detect_isp_with_default_resolver().await;
+                    trace_time!(
+                        verbose,
+                        "ISP detection completed in {:?}",
+                        isp_start.elapsed()
+                    );
+                    result
+                }))
+            }
         } else {
             None
         };

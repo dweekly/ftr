@@ -67,11 +67,16 @@ pub async fn get_stun_server_addrs(server: &str) -> std::io::Result<Vec<SocketAd
 
 /// Pre-warm the cache with common STUN servers
 pub async fn prewarm_stun_cache() {
-    let servers = [
+    let mut servers = vec![
         "stun.l.google.com:19302",
         "stun1.l.google.com:19302",
         "stun2.l.google.com:19302",
     ];
+    
+    // Add custom STUN server if provided
+    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
+        servers.insert(0, Box::leak(custom_server.into_boxed_str()));
+    }
 
     for server in &servers {
         let _ = get_stun_server_addrs(server).await;

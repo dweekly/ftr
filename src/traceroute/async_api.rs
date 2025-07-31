@@ -86,7 +86,7 @@ impl AsyncTraceroute {
             .run()
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
-
+        
         // The fully parallel engine handles enrichment internally, so we can just return
         Ok(result)
     }

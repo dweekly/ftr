@@ -221,9 +221,7 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                     &mut options as *mut IP_OPTION_INFORMATION,
                     reply_ptr,
                     reply_size as u32,
-                    // Windows timeout - we'll enforce our own timeout with task abortion
-                    // Use a longer timeout here to avoid Windows interfering
-                    1000, // 1 second - Windows will handle timeouts, we'll abort early if needed
+                    self.timing_config.socket_read_timeout.as_millis() as u32, // Use actual probe timeout
                 )
             };
 
@@ -255,10 +253,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
         // Move the reply_buffer into the task to keep it alive
         let wait_handle = tokio::task::spawn_blocking(move || {
             let event = event_handle as HANDLE; // Convert back to HANDLE
-            // Use a timeout that's slightly longer than our Tokio timeout
-            // This ensures the task will eventually clean up even if not aborted
-            let wait_timeout_ms = 5000; // 5 seconds max wait
-            let result = unsafe { WaitForSingleObject(event, wait_timeout_ms) };
+            let result = unsafe { 
+                WaitForSingleObject(event, 0xFFFFFFFF) // INFINITE - wait indefinitely, tokio timeout handles the actual timeout
+            };
             unsafe { CloseHandle(event) };
 
             // Decrement pending count
@@ -318,7 +315,14 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
 impl Drop for WindowsAsyncIcmpSocket {
     fn drop(&mut self) {
         if self.icmp_handle != ptr::null_mut() {
-            unsafe { IcmpCloseHandle(self.icmp_handle) };
+            let pending = *self.pending_count.lock().unwrap();
+            if pending > 0 {
+                // Skip IcmpCloseHandle when there are pending operations to avoid
+                // blocking for 600ms+. Windows will clean up the handle on process exit.
+                // This dramatically improves shutdown performance.
+            } else {
+                unsafe { IcmpCloseHandle(self.icmp_handle) };
+            }
         }
     }
 }
