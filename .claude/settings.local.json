@@ -6,13 +6,17 @@
       "Bash(cargo check:*)",
       "Bash(cargo run:*)",
       "Bash(./target/debug/ftr.exe:*)",
-      "Bash(cargo build:*)",
       "Bash(./target/debug/ftr:*)",
       "Bash(time:*)",
       "Bash(/dev/null)",
       "Bash(./target/release/ftr google.com --async-mode)",
       "Bash(cargo machete:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(grep:*)",
+      "Bash(powershell:*)",
+      "Bash(C:/temp/ftr-target/debug/ftr.exe:*)",
+      "Bash(C:/temp/ftr-target/debug/ftr.exe google.com)",
+      "Bash(./target/release/ftr.exe:*)"
     ],
     "deny": []
   }

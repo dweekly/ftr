@@ -221,9 +221,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                     &mut options as *mut IP_OPTION_INFORMATION,
                     reply_ptr,
                     reply_size as u32,
-                    // Windows doesn't respect small timeouts properly
-                    // Use at least 100ms to ensure we get responses
-                    (self.timing_config.socket_read_timeout.as_millis() as u32).max(100),
+                    // Windows timeout - we'll enforce our own timeout with task abortion
+                    // Use a longer timeout here to avoid Windows interfering
+                    1000, // 1 second - Windows will handle timeouts, we'll abort early if needed
                 )
             };
 
@@ -253,9 +253,12 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
 
         // Spawn blocking task to wait for Windows event
         // Move the reply_buffer into the task to keep it alive
-        tokio::task::spawn_blocking(move || {
+        let wait_handle = tokio::task::spawn_blocking(move || {
             let event = event_handle as HANDLE; // Convert back to HANDLE
-            let result = unsafe { WaitForSingleObject(event, 0xFFFFFFFF) }; // INFINITE
+            // Use a timeout that's slightly longer than our Tokio timeout
+            // This ensures the task will eventually clean up even if not aborted
+            let wait_timeout_ms = 5000; // 5 seconds max wait
+            let result = unsafe { WaitForSingleObject(event, wait_timeout_ms) };
             unsafe { CloseHandle(event) };
 
             // Decrement pending count
@@ -266,7 +269,7 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                 // Send the buffer back through the channel
                 tx.send(Ok(reply_buffer)).ok();
             } else {
-                tx.send(Err(anyhow!("Event wait failed"))).ok();
+                tx.send(Err(anyhow!("Event wait failed or timed out"))).ok();
             }
         });
 
@@ -287,7 +290,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                 Err(anyhow!("Event wait cancelled"))
             }
             Err(_) => {
-                // Timeout elapsed - return a timeout response
+                // Timeout elapsed - abort the waiting task and return a timeout response
+                wait_handle.abort();
+                
                 Ok(ProbeResponse {
                     from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
                     sequence: probe.sequence,
