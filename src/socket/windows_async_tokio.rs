@@ -30,6 +30,17 @@ const IP_GENERAL_FAILURE: u32 = 11050;
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
 /// Windows async ICMP socket implementation
+/// 
+/// This uses the Windows IcmpSendEcho2 API for sending ICMP echo requests.
+/// 
+/// # Implementation Notes
+/// 
+/// - Windows ICMP API has quirks with timeout handling - it doesn't respect
+///   very small timeout values (< 100ms) properly
+/// - ICMP Time Exceeded responses from intermediate routers don't echo back
+///   the data payload, so we can't validate sequence numbers for those
+/// - We include process ID and sequence number in echo requests to match
+///   responses from the destination
 pub struct WindowsAsyncIcmpSocket {
     icmp_handle: HANDLE,
     destination_reached: Arc<Mutex<bool>>,
@@ -67,6 +78,31 @@ impl WindowsAsyncIcmpSocket {
 
         let reply = unsafe { &*(buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         let elapsed = sent_at.elapsed();
+        
+        // Verify the response data matches our probe
+        // Only Echo Reply (destination reached) includes our data
+        // Time Exceeded and other ICMP errors don't echo the data back
+        if reply.Status == IP_SUCCESS {
+            // This is an Echo Reply - verify it's our probe
+            if buffer.len() >= mem::size_of::<ICMP_ECHO_REPLY>() + 4 {
+                let data_offset = mem::size_of::<ICMP_ECHO_REPLY>();
+                let data = &buffer[data_offset..];
+                
+                if data.len() >= 4 {
+                    let identifier = u16::from_be_bytes([data[0], data[1]]);
+                    let recv_sequence = u16::from_be_bytes([data[2], data[3]]);
+                    
+                    // Verify this response is for our process and sequence
+                    let expected_identifier = std::process::id() as u16;
+                    if identifier != expected_identifier || recv_sequence != sequence {
+                        return Err(anyhow!(
+                            "Response mismatch: expected id={}/seq={}, got id={}/seq={}",
+                            expected_identifier, sequence, identifier, recv_sequence
+                        ));
+                    }
+                }
+            }
+        }
 
         // Check for timeout or failure statuses
         match reply.Status {
@@ -145,8 +181,14 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
             return Err(anyhow!("Failed to create event"));
         }
 
-        // Prepare send buffer
-        let send_data = vec![0u8; 32];
+        // Prepare send buffer with identifier and sequence number
+        let identifier = std::process::id() as u16;
+        let mut send_data = Vec::with_capacity(32);
+        send_data.extend_from_slice(&identifier.to_be_bytes());
+        send_data.extend_from_slice(&probe.sequence.to_be_bytes());
+        // Pad to 32 bytes total
+        send_data.extend_from_slice(b"ftr-windows-padding");
+        send_data.resize(32, 0);
 
         // Prepare reply buffer - Box it to ensure stable memory location
         let reply_size = mem::size_of::<ICMP_ECHO_REPLY>() + send_data.len() + 8;
@@ -179,7 +221,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                     &mut options as *mut IP_OPTION_INFORMATION,
                     reply_ptr,
                     reply_size as u32,
-                    self.timing_config.socket_read_timeout.as_millis() as u32,
+                    // Windows doesn't respect small timeouts properly
+                    // Use at least 100ms to ensure we get responses
+                    (self.timing_config.socket_read_timeout.as_millis() as u32).max(100),
                 )
             };
 
@@ -226,14 +270,35 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
             }
         });
 
-        // Wait for the event to be signaled and get the buffer back
-        let reply_buffer = rx
-            .await
-            .map_err(|_| anyhow!("Event wait cancelled"))?
-            .map_err(|e| anyhow!("Event wait error: {}", e))?;
-
-        // Process the response
-        self.process_response(&reply_buffer, probe.sequence, probe.ttl, sent_at)
+        // Wait for the event to be signaled with our actual timeout
+        let timeout_duration = self.timing_config.socket_read_timeout;
+        
+        match tokio::time::timeout(timeout_duration, rx).await {
+            Ok(Ok(Ok(reply_buffer))) => {
+                // Got a response - process it
+                self.process_response(&reply_buffer, probe.sequence, probe.ttl, sent_at)
+            }
+            Ok(Ok(Err(e))) => {
+                // Event wait error
+                Err(anyhow!("Event wait error: {}", e))
+            }
+            Ok(Err(_)) => {
+                // Channel was dropped (shouldn't happen)
+                Err(anyhow!("Event wait cancelled"))
+            }
+            Err(_) => {
+                // Timeout elapsed - return a timeout response
+                Ok(ProbeResponse {
+                    from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                    sequence: probe.sequence,
+                    ttl: probe.ttl,
+                    rtt: timeout_duration,
+                    received_at: Instant::now(),
+                    is_destination: false,
+                    is_timeout: true,
+                })
+            }
+        }
     }
 
     fn destination_reached(&self) -> bool {
