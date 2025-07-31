@@ -81,10 +81,9 @@ struct Args {
     #[clap(short, long, default_value_t = 33434)]
     port: u16,
 
-    /// Use async implementation (experimental, Windows only)
-    #[cfg(feature = "async")]
+    /// Use synchronous implementation (legacy mode)
     #[clap(long)]
-    async_mode: bool,
+    sync_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -141,11 +140,9 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // Pre-warm STUN cache if using async mode
+    // Pre-warm STUN cache immediately for faster public IP detection
     #[cfg(feature = "async")]
-    if args.async_mode {
-        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
-    }
+    let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
 
     // Initialize debug mode if requested
     // ftr::debug::init_debug(args.verbose);
@@ -192,6 +189,28 @@ async fn main() -> Result<()> {
 
     // Resolve target early to use in config
     let target_ip = resolve_target(&args.host).await?;
+
+    // Pre-fetch destination IP's rDNS and ASN lookups in the background
+    #[cfg(feature = "async")]
+    {
+        let target_ip_clone = target_ip;
+        tokio::spawn(async move {
+            // Pre-warm DNS reverse lookup
+            use hickory_resolver::{TokioResolver, config::ResolverConfig};
+            use hickory_resolver::name_server::TokioConnectionProvider;
+            let resolver = TokioResolver::builder_with_config(
+                ResolverConfig::cloudflare(),
+                TokioConnectionProvider::default(),
+            )
+            .build();
+            let _ = resolver.reverse_lookup(target_ip_clone).await;
+            
+            // Pre-warm ASN lookup
+            if let IpAddr::V4(ipv4) = target_ip_clone {
+                let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
+            }
+        });
+    }
 
     // Build configuration
     let config = TracerouteConfigBuilder::new()
@@ -262,11 +281,8 @@ async fn main() -> Result<()> {
 
     // Run traceroute
     #[cfg(feature = "async")]
-    let result = if args.async_mode {
-        // Use async implementation
-        if !args.json {
-            println!("Using async implementation (experimental)...\n");
-        }
+    let result = if !args.sync_mode {
+        // Use async implementation (default)
         match ftr::traceroute::async_api::trace_with_config_async(config).await {
             Ok(result) => result,
             Err(TracerouteError::InsufficientPermissions {

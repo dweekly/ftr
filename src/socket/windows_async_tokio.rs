@@ -23,6 +23,10 @@ use windows_sys::Win32::NetworkManagement::IpHelper::{
     IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2, ICMP_ECHO_REPLY, IP_OPTION_INFORMATION,
     IP_SUCCESS,
 };
+
+// ICMP status codes not provided by windows-sys
+const IP_REQ_TIMED_OUT: u32 = 11010;
+const IP_GENERAL_FAILURE: u32 = 11050;
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
 /// Windows async ICMP socket implementation
@@ -63,6 +67,23 @@ impl WindowsAsyncIcmpSocket {
 
         let reply = unsafe { &*(buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         let elapsed = sent_at.elapsed();
+
+        // Check for timeout or failure statuses
+        match reply.Status {
+            IP_REQ_TIMED_OUT | IP_GENERAL_FAILURE => {
+                // This probe timed out - return a timeout response
+                return Ok(ProbeResponse {
+                    from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED), // 0.0.0.0
+                    sequence,
+                    ttl,
+                    rtt: elapsed,
+                    received_at: Instant::now(),
+                    is_destination: false,
+                    is_timeout: true,
+                });
+            }
+            _ => {}
+        }
 
         // Extract the responding IP address
         let from_addr = IpAddr::V4(Ipv4Addr::new(

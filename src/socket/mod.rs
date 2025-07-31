@@ -10,11 +10,7 @@ pub mod icmp_v4;
 #[cfg(not(target_os = "windows"))]
 pub mod udp;
 #[cfg(target_os = "windows")]
-pub mod windows;
-#[cfg(target_os = "windows")]
 pub mod windows_async;
-#[cfg(target_os = "windows")]
-pub mod windows_iocp;
 
 // Async socket modules
 #[cfg(feature = "async")]

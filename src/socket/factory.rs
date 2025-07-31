@@ -422,11 +422,12 @@ pub fn create_probe_socket_with_config(
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
                             #[cfg(target_os = "windows")]
                             {
-                                // On Windows, use our IOCP-based implementation for immediate event notifications
-                                use super::windows_iocp::WindowsIocpIcmpSocket;
-                                let socket =
-                                    WindowsIocpIcmpSocket::new_with_config(_timing_config)?;
-                                return Ok(Box::new(socket));
+                                // Windows doesn't support synchronous raw ICMP sockets through the traditional API
+                                // Users should use the async implementation instead
+                                return Err(anyhow!(
+                                    "Synchronous raw ICMP sockets are not supported on Windows. \
+                                    Please use the async implementation (default) which uses IcmpSendEcho2."
+                                ));
                             }
                             #[cfg(target_os = "macos")]
                             {

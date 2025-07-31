@@ -24,6 +24,12 @@ This file tracks planned work for the ftr project.
 
 ## Medium Priority
 
+- [ ] Add optional disk cache for DNS/ASN lookups
+  - Cache DNS reverse lookups and ASN information to disk
+  - Use a simple SQLite database or JSON file
+  - Configurable TTL for cached entries
+  - Option to clear cache via CLI flag
+  - Share cache across traceroute runs for faster enrichment
 - [ ] Replace libc with nix crate
   - nix provides safer, more idiomatic Rust bindings to system calls
   - Better error handling and type safety
