@@ -221,7 +221,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                     &mut options as *mut IP_OPTION_INFORMATION,
                     reply_ptr,
                     reply_size as u32,
-                    self.timing_config.socket_read_timeout.as_millis() as u32, // Use actual probe timeout
+                    // Windows ICMP API doesn't handle timeouts < 100ms properly
+                    // Use at least 100ms for the API, we'll enforce shorter timeouts via Tokio
+                    self.timing_config.socket_read_timeout.as_millis().max(100) as u32,
                 )
             };
 
