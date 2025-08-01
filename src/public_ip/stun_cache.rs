@@ -89,23 +89,67 @@ mod tests {
 
     #[tokio::test]
     async fn test_stun_cache() {
-        // First call should resolve
-        let start = Instant::now();
+        // Clear cache to ensure clean test state
+        {
+            let mut cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            cache.clear();
+        }
+
+        // First call should resolve and populate cache
         let addrs1 = get_stun_server_addrs("stun.l.google.com:19302")
             .await
             .unwrap();
-        let first_duration = start.elapsed();
-        assert!(!addrs1.is_empty());
+        assert!(!addrs1.is_empty(), "Should resolve at least one address");
 
-        // Second call should be cached (much faster)
-        let start = Instant::now();
+        // Second call should return the exact same cached result
         let addrs2 = get_stun_server_addrs("stun.l.google.com:19302")
             .await
             .unwrap();
-        let cached_duration = start.elapsed();
+        assert_eq!(addrs1, addrs2, "Cached result should be identical");
 
-        assert_eq!(addrs1, addrs2);
-        // Cached lookup should be at least 10x faster
-        assert!(cached_duration < first_duration / 10);
+        // Verify the cache contains the entry
+        {
+            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let cached = cache.get("stun.l.google.com:19302");
+            assert!(cached.is_some(), "Cache should contain the entry");
+            assert_eq!(
+                cached.unwrap().addresses,
+                addrs1,
+                "Cached value should match"
+            );
+        }
+
+        // Test with a different server
+        let addrs3 = get_stun_server_addrs("stun1.l.google.com:19302")
+            .await
+            .unwrap();
+        assert!(!addrs3.is_empty(), "Should resolve second server");
+
+        // Both entries should be in cache now
+        {
+            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            assert!(cache.get("stun.l.google.com:19302").is_some());
+            assert!(cache.get("stun1.l.google.com:19302").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_stun_cache_error_handling() {
+        // Clear cache
+        {
+            let mut cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            cache.clear();
+        }
+
+        // Test with invalid server name
+        let result = get_stun_server_addrs("this.definitely.does.not.exist.invalid:12345").await;
+        assert!(result.is_err(), "Invalid server should return error");
+
+        // Error results should not be cached
+        {
+            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let cached = cache.get("this.definitely.does.not.exist.invalid:12345");
+            assert!(cached.is_none(), "Errors should not be cached");
+        }
     }
 }
