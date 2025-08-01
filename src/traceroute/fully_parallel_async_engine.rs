@@ -8,7 +8,7 @@
 
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::public_ip::{detect_isp_with_default_resolver, detect_isp_from_ip};
+use crate::public_ip::{detect_isp_from_ip, detect_isp_with_default_resolver};
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::trace_time;

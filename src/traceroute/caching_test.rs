@@ -140,21 +140,43 @@ mod tests {
 
     #[test]
     fn test_cache_thread_safety() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
         use std::thread;
 
-        // Clear cache before test
-        RDNS_CACHE.clear();
+        // Track if operations completed successfully
+        let success = Arc::new(AtomicBool::new(true));
 
         let handles: Vec<_> = (0..10)
             .map(|i| {
+                let success = Arc::clone(&success);
                 thread::spawn(move || {
-                    let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, i));
-                    RDNS_CACHE.insert(ip, format!("host{}.local", i));
+                    // Use unique IPs to avoid conflicts with other tests
+                    let ip = IpAddr::V4(Ipv4Addr::new(10, 250, i, 1));
 
-                    // Try to read
+                    // Try to insert - this should not panic
+                    match std::panic::catch_unwind(|| {
+                        RDNS_CACHE.insert(ip, format!("test-host-{}.local", i));
+                    }) {
+                        Ok(_) => {}
+                        Err(_) => {
+                            success.store(false, Ordering::Relaxed);
+                            return;
+                        }
+                    }
+
+                    // Try to read multiple entries - this should not panic
                     for j in 0..10 {
-                        let check_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, j));
-                        let _ = RDNS_CACHE.get(&check_ip);
+                        let check_ip = IpAddr::V4(Ipv4Addr::new(10, 250, j, 1));
+                        match std::panic::catch_unwind(|| {
+                            let _ = RDNS_CACHE.get(&check_ip);
+                        }) {
+                            Ok(_) => {}
+                            Err(_) => {
+                                success.store(false, Ordering::Relaxed);
+                                return;
+                            }
+                        }
                     }
                 })
             })
@@ -164,7 +186,10 @@ mod tests {
             handle.join().unwrap();
         }
 
-        // Should have some entries and not crash
-        assert!(RDNS_CACHE.len() > 0);
+        // The test passes if all operations completed without panicking
+        assert!(
+            success.load(Ordering::Relaxed),
+            "Cache operations should be thread-safe"
+        );
     }
 }

@@ -157,6 +157,7 @@ impl MacOSAsyncIcmpSocket {
     }
 
     /// Parse an ICMP response and send it to the waiting probe
+    #[allow(clippy::too_many_arguments)]
     async fn parse_response(
         packet_data: &[u8],
         from_addr: IpAddr,
@@ -240,12 +241,14 @@ impl MacOSAsyncIcmpSocket {
 
             // Update destination reached status
             if is_destination {
-                *destination_reached.lock().unwrap() = true;
+                *destination_reached
+                    .lock()
+                    .expect("Failed to lock destination_reached") = true;
             }
 
             // Decrement pending count
             {
-                let mut count = pending_count.lock().unwrap();
+                let mut count = pending_count.lock().expect("Failed to lock pending_count");
                 *count = count.saturating_sub(1);
             }
 
@@ -345,7 +348,10 @@ impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
 
         // Increment pending count
         {
-            let mut count = self.pending_count.lock().unwrap();
+            let mut count = self
+                .pending_count
+                .lock()
+                .expect("Failed to lock pending_count");
             *count += 1;
         }
 
@@ -397,7 +403,10 @@ impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
 
                 // Decrement pending count
                 {
-                    let mut count = self.pending_count.lock().unwrap();
+                    let mut count = self
+                        .pending_count
+                        .lock()
+                        .expect("Failed to lock pending_count");
                     *count = count.saturating_sub(1);
                 }
 
@@ -416,11 +425,17 @@ impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self
+            .destination_reached
+            .lock()
+            .expect("Failed to lock destination_reached")
     }
 
     fn pending_count(&self) -> usize {
-        *self.pending_count.lock().unwrap()
+        *self
+            .pending_count
+            .lock()
+            .expect("Failed to lock pending_count")
     }
 }
 

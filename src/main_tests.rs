@@ -117,7 +117,7 @@ mod tests {
         };
 
         // Test doesn't panic
-        display_text_results(result);
+        display_text_results(result, false);
     }
 
     #[test]
@@ -321,6 +321,6 @@ mod tests {
         };
 
         // Test doesn't panic and handles silent hops correctly
-        display_text_results(result);
+        display_text_results(result, false);
     }
 }

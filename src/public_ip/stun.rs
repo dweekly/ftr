@@ -58,7 +58,7 @@ pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAdd
         .ok()
         .and_then(|v| v.parse::<u8>().ok())
         .unwrap_or(0);
-    
+
     if verbose >= 2 {
         eprintln!("[STUN] Attempting to contact STUN server: {}", server);
     }
@@ -81,7 +81,10 @@ pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAdd
         match get_public_ip_stun_addr(server_addr, timeout).await {
             Ok(ip) => {
                 if verbose >= 2 {
-                    eprintln!("[STUN] Successfully obtained public IP {} from {}", ip, server);
+                    eprintln!(
+                        "[STUN] Successfully obtained public IP {} from {}",
+                        ip, server
+                    );
                 }
                 return Ok(ip);
             }
@@ -117,7 +120,7 @@ async fn get_public_ip_stun_addr(
     // Receive response with timeout
     let mut buf = vec![0u8; 1024];
     let result = tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await;
-    
+
     let (size, _) = match result {
         Ok(Ok(data)) => data,
         Ok(Err(e)) => return Err(StunError::IoError(e)),

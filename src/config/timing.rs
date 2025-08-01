@@ -39,13 +39,13 @@ pub const WINDOWS_ICMP_MIN_TIMEOUT_MS: u32 = 30;
 /// Additional buffer to add to user timeout for Windows API (milliseconds)
 /// This ensures our Tokio timeout always fires before Windows timeout,
 /// preventing race conditions between the two timeout mechanisms
-/// 
+///
 /// Without this buffer, there's a race condition where:
 /// 1. User sets 30ms timeout
 /// 2. Both Tokio and Windows start 30ms timers
 /// 3. Due to scheduling variations, Windows might fire first
 /// 4. This causes inconsistent behavior
-/// 
+///
 /// By giving Windows extra time, we ensure Tokio always wins the race.
 pub const WINDOWS_ICMP_TIMEOUT_BUFFER_MS: u32 = 50;
 

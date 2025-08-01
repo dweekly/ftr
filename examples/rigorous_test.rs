@@ -1,7 +1,7 @@
 //! Rigorous test of Windows ICMP implementation using ftr as a library
 
-use ftr::{TracerouteConfig};
 use ftr::traceroute::async_api::trace_with_config_async;
+use ftr::TracerouteConfig;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (name, target, timeout_ms, enable_asn, enable_rdns) in test_configs {
         println!("\n=== Testing: {} ===", name);
-        
+
         let target_ip: IpAddr = target.parse()?;
         let iterations = 30;
         let mut successes = 0;
@@ -32,7 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         for i in 1..=iterations {
             print!("Run {}/{}: ", i, iterations);
-            
+
             let config = TracerouteConfig::builder()
                 .target(target_ip.to_string())
                 .probe_timeout(Duration::from_millis(timeout_ms))
@@ -46,24 +46,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(result) => {
                     let elapsed = start.elapsed();
                     execution_times.push(elapsed.as_millis());
-                    
+
                     // Count total hops
                     let hop_count = result.hops.len();
                     total_hops.push(hop_count);
-                    
+
                     // Count hops in range 11-15
-                    let hops_11_15 = result.hops.iter()
+                    let hops_11_15 = result
+                        .hops
+                        .iter()
                         .filter(|h| h.ttl >= 11 && h.ttl <= 15)
                         .count();
                     hop_11_15_counts.push(hops_11_15);
-                    
+
                     if hops_11_15 == 5 {
                         successes += 1;
                         println!("OK ({}ms)", elapsed.as_millis());
                     } else {
-                        println!("FAIL - Only {}/5 hops in range 11-15 ({}ms)", 
-                                hops_11_15, elapsed.as_millis());
-                        
+                        println!(
+                            "FAIL - Only {}/5 hops in range 11-15 ({}ms)",
+                            hops_11_15,
+                            elapsed.as_millis()
+                        );
+
                         // Debug: show which hops were detected
                         if hops_11_15 < 5 {
                             for ttl in 11..=15 {
@@ -79,7 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     println!("ERROR: {}", e);
                 }
             }
-            
+
             // Brief pause between runs
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
@@ -88,13 +93,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let success_rate = (successes as f64 / iterations as f64) * 100.0;
         let avg_hops = total_hops.iter().sum::<usize>() as f64 / total_hops.len() as f64;
         let avg_time = execution_times.iter().sum::<u128>() as f64 / execution_times.len() as f64;
-        
+
         println!("\nResults for {}:", name);
-        println!("  Success rate: {:.1}% ({}/{})", success_rate, successes, iterations);
+        println!(
+            "  Success rate: {:.1}% ({}/{})",
+            success_rate, successes, iterations
+        );
         println!("  Average hops detected: {:.1}", avg_hops);
         println!("  Average execution time: {:.0}ms", avg_time);
         println!("  Errors: {}", errors);
-        
+
         if name.contains("critical") {
             if success_rate >= 80.0 {
                 println!("  ✓ PASS - Critical test meets 80% threshold");
@@ -107,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Stress test - rapid succession
     println!("\n=== Stress Test ===");
     println!("Running 10 traces in rapid succession...");
-    
+
     let mut stress_times = Vec::new();
     for i in 1..=10 {
         let config = TracerouteConfig::builder()
@@ -115,18 +123,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .probe_timeout(Duration::from_millis(70))
             .max_hops(15)
             .build()?;
-            
+
         let start = Instant::now();
         let _ = trace_with_config_async(config).await;
         let elapsed = start.elapsed();
         stress_times.push(elapsed.as_millis());
         println!("  Run {}: {}ms", i, elapsed.as_millis());
     }
-    
+
     let avg_stress = stress_times.iter().sum::<u128>() as f64 / stress_times.len() as f64;
     let max_stress = *stress_times.iter().max().unwrap() as f64;
     println!("  Average: {:.0}ms, Max: {:.0}ms", avg_stress, max_stress);
-    
+
     if max_stress < avg_stress * 2.0 {
         println!("  ✓ Performance remains consistent under stress");
     } else {

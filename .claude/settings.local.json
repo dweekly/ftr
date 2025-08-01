@@ -16,8 +16,10 @@
       "Bash(powershell:*)",
       "Bash(C:/temp/ftr-target/debug/ftr.exe:*)",
       "Bash(C:/temp/ftr-target/debug/ftr.exe google.com)",
-      "Bash(./target/release/ftr.exe:*)"
+      "Bash(./target/release/ftr.exe:*)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": []
-  }
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
 }

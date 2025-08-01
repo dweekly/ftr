@@ -31,6 +31,16 @@ pub async fn create_async_probe_socket_with_options(
                 let _ = protocol; // Unused on Windows
                 use super::windows_async_tokio::WindowsAsyncIcmpSocket;
                 let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
+
+                // Print verbose mode info if requested
+                let verbose = std::env::var("FTR_VERBOSE")
+                    .ok()
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(0);
+                if verbose > 0 {
+                    eprintln!("Using Windows ICMP API mode for traceroute");
+                }
+
                 Ok(Box::new(socket))
             }
 
@@ -39,6 +49,16 @@ pub async fn create_async_probe_socket_with_options(
                 let _ = protocol; // Unused on macOS
                 use super::macos_async::MacOSAsyncIcmpSocket;
                 let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
+
+                // Print verbose mode info if requested
+                let verbose = std::env::var("FTR_VERBOSE")
+                    .ok()
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(0);
+                if verbose > 0 {
+                    eprintln!("Using DGRAM ICMP mode for traceroute");
+                }
+
                 Ok(Box::new(socket))
             }
 
@@ -54,6 +74,16 @@ pub async fn create_async_probe_socket_with_options(
                                 // We have permissions for raw ICMP
                                 use super::linux_async::LinuxAsyncIcmpSocket;
                                 let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
+
+                                // Print verbose mode info if requested
+                                let verbose = std::env::var("FTR_VERBOSE")
+                                    .ok()
+                                    .and_then(|v| v.parse::<u8>().ok())
+                                    .unwrap_or(0);
+                                if verbose > 0 {
+                                    eprintln!("Using Raw ICMP mode for traceroute");
+                                }
+
                                 Ok(Box::new(socket))
                             }
                             Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
@@ -69,6 +99,16 @@ pub async fn create_async_probe_socket_with_options(
                         // Default to UDP or when explicitly requested
                         use super::linux_async::LinuxAsyncUdpSocket;
                         let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
+
+                        // Print verbose mode info if requested
+                        let verbose = std::env::var("FTR_VERBOSE")
+                            .ok()
+                            .and_then(|v| v.parse::<u8>().ok())
+                            .unwrap_or(0);
+                        if verbose > 0 {
+                            eprintln!("Using UDP with IP_RECVERR (no root required)");
+                        }
+
                         Ok(Box::new(socket))
                     }
                 }

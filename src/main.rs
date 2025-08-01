@@ -140,7 +140,7 @@ struct JsonIsp {
 
 fn main() {
     let process_start = Instant::now();
-    
+
     // Quick check for help/version before starting async runtime
     let args: Vec<String> = std::env::args().collect();
     if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
@@ -152,15 +152,15 @@ fn main() {
         println!("ftr {}", get_version());
         return;
     }
-    
+
     // Create single-threaded tokio runtime for lower overhead
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .unwrap();
-        
+        .expect("Failed to create Tokio runtime");
+
     let result = runtime.block_on(async_main(process_start));
-        
+
     if let Err(e) = result {
         eprintln!("Error: {}", e);
         std::process::exit(1);
@@ -177,7 +177,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         if let Some(stun_server) = &args.stun_server {
             std::env::set_var("FTR_STUN_SERVER", stun_server);
         }
-        
+
         // Pre-warm STUN cache immediately for faster public IP detection
         let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
     }
@@ -234,15 +234,15 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         let target_ip_clone = target_ip;
         tokio::spawn(async move {
             // Pre-warm DNS reverse lookup
-            use hickory_resolver::{TokioResolver, config::ResolverConfig};
             use hickory_resolver::name_server::TokioConnectionProvider;
+            use hickory_resolver::{config::ResolverConfig, TokioResolver};
             let resolver = TokioResolver::builder_with_config(
                 ResolverConfig::cloudflare(),
                 TokioConnectionProvider::default(),
             )
             .build();
             let _ = resolver.reverse_lookup(target_ip_clone).await;
-            
+
             // Pre-warm ASN lookup
             if let IpAddr::V4(ipv4) = target_ip_clone {
                 let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
@@ -277,12 +277,12 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         .enable_rdns(!args.no_rdns)
         .verbose(args.verbose)
         .port(args.port);
-    
+
     // Add public IP if provided
     if let Some(ip) = public_ip {
         builder = builder.public_ip(ip);
     }
-    
+
     let config = builder.build();
 
     let config = match config {
@@ -290,16 +290,20 @@ async fn async_main(_process_start: Instant) -> Result<()> {
             // Add protocol and mode if specified
             cfg.protocol = preferred_protocol;
             cfg.socket_mode = preferred_mode;
-            
+
             // Warn Windows users about potential issues with short timeouts + enrichment
             #[cfg(target_os = "windows")]
             if args.probe_timeout_ms < 100 && (!args.no_enrich || !args.no_rdns) {
-                eprintln!("Warning: On Windows, probe timeouts < 100ms with enrichment enabled may cause");
-                eprintln!("         unreliable results. Consider using --probe-timeout-ms 100 or higher,");
+                eprintln!(
+                    "Warning: On Windows, probe timeouts < 100ms with enrichment enabled may cause"
+                );
+                eprintln!(
+                    "         unreliable results. Consider using --probe-timeout-ms 100 or higher,"
+                );
                 eprintln!("         or disable enrichment with --no-enrich --no-rdns");
                 eprintln!();
             }
-            
+
             cfg
         }
         Err(e) => {
@@ -480,9 +484,9 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     if args.json {
         display_json_results(result)?;
     } else {
-        display_text_results(result);
+        display_text_results(result, args.no_enrich);
     }
-    
+
     // Quick exit to avoid cleanup overhead on Windows
     std::process::exit(0);
 }
@@ -556,10 +560,9 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
 }
 
 /// Display results in text format
-fn display_text_results(result: TracerouteResult) {
-    // Check if enrichment was disabled by looking at whether ANY hop has ASN info
-    // If enrichment is disabled, no hops should have ASN info
-    let enrichment_disabled = result.hops.iter().all(|h| h.asn_info.is_none());
+fn display_text_results(result: TracerouteResult, no_enrich: bool) {
+    // Use the explicit no_enrich flag passed from command line args
+    let enrichment_disabled = no_enrich;
 
     // Display hops
     for hop in &result.hops {

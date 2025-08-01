@@ -72,7 +72,7 @@ pub async fn prewarm_stun_cache() {
         "stun1.l.google.com:19302",
         "stun2.l.google.com:19302",
     ];
-    
+
     // Add custom STUN server if provided
     if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
         servers.insert(0, Box::leak(custom_server.into_boxed_str()));

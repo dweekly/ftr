@@ -37,9 +37,12 @@ impl AsyncTraceroute {
                 .await
                 .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
 
-            response.iter().find(|ip| ip.is_ipv4()).ok_or_else(|| {
-                TracerouteError::ResolutionError("No IPv4 address found".to_string())
-            })?
+            response
+                .iter()
+                .find(std::net::IpAddr::is_ipv4)
+                .ok_or_else(|| {
+                    TracerouteError::ResolutionError("No IPv4 address found".to_string())
+                })?
         };
 
         // IPv6 check
@@ -86,7 +89,7 @@ impl AsyncTraceroute {
             .run()
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
-        
+
         // The fully parallel engine handles enrichment internally, so we can just return
         Ok(result)
     }
@@ -97,7 +100,7 @@ pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteErr
     let config = TracerouteConfig::builder()
         .target(target)
         .build()
-        .map_err(|e| TracerouteError::ConfigError(e))?;
+        .map_err(TracerouteError::ConfigError)?;
     trace_with_config_async(config).await
 }
 

@@ -30,36 +30,36 @@ const IP_GENERAL_FAILURE: u32 = 11050;
 use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 
 /// Windows async ICMP socket implementation
-/// 
+///
 /// This uses the Windows IcmpSendEcho2 API for sending ICMP echo requests.
-/// 
+///
 /// # Implementation Notes
-/// 
+///
 /// ## Timeout Handling
-/// 
+///
 /// Windows ICMP API has specific requirements for reliable timeout handling:
-/// 
+///
 /// - **Minimum Timeout**: Through empirical testing, we found that timeouts < 30ms
 ///   produce inconsistent results where probes may not return any response even
 ///   from low-latency hosts. This appears to be a limitation of the Windows ICMP
 ///   implementation.
-/// 
+///
 /// - **Timeout Buffer**: We give Windows a longer timeout than our Tokio timeout
 ///   (user timeout + 50ms buffer) to ensure our Tokio timeout always fires first.
 ///   This prevents race conditions where Windows might timeout a probe just as
 ///   we're processing it, leading to inconsistent behavior.
-/// 
+///
 /// - **Shutdown Optimization**: When the socket is dropped with pending operations,
 ///   we skip calling IcmpCloseHandle to avoid a 600ms+ blocking delay. Windows
 ///   will clean up the handle when the process exits.
-/// 
+///
 /// ## Response Validation
-/// 
+///
 /// - ICMP Time Exceeded responses from intermediate routers don't echo back
 ///   the data payload, so we can't validate sequence numbers for those
 /// - We include process ID and sequence number in echo requests to match
 ///   responses from the destination
-/// 
+///
 pub struct WindowsAsyncIcmpSocket {
     icmp_handle: HANDLE,
     destination_reached: Arc<Mutex<bool>>,
@@ -97,7 +97,7 @@ impl WindowsAsyncIcmpSocket {
 
         let reply = unsafe { &*(buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
         let elapsed = sent_at.elapsed();
-        
+
         // Verify the response data matches our probe
         // Only Echo Reply (destination reached) includes our data
         // Time Exceeded and other ICMP errors don't echo the data back
@@ -106,17 +106,20 @@ impl WindowsAsyncIcmpSocket {
             if buffer.len() >= mem::size_of::<ICMP_ECHO_REPLY>() + 4 {
                 let data_offset = mem::size_of::<ICMP_ECHO_REPLY>();
                 let data = &buffer[data_offset..];
-                
+
                 if data.len() >= 4 {
                     let identifier = u16::from_be_bytes([data[0], data[1]]);
                     let recv_sequence = u16::from_be_bytes([data[2], data[3]]);
-                    
+
                     // Verify this response is for our process and sequence
                     let expected_identifier = std::process::id() as u16;
                     if identifier != expected_identifier || recv_sequence != sequence {
                         return Err(anyhow!(
                             "Response mismatch: expected id={}/seq={}, got id={}/seq={}",
-                            expected_identifier, sequence, identifier, recv_sequence
+                            expected_identifier,
+                            sequence,
+                            identifier,
+                            recv_sequence
                         ));
                     }
                 }
@@ -243,10 +246,13 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                     // Calculate Windows timeout with buffer to ensure our Tokio timeout fires first
                     // This prevents race conditions between Windows and Tokio timeouts
                     {
-                        let user_timeout_ms = self.timing_config.socket_read_timeout.as_millis() as u32;
-                        let windows_timeout = user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
+                        let user_timeout_ms =
+                            self.timing_config.socket_read_timeout.as_millis() as u32;
+                        let windows_timeout =
+                            user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
                         // Ensure minimum timeout for Windows ICMP API stability
-                        windows_timeout.max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
+                        windows_timeout
+                            .max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
                     },
                 )
             };
@@ -279,7 +285,7 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
         // Move the reply_buffer into the task to keep it alive
         let wait_handle = tokio::task::spawn_blocking(move || {
             let event = event_handle as HANDLE; // Convert back to HANDLE
-            let result = unsafe { 
+            let result = unsafe {
                 WaitForSingleObject(event, 0xFFFFFFFF) // INFINITE - wait indefinitely, tokio timeout handles the actual timeout
             };
             unsafe { CloseHandle(event) };
@@ -298,23 +304,29 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
 
         // Wait for the event to be signaled with our actual timeout
         let timeout_duration = self.timing_config.socket_read_timeout;
-        
+
         // Debug logging for timeout analysis
         let verbose = std::env::var("FTR_VERBOSE")
             .ok()
             .and_then(|v| v.parse::<u8>().ok())
             .unwrap_or(0);
-        
+
         if verbose >= 3 {
             let windows_timeout_ms = {
                 let user_timeout_ms = self.timing_config.socket_read_timeout.as_millis() as u32;
-                let windows_timeout = user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
+                let windows_timeout =
+                    user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
                 windows_timeout.max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
             };
-            eprintln!("[TIMEOUT] Probe seq={} ttl={}: User timeout={}ms, Windows timeout={}ms", 
-                probe.sequence, probe.ttl, timeout_duration.as_millis(), windows_timeout_ms);
+            eprintln!(
+                "[TIMEOUT] Probe seq={} ttl={}: User timeout={}ms, Windows timeout={}ms",
+                probe.sequence,
+                probe.ttl,
+                timeout_duration.as_millis(),
+                windows_timeout_ms
+            );
         }
-        
+
         match tokio::time::timeout(timeout_duration, rx).await {
             Ok(Ok(Ok(reply_buffer))) => {
                 // Got a response - process it
@@ -332,11 +344,11 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
                 // Tokio timeout elapsed before Windows completed
                 // Since we gave Windows a longer timeout (user timeout + buffer),
                 // this ensures consistent behavior where our timeout always wins
-                // 
+                //
                 // We let the Windows operation complete in the background rather
                 // than trying to cancel it, which would cause issues
                 drop(wait_handle); // Let the task complete in background
-                
+
                 Ok(ProbeResponse {
                     from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
                     sequence: probe.sequence,
@@ -365,11 +377,11 @@ impl Drop for WindowsAsyncIcmpSocket {
             let pending = *self.pending_count.lock().unwrap();
             if pending > 0 {
                 // Performance optimization: Skip IcmpCloseHandle when there are pending operations
-                // 
+                //
                 // IcmpCloseHandle blocks until all pending operations complete, which can take
                 // 600ms+ if operations are waiting for timeout. Since we're shutting down anyway,
                 // we let Windows clean up the handle on process exit.
-                // 
+                //
                 // This optimization reduces shutdown time from ~700ms to <100ms when probes
                 // are in flight.
             } else {
