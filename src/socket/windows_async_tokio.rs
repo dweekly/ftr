@@ -71,7 +71,7 @@ impl WindowsAsyncIcmpSocket {
     /// Create a new Windows async ICMP socket
     pub fn new_with_config(timing_config: TimingConfig) -> Result<Self> {
         let icmp_handle = unsafe { IcmpCreateFile() };
-        if icmp_handle == ptr::null_mut() {
+        if icmp_handle.is_null() {
             return Err(anyhow!("Failed to create ICMP handle"));
         }
 
@@ -145,7 +145,7 @@ impl WindowsAsyncIcmpSocket {
 
         // Extract the responding IP address
         let from_addr = IpAddr::V4(Ipv4Addr::new(
-            (reply.Address >> 0) as u8,
+            reply.Address as u8,
             (reply.Address >> 8) as u8,
             (reply.Address >> 16) as u8,
             (reply.Address >> 24) as u8,
@@ -154,7 +154,10 @@ impl WindowsAsyncIcmpSocket {
         // Check if we reached the destination
         let is_destination = reply.Status == IP_SUCCESS;
         if is_destination {
-            *self.destination_reached.lock().unwrap() = true;
+            *self
+                .destination_reached
+                .lock()
+                .expect("Failed to acquire destination_reached lock") = true;
         }
 
         // Use the Windows API's RoundTripTime (in milliseconds)
@@ -191,14 +194,20 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
 
         // Increment pending count
         {
-            let mut count = self.pending_count.lock().unwrap();
+            let mut count = self
+                .pending_count
+                .lock()
+                .expect("Failed to acquire pending_count lock");
             *count += 1;
         }
 
         // Create event for this probe
         let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
-        if event == ptr::null_mut() {
-            let mut count = self.pending_count.lock().unwrap();
+        if event.is_null() {
+            let mut count = self
+                .pending_count
+                .lock()
+                .expect("Failed to acquire pending_count lock");
             *count -= 1;
             return Err(anyhow!("Failed to create event"));
         }
@@ -271,7 +280,10 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
 
         if let Err(error) = send_result {
             unsafe { CloseHandle(event) };
-            let mut count = self.pending_count.lock().unwrap();
+            let mut count = self
+                .pending_count
+                .lock()
+                .expect("Failed to acquire pending_count lock");
             *count -= 1;
             return Err(anyhow!("IcmpSendEcho2 failed: {}", error));
         }
@@ -291,7 +303,9 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
             unsafe { CloseHandle(event) };
 
             // Decrement pending count
-            let mut count = pending_count.lock().unwrap();
+            let mut count = pending_count
+                .lock()
+                .expect("Failed to acquire pending_count lock");
             *count = count.saturating_sub(1);
 
             if result == WAIT_OBJECT_0 {
@@ -363,18 +377,27 @@ impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
     }
 
     fn destination_reached(&self) -> bool {
-        *self.destination_reached.lock().unwrap()
+        *self
+            .destination_reached
+            .lock()
+            .expect("Failed to acquire destination_reached lock")
     }
 
     fn pending_count(&self) -> usize {
-        *self.pending_count.lock().unwrap()
+        *self
+            .pending_count
+            .lock()
+            .expect("Failed to acquire pending_count lock")
     }
 }
 
 impl Drop for WindowsAsyncIcmpSocket {
     fn drop(&mut self) {
-        if self.icmp_handle != ptr::null_mut() {
-            let pending = *self.pending_count.lock().unwrap();
+        if !self.icmp_handle.is_null() {
+            let pending = *self
+                .pending_count
+                .lock()
+                .expect("Failed to acquire pending_count lock");
             if pending > 0 {
                 // Performance optimization: Skip IcmpCloseHandle when there are pending operations
                 //
