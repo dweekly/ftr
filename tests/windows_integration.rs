@@ -23,7 +23,7 @@ fn test_windows_icmp_mode() {
 
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Using Raw ICMP IPv4 mode"));
+        .stderr(predicate::str::contains("Using Windows ICMP API"));
 }
 
 #[test]
