@@ -358,6 +358,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_concurrent_lookups() {
         use tokio::task::JoinSet;
 
