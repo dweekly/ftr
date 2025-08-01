@@ -284,11 +284,22 @@ mod tests {
 
         {
             let mut cache = STUN_CACHE.lock().unwrap();
+            // Create an instant that's definitely in the past but won't overflow
+            // Use checked_sub to avoid overflow on platforms where Instant can't represent times that far back
+            let expired_instant = Instant::now()
+                .checked_sub(Duration::from_secs(7200))
+                .unwrap_or_else(|| {
+                    // If we can't subtract 2 hours, just use an instant from 1 second ago
+                    // This is still expired for our test purposes since CACHE_TTL is 1 hour
+                    std::thread::sleep(Duration::from_millis(10));
+                    Instant::now() - Duration::from_secs(3700) // Just over 1 hour
+                });
+
             cache.insert(
                 test_server.to_string(),
                 CacheEntry {
                     addresses: old_addresses.clone(),
-                    resolved_at: Instant::now() - Duration::from_secs(7200), // 2 hours ago (expired)
+                    resolved_at: expired_instant,
                 },
             );
             assert_eq!(cache.len(), 1, "Cache should have exactly 1 entry");
@@ -322,11 +333,20 @@ mod tests {
         {
             let mut cache = STUN_CACHE.lock().unwrap();
             cache.clear();
+
+            // Create an expired instant safely
+            let expired_instant = Instant::now()
+                .checked_sub(Duration::from_secs(7200))
+                .unwrap_or_else(|| {
+                    std::thread::sleep(Duration::from_millis(10));
+                    Instant::now() - Duration::from_secs(3700) // Just over 1 hour
+                });
+
             cache.insert(
                 valid_server.to_string(),
                 CacheEntry {
                     addresses: fake_old_address.clone(),
-                    resolved_at: Instant::now() - Duration::from_secs(7200), // Expired
+                    resolved_at: expired_instant,
                 },
             );
         }
@@ -360,11 +380,19 @@ mod tests {
 
         {
             let mut cache = STUN_CACHE.lock().unwrap();
+            // Create a recent instant (1 minute ago) - this should never overflow
+            let recent_instant = Instant::now()
+                .checked_sub(Duration::from_secs(60))
+                .unwrap_or_else(|| {
+                    // Fallback: just use current time
+                    Instant::now()
+                });
+
             cache.insert(
                 recent_server.to_string(),
                 CacheEntry {
                     addresses: recent_addresses.clone(),
-                    resolved_at: Instant::now() - Duration::from_secs(60), // 1 minute ago (not expired)
+                    resolved_at: recent_instant,
                 },
             );
         }
