@@ -339,7 +339,7 @@ impl LinuxAsyncIcmpSocket {
 
             // Calculate checksum
             let icmp_packet = packet.to_immutable();
-            let checksum = checksum(&icmp_packet.packet(), 1);
+            let checksum = checksum(icmp_packet.packet(), 1);
             packet.set_checksum(checksum);
         }
 
