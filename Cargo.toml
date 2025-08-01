@@ -1,6 +1,6 @@
 [package]
 name = "ftr"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 authors = ["David Weekly <david@weekly.org>"]
 description = "A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection"
@@ -13,7 +13,8 @@ categories = ["command-line-utilities", "network-programming"]
 rust-version = "1.82.0"
 
 [features]
-default = []
+default = ["async"]
+async = ["tokio/full"]
 
 [lib]
 name = "ftr"
@@ -22,6 +23,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "ftr"
 path = "src/main.rs"
+
+[[bench]]
+name = "traceroute_bench"
+harness = false
 
 
 [profile.release]
@@ -32,7 +37,7 @@ strip = "symbols"
 opt-level = "z"  # Optimize for size
 
 [dependencies]
-tokio = { version = "1.47", features = ["rt-multi-thread", "time", "net", "macros"] }
+tokio = { version = "1.47", features = ["rt-multi-thread", "time", "net", "macros", "sync", "io-util"] }
 socket2 = { version = "0.6", features = ["all"] }
 pnet = "0.35"
 anyhow = "1.0"
@@ -45,6 +50,11 @@ rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
+once_cell = "1.19"
+lazy_static = "1.5"
+async-trait = "0.1"
+tokio-util = "0.7"
+getrandom = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -58,12 +68,14 @@ libc = "0.2"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Foundation", "Win32_System_IO"] }
+windows-sys = { version = "0.60", features = ["Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock", "Win32_Foundation", "Win32_System_IO", "Win32_System_Threading", "Win32_Security"] }
 
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"
 serde_json = "1.0"
+criterion = { version = "0.7", features = ["html_reports"] }
+serial_test = "3.1"
 
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
 libc = "0.2"
@@ -111,4 +123,7 @@ assets = [
     ["target/release/ftr", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/ftr/README", "644"],
     ["CHANGELOG.md", "usr/share/doc/ftr/CHANGELOG", "644"],
-] 
+]
+
+[package.metadata.cargo-machete]
+ignored = ["lazy_static", "tokio-util"]

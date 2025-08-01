@@ -227,6 +227,7 @@ mod tests {
                 public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                 asn: 12345,
                 name: "Example ISP".to_string(),
+                hostname: Some("customer.example-isp.com".to_string()),
             }),
             protocol_used: ProbeProtocol::Icmp,
             socket_mode_used: SocketMode::Raw,

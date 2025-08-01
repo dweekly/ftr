@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError, TracerouteResult};
 use std::net::IpAddr;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Get the version string for ftr
 fn get_version() -> &'static str {
@@ -41,8 +41,8 @@ struct Args {
     #[clap(long, default_value_t = 1000)]
     probe_timeout_ms: u64,
 
-    /// Interval between launching probes in milliseconds
-    #[clap(short = 'i', long, default_value_t = 5)]
+    /// Interval between launching probes in milliseconds (applies to both inter-TTL and inter-query delays)
+    #[clap(short = 'i', long, default_value_t = 0)]
     send_launch_interval_ms: u64,
 
     /// Overall timeout for the traceroute in milliseconds
@@ -73,13 +73,25 @@ struct Args {
     #[clap(long)]
     json: bool,
 
-    /// Enable verbose output
-    #[clap(short, long)]
-    verbose: bool,
+    /// Enable verbose output (use -vv for debug timestamps)
+    #[clap(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
 
     /// Target port for UDP/TCP modes
-    #[clap(short, long, default_value_t = 443)]
+    #[clap(short, long, default_value_t = 33434)]
     port: u16,
+
+    /// Use synchronous implementation (legacy mode)
+    #[clap(long)]
+    sync_mode: bool,
+
+    /// Specify public IP address (skip STUN detection)
+    #[clap(long)]
+    public_ip: Option<String>,
+
+    /// Custom STUN server address (e.g., stun.l.google.com:19302)
+    #[clap(long)]
+    stun_server: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -123,17 +135,55 @@ struct JsonOutput {
 struct JsonIsp {
     asn: String,
     name: String,
+    hostname: Option<String>,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Check if user is asking for version explicitly
-    if std::env::args().any(|arg| arg == "--version" || arg == "-V") {
+fn main() {
+    let process_start = Instant::now();
+
+    // Quick check for help/version before starting async runtime
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && (args[1] == "--help" || args[1] == "-h") {
+        // Clap will handle this
+        let _ = Args::parse();
+        return;
+    }
+    if args.len() == 2 && (args[1] == "--version" || args[1] == "-V") {
         println!("ftr {}", get_version());
-        std::process::exit(0);
+        return;
     }
 
+    // Create single-threaded tokio runtime for lower overhead
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
+
+    let result = runtime.block_on(async_main(process_start));
+
+    if let Err(e) = result {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+async fn async_main(_process_start: Instant) -> Result<()> {
     let args = Args::parse();
+
+    // Handle public IP option - skip STUN if provided
+    #[cfg(feature = "async")]
+    if args.public_ip.is_none() {
+        // Set custom STUN server if provided
+        if let Some(stun_server) = &args.stun_server {
+            std::env::set_var("FTR_STUN_SERVER", stun_server);
+        }
+
+        // Pre-warm STUN cache immediately for faster public IP detection
+        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+    }
+
+    // Initialize debug mode if requested
+    // ftr::debug::init_debug(args.verbose);
 
     // Validate arguments
     if args.start_ttl < 1 {
@@ -178,8 +228,49 @@ async fn main() -> Result<()> {
     // Resolve target early to use in config
     let target_ip = resolve_target(&args.host).await?;
 
+    // Pre-fetch destination IP's rDNS and ASN lookups in the background
+    #[cfg(feature = "async")]
+    {
+        let target_ip_clone = target_ip;
+        let no_enrich = args.no_enrich;
+        let no_rdns = args.no_rdns;
+        tokio::spawn(async move {
+            // Pre-warm DNS reverse lookup only if rDNS is enabled
+            if !no_rdns {
+                use hickory_resolver::name_server::TokioConnectionProvider;
+                use hickory_resolver::{config::ResolverConfig, TokioResolver};
+                let resolver = TokioResolver::builder_with_config(
+                    ResolverConfig::cloudflare(),
+                    TokioConnectionProvider::default(),
+                )
+                .build();
+                let _ = resolver.reverse_lookup(target_ip_clone).await;
+            }
+
+            // Pre-warm ASN lookup only if enrichment is enabled
+            if !no_enrich {
+                if let IpAddr::V4(ipv4) = target_ip_clone {
+                    let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
+                }
+            }
+        });
+    }
+
+    // Parse public IP if provided
+    let public_ip = if let Some(ip_str) = &args.public_ip {
+        match ip_str.parse::<IpAddr>() {
+            Ok(ip) => Some(ip),
+            Err(_) => {
+                eprintln!("Error: Invalid public IP address: {}", ip_str);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
+    };
+
     // Build configuration
-    let config = TracerouteConfigBuilder::new()
+    let mut builder = TracerouteConfigBuilder::new()
         .target(&args.host)
         .target_ip(target_ip)
         .start_ttl(args.start_ttl)
@@ -191,14 +282,34 @@ async fn main() -> Result<()> {
         .enable_asn_lookup(!args.no_enrich)
         .enable_rdns(!args.no_rdns)
         .verbose(args.verbose)
-        .port(args.port)
-        .build();
+        .port(args.port);
+
+    // Add public IP if provided
+    if let Some(ip) = public_ip {
+        builder = builder.public_ip(ip);
+    }
+
+    let config = builder.build();
 
     let config = match config {
         Ok(mut cfg) => {
             // Add protocol and mode if specified
             cfg.protocol = preferred_protocol;
             cfg.socket_mode = preferred_mode;
+
+            // Warn Windows users about potential issues with short timeouts + enrichment
+            #[cfg(target_os = "windows")]
+            if args.probe_timeout_ms < 100 && (!args.no_enrich || !args.no_rdns) {
+                eprintln!(
+                    "Warning: On Windows, probe timeouts < 100ms with enrichment enabled may cause"
+                );
+                eprintln!(
+                    "         unreliable results. Consider using --probe-timeout-ms 100 or higher,"
+                );
+                eprintln!("         or disable enrichment with --no-enrich --no-rdns");
+                eprintln!();
+            }
+
             cfg
         }
         Err(e) => {
@@ -207,8 +318,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Warn if port was specified but won't be used
-    if args.port != 443 && preferred_protocol == Some(ProbeProtocol::Icmp) {
+    // Warn if port was explicitly specified but won't be used
+    if args.port != 33434 && preferred_protocol == Some(ProbeProtocol::Icmp) {
         eprintln!(
             "Warning: Port {} specified but will be ignored for ICMP protocol",
             args.port
@@ -246,6 +357,94 @@ async fn main() -> Result<()> {
     }
 
     // Run traceroute
+    #[cfg(feature = "async")]
+    let result = if !args.sync_mode {
+        // Use async implementation (default)
+        match ftr::traceroute::async_api::trace_with_config_async(config).await {
+            Ok(result) => result,
+            Err(TracerouteError::InsufficientPermissions {
+                required,
+                suggestion,
+            }) => {
+                eprintln!("\nError: Insufficient permissions");
+                eprintln!("Required: {}", required);
+                eprintln!("Suggestion: {}", suggestion);
+                eprintln!(
+                    "\nTo run with elevated privileges: sudo {}",
+                    std::env::args().collect::<Vec<_>>().join(" ")
+                );
+                std::process::exit(1);
+            }
+            Err(TracerouteError::NotImplemented { feature }) => {
+                eprintln!("\nError: {} is not yet implemented", feature);
+                eprintln!("This feature is planned for a future release.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::Ipv6NotSupported) => {
+                eprintln!("\nError: IPv6 targets are not yet supported");
+                eprintln!("Please use an IPv4 address or hostname that resolves to IPv4.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::ResolutionError(msg)) => {
+                eprintln!("\nError: {}", msg);
+                eprintln!("Please check the hostname and your network connection.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::ConfigError(msg)) => {
+                eprintln!("\nError: Invalid configuration - {}", msg);
+                eprintln!("Run 'ftr --help' for usage information.");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("\nError: {}", e);
+                std::process::exit(1);
+            }
+        }
+    } else {
+        // Use standard implementation
+        match ftr::trace_with_config(config).await {
+            Ok(result) => result,
+            Err(TracerouteError::InsufficientPermissions {
+                required,
+                suggestion,
+            }) => {
+                eprintln!("\nError: Insufficient permissions");
+                eprintln!("Required: {}", required);
+                eprintln!("Suggestion: {}", suggestion);
+                eprintln!(
+                    "\nTo run with elevated privileges: sudo {}",
+                    std::env::args().collect::<Vec<_>>().join(" ")
+                );
+                std::process::exit(1);
+            }
+            Err(TracerouteError::NotImplemented { feature }) => {
+                eprintln!("\nError: {} is not yet implemented", feature);
+                eprintln!("This feature is planned for a future release.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::Ipv6NotSupported) => {
+                eprintln!("\nError: IPv6 targets are not yet supported");
+                eprintln!("Please use an IPv4 address or hostname that resolves to IPv4.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::ResolutionError(msg)) => {
+                eprintln!("\nError: {}", msg);
+                eprintln!("Please check the hostname and your network connection.");
+                std::process::exit(1);
+            }
+            Err(TracerouteError::ConfigError(msg)) => {
+                eprintln!("\nError: Invalid configuration - {}", msg);
+                eprintln!("Run 'ftr --help' for usage information.");
+                std::process::exit(1);
+            }
+            Err(e) => {
+                eprintln!("\nError: {}", e);
+                std::process::exit(1);
+            }
+        }
+    };
+
+    #[cfg(not(feature = "async"))]
     let result = match ftr::trace_with_config(config).await {
         Ok(result) => result,
         Err(TracerouteError::InsufficientPermissions {
@@ -291,10 +490,11 @@ async fn main() -> Result<()> {
     if args.json {
         display_json_results(result)?;
     } else {
-        display_text_results(result);
+        display_text_results(result, args.no_enrich, args.no_rdns);
     }
 
-    Ok(())
+    // Quick exit to avoid cleanup overhead on Windows
+    std::process::exit(0);
 }
 
 /// Resolve target hostname to IP address
@@ -342,6 +542,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
         isp: result.isp_info.as_ref().map(|i| JsonIsp {
             asn: i.asn.to_string(),
             name: i.name.clone(),
+            hostname: i.hostname.clone(),
         }),
         hops: Vec::new(),
         protocol: result.protocol_used.description().to_string(),
@@ -365,12 +566,9 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
 }
 
 /// Display results in text format
-fn display_text_results(result: TracerouteResult) {
-    // Check if enrichment was disabled (all hops will have Unknown segment)
-    let enrichment_disabled = result
-        .hops
-        .iter()
-        .all(|h| h.segment == ftr::SegmentType::Unknown || h.addr.is_none());
+fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool) {
+    // Use the explicit no_enrich flag passed from command line args
+    let enrichment_disabled = no_enrich;
 
     // Display hops
     for hop in &result.hops {
@@ -384,7 +582,8 @@ fn display_text_results(result: TracerouteResult) {
                 .map_or("*".to_string(), |r| format!("{:.3} ms", r));
 
             // Format hostname and address
-            let host_display = if let Some(hostname) = &hop.hostname {
+            let host_display = if !no_rdns && hop.hostname.is_some() {
+                let hostname = hop.hostname.as_ref().expect("hostname checked above");
                 if hop.addr.is_some() {
                     format!("{} ({})", hostname, addr_str)
                 } else {
@@ -408,10 +607,12 @@ fn display_text_results(result: TracerouteResult) {
                 String::new()
             };
 
-            // Only show segment if enrichment was enabled
+            // Only show segment and ASN if enrichment was enabled
             if enrichment_disabled {
-                println!("{:2} {} {}{}", hop.ttl, host_display, rtt_str, asn_str);
+                // Raw mode - no enrichment data at all
+                println!("{:2} {} {}", hop.ttl, host_display, rtt_str);
             } else {
+                // Enriched mode - show segment and ASN info
                 println!(
                     "{:2} [{}] {} {}{}",
                     hop.ttl, hop.segment, host_display, rtt_str, asn_str
@@ -422,7 +623,15 @@ fn display_text_results(result: TracerouteResult) {
 
     // Display ISP info if available
     if let Some(isp_info) = &result.isp_info {
-        println!("\nDetected public IP: {}", isp_info.public_ip);
+        if !no_rdns && isp_info.hostname.is_some() {
+            println!(
+                "\nDetected public IP: {} ({})",
+                isp_info.public_ip,
+                isp_info.hostname.as_ref().expect("hostname checked above")
+            );
+        } else {
+            println!("\nDetected public IP: {}", isp_info.public_ip);
+        }
         println!("Detected ISP: AS{} ({})", isp_info.asn, isp_info.name);
     }
 }

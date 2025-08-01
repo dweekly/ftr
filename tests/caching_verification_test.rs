@@ -84,6 +84,7 @@ async fn test_asn_caching_with_cidr() {
 }
 
 #[tokio::test]
+#[ignore = "integration test - requires network"]
 async fn test_traceroute_with_caching() {
     // Clear all caches
     ftr::dns::RDNS_CACHE.clear();
@@ -184,6 +185,7 @@ async fn test_traceroute_with_caching() {
 }
 
 #[tokio::test]
+#[ignore = "integration test - requires network"]
 async fn test_public_ip_caching_in_traces() {
     let public_ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
 

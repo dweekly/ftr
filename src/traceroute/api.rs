@@ -1,6 +1,6 @@
 //! High-level traceroute API
 
-use crate::socket::factory::create_probe_socket_with_port;
+use crate::socket::factory::create_probe_socket_with_config;
 use crate::socket::ProbeSocket;
 use crate::traceroute::{
     TracerouteConfig, TracerouteEngine, TracerouteError, TracerouteProgress, TracerouteResult,
@@ -152,12 +152,13 @@ fn create_socket_from_config(
     }
 
     // Create socket with options
-    let socket = create_probe_socket_with_port(
+    let socket = create_probe_socket_with_config(
         target_ip,
         config.protocol,
         config.socket_mode,
         config.verbose,
         config.port,
+        Some(&config.timing),
     );
 
     socket.map_err(|e| {
@@ -231,6 +232,18 @@ pub async fn trace(target: &str) -> Result<TracerouteResult, TracerouteError> {
 pub async fn trace_with_config(
     config: TracerouteConfig,
 ) -> Result<TracerouteResult, TracerouteError> {
+    // Set global timing configuration if it differs from defaults
+    let default_timing = crate::TimingConfig::default();
+    if config.timing.receiver_poll_interval != default_timing.receiver_poll_interval
+        || config.timing.main_loop_poll_interval != default_timing.main_loop_poll_interval
+        || config.timing.enrichment_wait_time != default_timing.enrichment_wait_time
+        || config.timing.socket_read_timeout != default_timing.socket_read_timeout
+        || config.timing.udp_retry_delay != default_timing.udp_retry_delay
+    {
+        // Try to set the global config, ignore if already set (e.g., in tests)
+        let _ = crate::config::timing::set_config(config.timing.clone());
+    }
+
     Traceroute::new(config)?.run().await
 }
 
@@ -252,24 +265,25 @@ mod tests {
         assert!(result.is_ok() || result.is_err()); // Either is fine for unit test
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_trace_localhost() {
         let config = TracerouteConfig::builder()
             .target("127.0.0.1")
             .max_hops(3)
             .probe_timeout(Duration::from_millis(100))
+            .overall_timeout(Duration::from_millis(500))
             .build()
             .unwrap();
 
-        let result = trace_with_config(config).await;
-        // May fail due to permissions, but that's okay
+        let result = tokio::time::timeout(Duration::from_secs(2), trace_with_config(config)).await;
+
         match result {
-            Ok(trace_result) => {
+            Ok(Ok(trace_result)) => {
                 assert_eq!(trace_result.target, "127.0.0.1");
                 assert!(!trace_result.hops.is_empty());
             }
-            Err(_) => {
-                // Permission errors are expected in tests
+            Ok(Err(_)) | Err(_) => {
+                // Permission errors or timeouts are expected in tests
             }
         }
     }

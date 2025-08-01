@@ -10,7 +10,29 @@ pub mod icmp_v4;
 #[cfg(not(target_os = "windows"))]
 pub mod udp;
 #[cfg(target_os = "windows")]
-pub mod windows;
+pub mod windows_async;
+
+// Async socket modules
+#[cfg(feature = "async")]
+pub mod async_factory;
+#[cfg(feature = "async")]
+pub mod async_trait;
+#[cfg(all(
+    feature = "async",
+    any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )
+))]
+pub mod bsd_async;
+#[cfg(all(feature = "async", target_os = "linux"))]
+pub mod linux_async;
+#[cfg(all(feature = "async", target_os = "macos"))]
+pub mod macos_async;
+#[cfg(all(feature = "async", target_os = "windows"))]
+pub mod windows_async_tokio;
 
 use serde::{Deserialize, Serialize};
 
@@ -196,6 +218,14 @@ pub trait ProbeSocket: Send + Sync {
 
     /// Check if destination has been reached
     fn destination_reached(&self) -> bool;
+
+    /// Set timing configuration for the socket
+    /// This allows the socket to use configuration-driven timeouts instead of hardcoded values
+    fn set_timing_config(&mut self, config: &crate::TimingConfig) -> Result<()> {
+        // Default implementation does nothing for backward compatibility
+        let _ = config;
+        Ok(())
+    }
 }
 
 /// Trait for creating probe sockets with fallback

@@ -53,8 +53,13 @@ echo "Running security and dependency checks..."
 if command -v cargo-audit >/dev/null 2>&1; then
     run_check "security vulnerabilities" "cargo audit"
 else
-    printf "%b✗ cargo-audit is required for security checks. Run '.githooks/install-tools.sh'%b\n" "${RED}" "${NC}"
-    FAILED=1
+    # Check if we're on Windows
+    if [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]] || [[ -n "$WINDIR" ]]; then
+        printf "%bWarning: cargo-audit check skipped on Windows (C compiler required)%b\n" "${YELLOW}" "${NC}"
+    else
+        printf "%b✗ cargo-audit is required for security checks. Run '.githooks/install-tools.sh'%b\n" "${RED}" "${NC}"
+        FAILED=1
+    fi
 fi
 
 # Check if cargo-machete is installed

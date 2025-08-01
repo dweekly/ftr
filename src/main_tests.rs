@@ -72,6 +72,7 @@ mod tests {
                 public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                 asn: 12345,
                 name: "Test ISP".to_string(),
+                hostname: None,
             }),
             protocol_used: ftr::ProbeProtocol::Icmp,
             socket_mode_used: ftr::SocketMode::Raw,
@@ -116,7 +117,7 @@ mod tests {
         };
 
         // Test doesn't panic
-        display_text_results(result);
+        display_text_results(result, false, false);
     }
 
     #[test]
@@ -320,6 +321,6 @@ mod tests {
         };
 
         // Test doesn't panic and handles silent hops correctly
-        display_text_results(result);
+        display_text_results(result, false, false);
     }
 }

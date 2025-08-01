@@ -106,7 +106,31 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod asn;
+pub mod config;
+/// Simple debug print macro for conditional debug output
+#[macro_export]
+macro_rules! debug_print {
+    ($level:expr, $($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        {
+            eprintln!("[DEBUG {}] {}", $level, format!($($arg)*));
+        }
+    };
+}
+
+/// Macro for timing traces in very verbose mode
+#[macro_export]
+macro_rules! trace_time {
+    ($verbose:expr, $($arg:tt)*) => {
+        if $verbose >= 2 {
+            eprintln!("[TIMING {:?}] {}", std::time::Instant::now(), format!($($arg)*));
+        }
+    };
+}
 pub mod dns;
+pub mod enrichment;
+#[cfg(feature = "async")]
+pub mod probe;
 pub mod public_ip;
 pub mod socket;
 pub mod traceroute;
@@ -121,6 +145,10 @@ pub use socket::factory::{
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
     trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType,
-    Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
-    TracerouteResult,
+    TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
+    TracerouteProgress, TracerouteResult,
 };
+
+// Re-export async API when feature is enabled
+#[cfg(feature = "async")]
+pub use traceroute::async_api;

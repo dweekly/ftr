@@ -1,13 +1,13 @@
 //! Factory for creating probe sockets with automatic fallback
 
 #[cfg(not(target_os = "windows"))]
-use super::icmp_v4::{DgramIcmpV4Socket, RawIcmpV4Socket};
+use super::icmp_v4::DgramIcmpV4Socket;
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+use super::icmp_v4::RawIcmpV4Socket;
 #[cfg(target_os = "linux")]
 use super::udp::UdpRecvErrSocket;
 #[cfg(not(target_os = "windows"))]
 use super::udp::UdpWithIcmpSocket;
-#[cfg(target_os = "windows")]
-use super::windows::WindowsIcmpSocket;
 use super::{IpVersion, ProbeMode, ProbeProtocol, ProbeSocket, SocketMode};
 use anyhow::{anyhow, Context, Result};
 use socket2::{Domain, Protocol, Socket, Type};
@@ -239,7 +239,7 @@ pub fn create_probe_socket_with_mode(
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
 ) -> Result<Box<dyn ProbeSocket>> {
-    create_probe_socket_with_options(target, preferred_protocol, preferred_mode, false)
+    create_probe_socket_with_options(target, preferred_protocol, preferred_mode, 0)
 }
 
 /// Creates a probe socket with the specified options including verbose output.
@@ -247,7 +247,7 @@ pub fn create_probe_socket_with_options(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
-    verbose: bool,
+    verbose: u8,
 ) -> Result<Box<dyn ProbeSocket>> {
     create_probe_socket_with_port(target, preferred_protocol, preferred_mode, verbose, 443)
 }
@@ -257,8 +257,27 @@ pub fn create_probe_socket_with_port(
     target: IpAddr,
     preferred_protocol: Option<ProbeProtocol>,
     preferred_mode: Option<SocketMode>,
-    verbose: bool,
+    verbose: u8,
     port: u16,
+) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_config(
+        target,
+        preferred_protocol,
+        preferred_mode,
+        verbose,
+        port,
+        None,
+    )
+}
+
+/// Creates a probe socket with the specified options including timing configuration.
+pub fn create_probe_socket_with_config(
+    target: IpAddr,
+    preferred_protocol: Option<ProbeProtocol>,
+    preferred_mode: Option<SocketMode>,
+    verbose: u8,
+    port: u16,
+    _timing_config: Option<&crate::TimingConfig>,
 ) -> Result<Box<dyn ProbeSocket>> {
     let ip_version = match target {
         IpAddr::V4(_) => IpVersion::V4,
@@ -364,7 +383,7 @@ pub fn create_probe_socket_with_port(
 
                 // If no compatible modes, skip this protocol
                 if compatible_modes.is_empty() {
-                    if verbose && user_specified_protocol {
+                    if verbose > 0 && user_specified_protocol {
                         eprintln!(
                             "No compatible socket modes for {} protocol on {} {}",
                             protocol.description(),
@@ -394,7 +413,7 @@ pub fn create_probe_socket_with_port(
                 Ok(socket) => {
                     #[allow(unused_mut)]
                     let mut socket = socket;
-                    if verbose {
+                    if verbose > 0 {
                         eprintln!("Using {} mode for traceroute", mode.description());
                     }
 
@@ -403,13 +422,35 @@ pub fn create_probe_socket_with_port(
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
                             #[cfg(target_os = "windows")]
                             {
-                                // On Windows, use our Windows-specific implementation
-                                return Ok(Box::new(WindowsIcmpSocket::new()?));
+                                // Windows uses async ICMP implementation
+                                use crate::socket::windows_async::WindowsAsyncIcmpSocket;
+                                let socket =
+                                    WindowsAsyncIcmpSocket::new_with_config(_timing_config)?;
+                                if verbose > 0 {
+                                    eprintln!("Using Windows ICMP API (async) mode for traceroute");
+                                }
+                                return Ok(Box::new(socket));
                             }
-                            #[cfg(not(target_os = "windows"))]
+                            #[cfg(target_os = "macos")]
+                            {
+                                // On macOS, raw ICMP sockets behave like DGRAM sockets
+                                // They don't support IP_HDRINCL properly for ICMP
+                                let bind_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0);
+                                socket
+                                    .bind(&bind_addr.into())
+                                    .context("Failed to bind socket")?;
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
+                            }
+                            #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                             {
                                 // Raw socket doesn't need explicit binding
-                                return Ok(Box::new(RawIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(RawIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Dgram) => {
@@ -426,7 +467,10 @@ pub fn create_probe_socket_with_port(
                                     .bind(&bind_addr.into())
                                     .context("Failed to bind ICMP socket")?;
 
-                                return Ok(Box::new(DgramIcmpV4Socket::new(socket)?));
+                                return Ok(Box::new(DgramIcmpV4Socket::new_with_config(
+                                    socket,
+                                    _timing_config,
+                                )?));
                             }
                         }
                         (IpVersion::V4, ProbeProtocol::Udp, SocketMode::Dgram) => {
@@ -445,8 +489,10 @@ pub fn create_probe_socket_with_port(
                             // On Linux, try IP_RECVERR first (no root required)
                             #[cfg(target_os = "linux")]
                             {
-                                if let Ok(recv_err_sock) = UdpRecvErrSocket::new(socket, port) {
-                                    if verbose {
+                                if let Ok(recv_err_sock) =
+                                    UdpRecvErrSocket::new_with_config(socket, port, _timing_config)
+                                {
+                                    if verbose > 0 {
                                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                                     }
                                     return Ok(Box::new(recv_err_sock));
@@ -487,10 +533,11 @@ pub fn create_probe_socket_with_port(
                                 };
 
                                 if icmp_socket.is_some() {
-                                    return Ok(Box::new(UdpWithIcmpSocket::new(
+                                    return Ok(Box::new(UdpWithIcmpSocket::new_with_config(
                                         socket,
                                         icmp_socket,
                                         port,
+                                        _timing_config,
                                     )?));
                                 } else {
                                     // UDP without ICMP receive capability is not functional
@@ -543,7 +590,7 @@ pub fn create_probe_socket_with_port(
                                      Try running with sudo: sudo {}", 
                                     std::env::args().collect::<Vec<_>>().join(" ")
                                 ));
-                            } else if verbose {
+                            } else if verbose > 0 {
                                 eprintln!(
                                     "Raw {} mode requires root privileges, trying fallback...",
                                     match protocol {
@@ -846,7 +893,7 @@ mod tests {
             ipv4,
             Some(ProbeProtocol::Udp),
             Some(SocketMode::Dgram),
-            false,
+            0,
             12345,
         );
 
@@ -866,7 +913,7 @@ mod tests {
             ipv4,
             Some(ProbeProtocol::Icmp),
             None,
-            true, // verbose
+            1, // verbose
         );
     }
 

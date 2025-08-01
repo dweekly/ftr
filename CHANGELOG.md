@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Async Implementation** - New default async/await-based traceroute engine
+  - Immediate response processing without polling delays
+  - Better performance especially for low-latency responses
+  - Async socket implementations for all platforms (Windows, macOS, Linux)
+  - `--sync-mode` flag to use legacy synchronous implementation
+- **Windows Async Improvements**
+  - Comprehensive timeout handling with minimum 100ms for Windows ICMP API reliability
+  - Performance optimization: Skip IcmpCloseHandle when pending operations exist (saves 600ms+)
+  - Detailed documentation in WINDOWS_ASYNC_FINDINGS.md
+  - Rigorous testing example for validating Windows implementation
+- **STUN Cache Pre-warming** - Pre-fetch STUN server addresses for faster public IP detection
+- **Background Pre-fetching** - Destination IP's rDNS and ASN lookups start in background during traceroute
+
+### Changed
+- Async implementation is now the default for all platforms
+- Updated GitHub Actions to use macos-15 (was previously macos-latest)
+- Improved test reliability by making cache tests more resilient to concurrent execution
+
+### Fixed
+- Test failures on macOS related to async implementation
+- Verbose mode output now works correctly with async sockets
+- `--no-enrich` flag now properly suppresses segment types and ASN info in output
+- All clippy warnings resolved (redundant closures, unwrap usage, function arguments)
+- Flaky cache-related tests now handle concurrent test execution properly
+
+## [0.3.1] - 2025-07-29
+
+### Performance Improvements
+- **Major performance enhancements** - traceroute now completes in <100ms for most targets
+- Removed hardcoded 10ms inter-query delay that was slowing down execution
+- Added configurable inter-query delay via `-i` parameter (default 0ms)
+- Default send interval changed to 0ms for optimal performance
+- Public IP detection now runs once in parallel with probe sending instead of blocking
+- ASN and rDNS lookups now start immediately as each IP arrives (truly parallel enrichment)
+
+### Added
+- Reverse DNS lookup for public IP in ISP detection
+- Configurable inter-query delay via `-i` parameter for users who need delays
+
+### Changed
+- `-W` parameter now represents wait time after sending last probe, not total execution time
+- Verbose flag now controls debug output during traceroute execution
+
+### Fixed
+- Performance regression where execution took >1s with `-W 100`
+- Race condition causing missing intermediate hop responses
+- Raw ICMP socket issues on macOS (now properly falls back to DGRAM mode)
+- CGNAT addresses now correctly classified as ISP segment, not LAN
+- Redundant public IP detection on every run
+- `--no-enrich` flag not working correctly - ASN lookups were still being performed and displayed
+- `--no-rdns` flag not working correctly - reverse DNS was disabled when any enrichment was disabled
+
 ## [0.3.0] - 2025-07-28
 
 ### Added

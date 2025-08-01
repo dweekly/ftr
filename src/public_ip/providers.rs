@@ -100,8 +100,8 @@ pub async fn get_public_ip(preferred_provider: PublicIpProvider) -> Result<IpAdd
     // Try preferred provider first
     match get_public_ip_from_provider(preferred_provider, timeout).await {
         Ok(ip) => return Ok(ip),
-        Err(e) => {
-            eprintln!("Warning: {} failed: {}", preferred_provider.url(), e);
+        Err(_) => {
+            // Continue to next provider
         }
     }
 
@@ -113,8 +113,8 @@ pub async fn get_public_ip(preferred_provider: PublicIpProvider) -> Result<IpAdd
 
         match get_public_ip_from_provider(*provider, timeout).await {
             Ok(ip) => return Ok(ip),
-            Err(e) => {
-                eprintln!("Warning: {} failed: {}", provider.url(), e);
+            Err(_) => {
+                // Continue to next provider
             }
         }
     }

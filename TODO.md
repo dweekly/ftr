@@ -14,9 +14,31 @@ This file tracks planned work for the ftr project.
   - Add integration tests for library API
   - Add property-based tests for parsers
   - Test concurrent operations and edge cases
+- [ ] Investigate test isolation for cache state
+  - Each test should have its own cache state to avoid tests stepping on each other
+  - Consider using thread-local caches or test-specific cache instances
+  - This would eliminate flaky test failures due to concurrent cache access
+- [ ] Enhanced path segment labeling
+  - Add "TARGET" segment for hops in the same ASN as the destination
+  - Consider renaming "BEYOND" to something more descriptive (e.g., "TRANSIT", "INTERNET", "BACKBONE")
+  - Example: LAN → ISP → TRANSIT → TARGET (for hops within Google's network when tracing to 8.8.8.8)
 
 ## Medium Priority
 
+- [ ] Add platform and timestamp to JSON output
+  - Add `platform` field (e.g., "freebsd", "openbsd", "macos", "linux", "windows")
+  - Add `timestamp` field with ISO 8601 format of when traceroute started
+  - Consider adding `platform_version` for OS version information
+- [ ] Add optional disk cache for DNS/ASN lookups
+  - Cache DNS reverse lookups and ASN information to disk
+  - Use a simple SQLite database or JSON file
+  - Configurable TTL for cached entries
+  - Option to clear cache via CLI flag
+  - Share cache across traceroute runs for faster enrichment
+- [ ] Replace libc with nix crate
+  - nix provides safer, more idiomatic Rust bindings to system calls
+  - Better error handling and type safety
+  - More consistent cross-platform behavior
 - [ ] Complete socket abstraction implementation
   - Add TCP mode support (TCP SYN packets)
   - Add IPv6 support (ICMPv6, UDP6, TCP6)

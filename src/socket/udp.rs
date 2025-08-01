@@ -61,6 +61,15 @@ pub struct UdpRecvErrSocket {
 impl UdpRecvErrSocket {
     /// Create a new UDP socket with IP_RECVERR enabled
     pub fn new(_socket: Socket2, port: u16) -> Result<Self> {
+        Self::new_with_config(_socket, port, None)
+    }
+
+    /// Create a new UDP socket with IP_RECVERR enabled and timing configuration
+    pub fn new_with_config(
+        _socket: Socket2,
+        port: u16,
+        _timing_config: Option<&crate::TimingConfig>,
+    ) -> Result<Self> {
         // We don't store a single socket anymore - each probe will create its own
         let mode = ProbeMode {
             ip_version: IpVersion::V4,
@@ -311,8 +320,8 @@ impl ProbeSocket for UdpRecvErrSocket {
                 }
             }
 
-            // Sleep briefly before next iteration
-            std::thread::sleep(Duration::from_millis(10));
+            // Sleep briefly before next iteration using global config
+            std::thread::sleep(crate::config::timing::udp_retry_delay());
 
             if Instant::now() >= deadline {
                 return Ok(None);
@@ -323,6 +332,11 @@ impl ProbeSocket for UdpRecvErrSocket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
+
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
+    }
 }
 
 /// UDP socket with raw ICMP receiver for full UDP traceroute support
@@ -331,6 +345,8 @@ pub struct UdpWithIcmpSocket {
     mode: ProbeMode,
     /// Maps sequence number to (socket, probe_info) for each active probe
     active_probes: Arc<Mutex<HashMap<u16, (UdpSocket, ProbeInfo)>>>,
+    /// Maps source port to probe_info for fallback matching when payload is truncated
+    port_to_probe: Arc<Mutex<HashMap<u16, ProbeInfo>>>,
     destination_reached: Arc<Mutex<bool>>,
     /// The destination port to use for UDP probes
     dest_port: u16,
@@ -339,6 +355,16 @@ pub struct UdpWithIcmpSocket {
 impl UdpWithIcmpSocket {
     /// Create a new UDP socket with optional ICMP receiver
     pub fn new(_udp_socket: Socket2, icmp_socket: Option<Socket2>, port: u16) -> Result<Self> {
+        Self::new_with_config(_udp_socket, icmp_socket, port, None)
+    }
+
+    /// Create a new UDP socket with optional ICMP receiver and timing configuration
+    pub fn new_with_config(
+        _udp_socket: Socket2,
+        icmp_socket: Option<Socket2>,
+        port: u16,
+        _timing_config: Option<&crate::TimingConfig>,
+    ) -> Result<Self> {
         // We don't store the UDP socket anymore - each probe will create its own
         if let Some(ref icmp) = icmp_socket {
             icmp.set_nonblocking(true)?;
@@ -354,6 +380,7 @@ impl UdpWithIcmpSocket {
             icmp_socket,
             mode,
             active_probes: Arc::new(Mutex::new(HashMap::new())),
+            port_to_probe: Arc::new(Mutex::new(HashMap::new())),
             destination_reached: Arc::new(Mutex::new(false)),
             dest_port: port,
         })
@@ -400,8 +427,8 @@ impl UdpWithIcmpSocket {
                     return None;
                 }
 
-                // Extract UDP port from original packet
-                let _dest_port = u16::from_be_bytes([original_udp_bytes[2], original_udp_bytes[3]]);
+                // Extract UDP source port from original packet
+                let src_port = u16::from_be_bytes([original_udp_bytes[0], original_udp_bytes[1]]);
 
                 // Try to extract identifier and sequence from UDP payload
                 if original_udp_bytes.len() >= UDP_HEADER_LEN_BYTES + 4 {
@@ -448,6 +475,44 @@ impl UdpWithIcmpSocket {
                                 });
                             }
                         }
+                    }
+                } else {
+                    // Fallback: Only have UDP header (8 bytes), try to match by source port
+                    if let Some(probe_info) = self
+                        .port_to_probe
+                        .lock()
+                        .expect("mutex poisoned")
+                        .remove(&src_port)
+                    {
+                        // Also remove from active_probes
+                        self.active_probes
+                            .lock()
+                            .expect("mutex poisoned")
+                            .remove(&probe_info.sequence);
+
+                        let response_type = match icmp_packet.get_icmp_type() {
+                            IcmpTypes::TimeExceeded => ResponseType::TimeExceeded,
+                            IcmpTypes::DestinationUnreachable => {
+                                let code = icmp_packet.get_icmp_code().0;
+                                if code == 3 {
+                                    // Port unreachable - we've reached the destination
+                                    *self.destination_reached.lock().expect("mutex poisoned") =
+                                        true;
+                                    ResponseType::UdpPortUnreachable
+                                } else {
+                                    ResponseType::DestinationUnreachable(code)
+                                }
+                            }
+                            _ => unreachable!(),
+                        };
+
+                        let rtt = recv_time.duration_since(probe_info.sent_at);
+                        return Some(ProbeResponse {
+                            from_addr,
+                            response_type,
+                            probe_info,
+                            rtt,
+                        });
                     }
                 }
             }
@@ -511,11 +576,20 @@ impl ProbeSocket for UdpWithIcmpSocket {
             .send(&payload)
             .context("Failed to send UDP packet")?;
 
+        // Get the local port after sending
+        let local_port = udp_socket.local_addr()?.port();
+
         // Store the socket and probe info
         self.active_probes
             .lock()
             .expect("mutex poisoned")
-            .insert(probe_info.sequence, (udp_socket, probe_info));
+            .insert(probe_info.sequence, (udp_socket, probe_info.clone()));
+
+        // Also store by source port for fallback matching
+        self.port_to_probe
+            .lock()
+            .expect("mutex poisoned")
+            .insert(local_port, probe_info);
 
         Ok(())
     }
@@ -524,14 +598,15 @@ impl ProbeSocket for UdpWithIcmpSocket {
         if let Some(ref icmp_socket) = self.icmp_socket {
             let mut recv_buf = [MaybeUninit::uninit(); 1500];
             let deadline = Instant::now() + timeout;
-
             loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
                 if remaining.is_zero() {
                     return Ok(None);
                 }
 
-                icmp_socket.set_read_timeout(Some(remaining.min(Duration::from_millis(100))))?;
+                icmp_socket.set_read_timeout(Some(
+                    remaining.min(crate::config::timing::socket_read_timeout()),
+                ))?;
 
                 match icmp_socket.recv_from(&mut recv_buf) {
                     Ok((size, socket_addr)) => {
@@ -570,6 +645,11 @@ impl ProbeSocket for UdpWithIcmpSocket {
     fn destination_reached(&self) -> bool {
         *self.destination_reached.lock().expect("mutex poisoned")
     }
+
+    fn set_timing_config(&mut self, _config: &crate::TimingConfig) -> Result<()> {
+        // No-op since we use global config now
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -583,7 +663,7 @@ mod tests {
         let socket1 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
         let socket2 = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
 
-        let udp_socket1 = UdpWithIcmpSocket::new(socket1, None, 53).unwrap();
+        let udp_socket1 = UdpWithIcmpSocket::new_with_config(socket1, None, 53, None).unwrap();
         let udp_socket2 = UdpWithIcmpSocket::new(socket2, None, 443).unwrap();
 
         assert_eq!(udp_socket1.get_dest_port(), 53);

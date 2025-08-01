@@ -5,6 +5,47 @@ use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::time::Duration;
 
+/// Internal timing configuration for traceroute engine
+///
+/// These are internal delays used for various operations. Most users should not need
+/// to modify these values. The defaults have been chosen for optimal performance
+/// while maintaining reliability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimingConfig {
+    /// Receiver thread polling interval (default: 100ms)
+    /// How often the receiver thread checks for incoming packets
+    pub receiver_poll_interval: Duration,
+
+    /// Main wait loop polling interval (default: 10ms)
+    /// How often we check if all probes have completed
+    pub main_loop_poll_interval: Duration,
+
+    /// Enrichment completion wait time (default: 100ms)
+    /// How long to wait for ASN/rDNS lookups to complete after all probes finish
+    pub enrichment_wait_time: Duration,
+
+    /// Socket read timeout (default: 100ms)
+    /// Maximum time to wait for a single socket read operation
+    pub socket_read_timeout: Duration,
+
+    /// UDP socket retry delay (default: 10ms)
+    /// Delay between retries when UDP socket operations fail
+    pub udp_retry_delay: Duration,
+}
+
+impl Default for TimingConfig {
+    fn default() -> Self {
+        use crate::config::timing::*;
+        Self {
+            receiver_poll_interval: Duration::from_millis(DEFAULT_RECEIVER_POLL_INTERVAL_MS),
+            main_loop_poll_interval: Duration::from_millis(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS),
+            enrichment_wait_time: Duration::from_millis(DEFAULT_ENRICHMENT_WAIT_TIME_MS),
+            socket_read_timeout: Duration::from_millis(DEFAULT_SOCKET_READ_TIMEOUT_MS),
+            udp_retry_delay: Duration::from_millis(DEFAULT_UDP_RETRY_DELAY_MS),
+        }
+    }
+}
+
 /// Configuration for a traceroute operation
 ///
 /// This struct contains all the parameters needed to control a traceroute operation.
@@ -51,13 +92,16 @@ pub struct TracerouteConfig {
     pub enable_asn_lookup: bool,
     /// Enable reverse DNS lookups (default: true)
     pub enable_rdns: bool,
-    /// Enable verbose output
-    pub verbose: bool,
+    /// Verbose level (0=normal, 1=verbose, 2=very verbose)
+    pub verbose: u8,
     /// Public IP address (if known) to avoid repeated detection
     ///
     /// When running multiple traceroutes, you can provide the public IP
     /// to avoid repeated detection calls, improving performance.
     pub public_ip: Option<IpAddr>,
+    /// Internal timing configuration
+    /// Most users should not need to modify these values
+    pub timing: TimingConfig,
 }
 
 impl Default for TracerouteConfig {
@@ -68,7 +112,7 @@ impl Default for TracerouteConfig {
             start_ttl: 1,
             max_hops: 30,
             probe_timeout: Duration::from_millis(1000),
-            send_interval: Duration::from_millis(5),
+            send_interval: Duration::from_millis(0),
             overall_timeout: Duration::from_millis(3000),
             queries_per_hop: 1,
             protocol: None,
@@ -76,8 +120,9 @@ impl Default for TracerouteConfig {
             port: 443,
             enable_asn_lookup: true,
             enable_rdns: true,
-            verbose: false,
+            verbose: 0,
             public_ip: None,
+            timing: TimingConfig::default(),
         }
     }
 }
@@ -288,10 +333,12 @@ impl TracerouteConfigBuilder {
         self
     }
 
-    /// Enable or disable verbose output
+    /// Set verbose level
     ///
-    /// When enabled, provides detailed socket and probe information. Default is false.
-    pub fn verbose(mut self, verbose: bool) -> Self {
+    /// 0 = normal output (default)
+    /// 1 = verbose output (socket and probe information)
+    /// 2 = very verbose (timing traces)
+    pub fn verbose(mut self, verbose: u8) -> Self {
         self.config.verbose = verbose;
         self
     }
@@ -302,6 +349,15 @@ impl TracerouteConfigBuilder {
     /// multiple traceroutes to improve performance.
     pub fn public_ip(mut self, ip: IpAddr) -> Self {
         self.config.public_ip = Some(ip);
+        self
+    }
+
+    /// Set custom timing configuration
+    ///
+    /// Advanced: Configure internal timing parameters. Most users should not need
+    /// to modify these values.
+    pub fn timing(mut self, timing: TimingConfig) -> Self {
+        self.config.timing = timing;
         self
     }
 

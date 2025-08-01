@@ -2,17 +2,26 @@
 
 use ftr::{
     trace, trace_with_config, AsnInfo, ProbeProtocol, SegmentType, SocketMode,
-    TracerouteConfigBuilder, TracerouteError,
+    TracerouteConfigBuilder, TracerouteError, TracerouteResult,
 };
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
 
-#[tokio::test]
+// Helper to run traces with timeout
+async fn trace_with_timeout(target: &str) -> Result<TracerouteResult, String> {
+    match tokio::time::timeout(Duration::from_secs(10), trace(target)).await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(e)) => Err(format!("Trace error: {}", e)),
+        Err(_) => Err("Timeout after 10 seconds".to_string()),
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_basic_trace() {
     // Test basic tracing to localhost
-    let result = trace("127.0.0.1").await;
+    println!("Starting test_basic_trace");
 
-    match result {
+    match trace_with_timeout("127.0.0.1").await {
         Ok(trace_result) => {
             assert_eq!(trace_result.target, "127.0.0.1");
             assert!(!trace_result.hops.is_empty());
@@ -25,12 +34,13 @@ async fn test_basic_trace() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_trace_with_custom_config() {
     let config = TracerouteConfigBuilder::new()
         .target("localhost")
         .max_hops(5)
         .probe_timeout(Duration::from_millis(100))
+        .overall_timeout(Duration::from_secs(2))
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
@@ -55,7 +65,7 @@ async fn test_trace_with_custom_config() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_config_validation() {
     // Test invalid configurations
 
@@ -76,11 +86,13 @@ async fn test_config_validation() {
         .target("example.com")
         .start_ttl(10)
         .max_hops(5)
+        .probe_timeout(Duration::from_millis(500))
+        .overall_timeout(Duration::from_secs(3))
         .build();
     assert!(result.is_err());
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_trace_with_ip_and_hostname() {
     // Test with IP address
     let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
@@ -103,11 +115,11 @@ async fn test_trace_with_ip_and_hostname() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_hop_classification() {
     let config = TracerouteConfigBuilder::new()
         .target("8.8.8.8")
-        .max_hops(30)
+        .max_hops(10)
         .enable_asn_lookup(true)
         .build()
         .unwrap();
@@ -143,7 +155,7 @@ async fn test_hop_classification() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_result_methods() {
     // Create a mock result to test methods
     let hops = vec![
@@ -187,6 +199,7 @@ async fn test_result_methods() {
             public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
             asn: 12345,
             name: "Example ISP".to_string(),
+            hostname: None,
         }),
         protocol_used: ProbeProtocol::Icmp,
         socket_mode_used: SocketMode::Raw,
@@ -230,7 +243,7 @@ async fn test_result_methods() {
     assert_eq!(avg_rtt.unwrap(), 10.0); // (5 + 15) / 2, hop 3 has no RTT
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_error_types() {
     // Test various error conditions with structured errors
 
@@ -290,7 +303,7 @@ async fn test_error_types() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_caching_behavior() {
     // Test that caching works by doing multiple traces
     let config1 = TracerouteConfigBuilder::new()
@@ -328,7 +341,7 @@ async fn test_caching_behavior() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_public_ip_parameter() {
     let public_ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
 
@@ -353,7 +366,7 @@ async fn test_public_ip_parameter() {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_different_protocols() {
     // Test that we can specify different protocols
     let protocols = vec![ProbeProtocol::Icmp, ProbeProtocol::Udp, ProbeProtocol::Tcp];

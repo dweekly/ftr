@@ -73,6 +73,24 @@ cargo build --release
 # The binary will be at target/release/ftr.exe
 ```
 
+#### Windows-Specific Notes
+
+**Timeout Recommendations:**
+- For best reliability with enrichment enabled (default), use probe timeouts ≥ 100ms
+- Short timeouts (< 100ms) may cause unreliable results when DNS/ASN lookups are active
+- To use shorter timeouts reliably, disable enrichment: `ftr --no-enrich --no-rdns target`
+
+**Example:**
+```bash
+# Reliable with enrichment
+ftr --probe-timeout-ms 100 google.com
+
+# For shorter timeouts, disable enrichment
+ftr --probe-timeout-ms 30 --no-enrich --no-rdns google.com
+```
+
+For technical details about Windows async implementation, see [docs/WINDOWS_ASYNC_FINDINGS.md](docs/WINDOWS_ASYNC_FINDINGS.md).
+
 ### macOS
 
 #### Using Homebrew
