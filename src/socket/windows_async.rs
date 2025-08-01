@@ -381,6 +381,7 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     #[test]
     #[cfg(target_os = "windows")]

@@ -28,6 +28,10 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
+    - uses: Swatinem/rust-cache@v2
+      with:
+        # Share cache between different jobs but keep OS-specific
+        shared-key: "ci-${{ matrix.os }}"
     - name: Build
       run: cargo build --verbose
     - name: Run tests
@@ -49,6 +53,9 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - name: Check formatting
       run: cargo fmt -- --check
 
@@ -60,6 +67,9 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - name: Run clippy
       run: cargo clippy -- -D warnings
 
@@ -69,6 +79,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-tarpaulin
@@ -99,6 +112,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-machete
@@ -111,6 +127,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - uses: taiki-e/install-action@v2
       with:
         tool: cargo-outdated
@@ -123,6 +142,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - name: Check documentation
       run: cargo doc --no-deps --all-features
       env:
@@ -136,6 +158,9 @@ jobs:
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: 1.82.0
+    - uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: "ci-ubuntu-latest"
     - name: Check MSRV
       run: cargo check --all-features
 
