@@ -424,9 +424,8 @@ pub fn create_probe_socket_with_config(
                             {
                                 // Windows uses async ICMP implementation
                                 use crate::socket::windows_async::WindowsAsyncIcmpSocket;
-                                let socket = WindowsAsyncIcmpSocket::new_with_config(
-                                    _timing_config,
-                                )?;
+                                let socket =
+                                    WindowsAsyncIcmpSocket::new_with_config(_timing_config)?;
                                 if verbose > 0 {
                                     eprintln!("Using Windows ICMP API (async) mode for traceroute");
                                 }
