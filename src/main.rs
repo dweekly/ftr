@@ -230,22 +230,28 @@ async fn async_main(_process_start: Instant) -> Result<()> {
 
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
     #[cfg(feature = "async")]
-    if !args.no_enrich || !args.no_rdns {
+    {
         let target_ip_clone = target_ip;
+        let no_enrich = args.no_enrich;
+        let no_rdns = args.no_rdns;
         tokio::spawn(async move {
-            // Pre-warm DNS reverse lookup
-            use hickory_resolver::name_server::TokioConnectionProvider;
-            use hickory_resolver::{config::ResolverConfig, TokioResolver};
-            let resolver = TokioResolver::builder_with_config(
-                ResolverConfig::cloudflare(),
-                TokioConnectionProvider::default(),
-            )
-            .build();
-            let _ = resolver.reverse_lookup(target_ip_clone).await;
+            // Pre-warm DNS reverse lookup only if rDNS is enabled
+            if !no_rdns {
+                use hickory_resolver::name_server::TokioConnectionProvider;
+                use hickory_resolver::{config::ResolverConfig, TokioResolver};
+                let resolver = TokioResolver::builder_with_config(
+                    ResolverConfig::cloudflare(),
+                    TokioConnectionProvider::default(),
+                )
+                .build();
+                let _ = resolver.reverse_lookup(target_ip_clone).await;
+            }
 
-            // Pre-warm ASN lookup
-            if let IpAddr::V4(ipv4) = target_ip_clone {
-                let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
+            // Pre-warm ASN lookup only if enrichment is enabled
+            if !no_enrich {
+                if let IpAddr::V4(ipv4) = target_ip_clone {
+                    let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
+                }
             }
         });
     }
@@ -484,7 +490,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     if args.json {
         display_json_results(result)?;
     } else {
-        display_text_results(result, args.no_enrich);
+        display_text_results(result, args.no_enrich, args.no_rdns);
     }
 
     // Quick exit to avoid cleanup overhead on Windows
@@ -560,7 +566,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
 }
 
 /// Display results in text format
-fn display_text_results(result: TracerouteResult, no_enrich: bool) {
+fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool) {
     // Use the explicit no_enrich flag passed from command line args
     let enrichment_disabled = no_enrich;
 
@@ -576,7 +582,8 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool) {
                 .map_or("*".to_string(), |r| format!("{:.3} ms", r));
 
             // Format hostname and address
-            let host_display = if let Some(hostname) = &hop.hostname {
+            let host_display = if !no_rdns && hop.hostname.is_some() {
+                let hostname = hop.hostname.as_ref().expect("hostname checked above");
                 if hop.addr.is_some() {
                     format!("{} ({})", hostname, addr_str)
                 } else {
@@ -616,10 +623,11 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool) {
 
     // Display ISP info if available
     if let Some(isp_info) = &result.isp_info {
-        if let Some(hostname) = &isp_info.hostname {
+        if !no_rdns && isp_info.hostname.is_some() {
             println!(
                 "\nDetected public IP: {} ({})",
-                isp_info.public_ip, hostname
+                isp_info.public_ip,
+                isp_info.hostname.as_ref().expect("hostname checked above")
             );
         } else {
             println!("\nDetected public IP: {}", isp_info.public_ip);

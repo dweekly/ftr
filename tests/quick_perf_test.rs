@@ -1,3 +1,5 @@
+//! Quick performance and timing configuration tests
+
 #[test]
 fn test_timing_config_values() {
     use ftr::config::timing::*;

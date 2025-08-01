@@ -1,3 +1,5 @@
+//! Tests for event overhead and performance characteristics
+
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
 
