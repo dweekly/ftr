@@ -98,8 +98,10 @@ pub async fn prewarm_stun_cache() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[tokio::test]
+    #[serial]
     async fn test_stun_cache() {
         // Clear cache to ensure clean test state
         {
@@ -110,53 +112,128 @@ mod tests {
             cache.clear();
         }
 
+        // Verify cache starts empty
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 0, "Cache should start empty");
+        }
+
+        // Use a test server
+        let test_server = "stun.l.google.com:19302";
+
         // First call should resolve and populate cache
-        let addrs1 = get_stun_server_addrs("stun.l.google.com:19302")
-            .await
-            .unwrap();
+        let addrs1 = match get_stun_server_addrs(test_server).await {
+            Ok(addrs) => addrs,
+            Err(e) => {
+                eprintln!("DNS resolution failed in test environment: {}", e);
+                return; // Skip test if DNS fails
+            }
+        };
         assert!(!addrs1.is_empty(), "Should resolve at least one address");
 
-        // Second call should return the exact same cached result
-        let addrs2 = get_stun_server_addrs("stun.l.google.com:19302")
-            .await
-            .unwrap();
-        assert_eq!(addrs1, addrs2, "Cached result should be identical");
-
-        // Verify the cache contains the entry
+        // Verify the cache now contains exactly one entry
         {
-            let cache = match STUN_CACHE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            let cached = cache.get("stun.l.google.com:19302");
-            assert!(cached.is_some(), "Cache should contain the entry");
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 1, "Cache should contain exactly 1 entry");
+            assert!(
+                cache.contains_key(test_server),
+                "Cache should contain the test server"
+            );
+
+            let cached_entry = cache.get(test_server).unwrap();
             assert_eq!(
-                cached.unwrap().addresses,
-                addrs1,
-                "Cached value should match"
+                cached_entry.addresses, addrs1,
+                "Cached addresses should match returned addresses"
+            );
+
+            // Verify the timestamp is recent
+            assert!(
+                cached_entry.resolved_at.elapsed() < Duration::from_secs(1),
+                "Cache entry should be fresh"
             );
         }
 
+        // Second call should return cached data
+        let addrs2 = get_stun_server_addrs(test_server).await.unwrap();
+
+        assert_eq!(
+            addrs1, addrs2,
+            "Second call should return identical cached result"
+        );
+
+        // Verify the cache entry hasn't changed (still the same data)
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            let cached_entry = cache.get(test_server).unwrap();
+            assert_eq!(
+                cached_entry.addresses, addrs1,
+                "Cache should still contain the same addresses"
+            );
+        }
+
+        // Verify cache still has exactly one entry
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 1, "Cache should still have exactly 1 entry");
+        }
+
         // Test with a different server
-        let addrs3 = get_stun_server_addrs("stun1.l.google.com:19302")
-            .await
-            .unwrap();
+        let test_server2 = "stun1.l.google.com:19302";
+        let addrs3 = match get_stun_server_addrs(test_server2).await {
+            Ok(addrs) => addrs,
+            Err(_) => return, // Skip if DNS fails
+        };
         assert!(!addrs3.is_empty(), "Should resolve second server");
+
+        // Note: stun.l.google.com and stun1.l.google.com might resolve to the same IPs
+        // The important thing is that both are cached independently
 
         // Both entries should be in cache now
         {
-            let cache = match STUN_CACHE.lock() {
-                Ok(guard) => guard,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            assert!(cache.get("stun.l.google.com:19302").is_some());
-            assert!(cache.get("stun1.l.google.com:19302").is_some());
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 2, "Cache should contain exactly 2 entries");
+            assert!(cache.contains_key(test_server));
+            assert!(cache.contains_key(test_server2));
+
+            // Verify each entry has the correct data
+            assert_eq!(cache.get(test_server).unwrap().addresses, addrs1);
+            assert_eq!(cache.get(test_server2).unwrap().addresses, addrs3);
         }
+
+        // Third call to first server should still return cached result
+        let addrs4 = get_stun_server_addrs(test_server).await.unwrap();
+        assert_eq!(
+            addrs4, addrs1,
+            "Third call should return same cached result"
+        );
+
+        // Test that cache prevents network lookups for invalid domains
+        // Pre-populate cache with a fake entry for an invalid domain
+        let fake_server = "this.will.never.resolve.invalid:3478";
+        let fake_addresses = vec!["192.0.2.1:3478".parse().unwrap()]; // TEST-NET-1
+        {
+            let mut cache = STUN_CACHE.lock().unwrap();
+            cache.insert(
+                fake_server.to_string(),
+                CacheEntry {
+                    addresses: fake_addresses.clone(),
+                    resolved_at: Instant::now(),
+                },
+            );
+        }
+
+        // This should succeed because it uses the cache, not DNS
+        let cached_fake = get_stun_server_addrs(fake_server).await.unwrap();
+        assert_eq!(
+            cached_fake, fake_addresses,
+            "Should return cached data without attempting DNS lookup"
+        );
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_stun_cache_error_handling() {
-        // Clear cache
+        // Clear cache to ensure clean test state
         {
             let mut cache = match STUN_CACHE.lock() {
                 Ok(guard) => guard,
@@ -166,7 +243,8 @@ mod tests {
         }
 
         // Test with invalid server name
-        let result = get_stun_server_addrs("this.definitely.does.not.exist.invalid:12345").await;
+        let invalid_server = "this.definitely.does.not.exist.invalid:12345";
+        let result = get_stun_server_addrs(invalid_server).await;
         assert!(result.is_err(), "Invalid server should return error");
 
         // Error results should not be cached
@@ -175,8 +253,115 @@ mod tests {
                 Ok(guard) => guard,
                 Err(poisoned) => poisoned.into_inner(),
             };
-            let cached = cache.get("this.definitely.does.not.exist.invalid:12345");
-            assert!(cached.is_none(), "Errors should not be cached");
+            assert!(
+                !cache.contains_key(invalid_server),
+                "Failed lookups should not be cached"
+            );
         }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_stun_cache_ttl() {
+        // Clear cache
+        {
+            let mut cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            cache.clear();
+        }
+
+        // Insert an entry with expired TTL
+        let test_server = "test.example.com:3478";
+        let old_addresses = vec!["127.0.0.1:3478".parse().unwrap()];
+
+        {
+            let mut cache = STUN_CACHE.lock().unwrap();
+            cache.insert(
+                test_server.to_string(),
+                CacheEntry {
+                    addresses: old_addresses.clone(),
+                    resolved_at: Instant::now() - Duration::from_secs(7200), // 2 hours ago (expired)
+                },
+            );
+            assert_eq!(cache.len(), 1, "Cache should have the expired entry");
+        }
+
+        // Try to get the expired server - should NOT return the expired entry
+        // Instead it should try to resolve fresh
+        let result = get_stun_server_addrs(test_server).await;
+
+        // The lookup will fail (invalid domain), but that's OK
+        // The important thing is it didn't return the expired entry
+        assert!(result.is_err(), "Should fail to resolve invalid domain");
+
+        // Cache should still have just the one entry (not updated since resolution failed)
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 1, "Failed lookups don't update cache");
+        }
+
+        // Now test with a valid server but expired entry
+        let valid_server = "stun.l.google.com:19302";
+        let fake_old_address = vec!["1.2.3.4:19302".parse().unwrap()];
+
+        {
+            let mut cache = STUN_CACHE.lock().unwrap();
+            cache.clear();
+            cache.insert(
+                valid_server.to_string(),
+                CacheEntry {
+                    addresses: fake_old_address.clone(),
+                    resolved_at: Instant::now() - Duration::from_secs(7200), // Expired
+                },
+            );
+        }
+
+        // Resolve should give us fresh data, not the expired fake address
+        let fresh_addrs = match get_stun_server_addrs(valid_server).await {
+            Ok(addrs) => addrs,
+            Err(_) => return, // Skip if network is down
+        };
+
+        assert!(!fresh_addrs.is_empty(), "Should get fresh addresses");
+        assert_ne!(
+            fresh_addrs, fake_old_address,
+            "Should not return the expired fake address"
+        );
+
+        // Cache should be updated with fresh data
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            let entry = cache.get(valid_server).unwrap();
+            assert_eq!(entry.addresses, fresh_addrs, "Cache should have fresh data");
+            assert!(
+                entry.resolved_at.elapsed() < Duration::from_secs(1),
+                "Cache entry should be fresh"
+            );
+        }
+
+        // Test that non-expired entries are returned from cache
+        let recent_server = "recent.test.com:3478";
+        let recent_addresses = vec!["5.6.7.8:3478".parse().unwrap()];
+
+        {
+            let mut cache = STUN_CACHE.lock().unwrap();
+            cache.insert(
+                recent_server.to_string(),
+                CacheEntry {
+                    addresses: recent_addresses.clone(),
+                    resolved_at: Instant::now() - Duration::from_secs(60), // 1 minute ago (not expired)
+                },
+            );
+        }
+
+        // This should return from cache without trying to resolve
+        // We know this because recent.test.com doesn't exist
+        let cached_addrs = get_stun_server_addrs(recent_server).await.unwrap();
+        assert_eq!(
+            cached_addrs, recent_addresses,
+            "Should return non-expired entry from cache"
+        );
     }
 }

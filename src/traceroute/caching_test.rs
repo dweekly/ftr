@@ -5,10 +5,12 @@ mod tests {
     use crate::asn::{lookup_asn, ASN_CACHE};
     use crate::dns::RDNS_CACHE;
     use crate::{trace_with_config, TracerouteConfigBuilder};
+    use serial_test::serial;
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
     #[tokio::test]
+    #[serial]
     async fn test_rdns_caching() {
         // Clear cache
         RDNS_CACHE.clear();
@@ -32,6 +34,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_asn_caching() {
         // Clear cache
         ASN_CACHE.clear();
@@ -139,6 +142,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_cache_thread_safety() {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;

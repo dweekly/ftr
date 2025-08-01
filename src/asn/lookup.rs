@@ -174,6 +174,8 @@ pub fn create_default_resolver() -> Arc<TokioResolver> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dns::create_default_resolver;
+    use serial_test::serial;
 
     #[tokio::test]
     async fn test_lookup_private_ip() {
@@ -209,6 +211,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_cache_usage() {
         // Clear cache
         ASN_CACHE.clear();
@@ -304,13 +307,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_resolver() {
-        let resolver = create_default_resolver();
+        let resolver = Arc::new(create_default_resolver());
         let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
         let result = lookup_asn(ip, Some(resolver)).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_cache_multiple_ips_same_prefix() {
         // Clear cache
         ASN_CACHE.clear();
