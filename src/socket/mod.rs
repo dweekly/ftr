@@ -17,6 +17,16 @@ pub mod windows_async;
 pub mod async_factory;
 #[cfg(feature = "async")]
 pub mod async_trait;
+#[cfg(all(
+    feature = "async",
+    any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )
+))]
+pub mod bsd_async;
 #[cfg(all(feature = "async", target_os = "linux"))]
 pub mod linux_async;
 #[cfg(all(feature = "async", target_os = "macos"))]

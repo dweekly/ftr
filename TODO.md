@@ -25,6 +25,10 @@ This file tracks planned work for the ftr project.
 
 ## Medium Priority
 
+- [ ] Add platform and timestamp to JSON output
+  - Add `platform` field (e.g., "freebsd", "openbsd", "macos", "linux", "windows")
+  - Add `timestamp` field with ISO 8601 format of when traceroute started
+  - Consider adding `platform_version` for OS version information
 - [ ] Add optional disk cache for DNS/ASN lookups
   - Cache DNS reverse lookups and ASN information to disk
   - Use a simple SQLite database or JSON file

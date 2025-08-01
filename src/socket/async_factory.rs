@@ -114,7 +114,38 @@ pub async fn create_async_probe_socket_with_options(
                 }
             }
 
-            #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            {
+                let _ = protocol; // Unused on BSDs
+                use super::bsd_async::BsdAsyncIcmpSocket;
+                let socket = BsdAsyncIcmpSocket::new_with_config(timing_config)?;
+
+                // Print verbose mode info if requested
+                let verbose = std::env::var("FTR_VERBOSE")
+                    .ok()
+                    .and_then(|v| v.parse::<u8>().ok())
+                    .unwrap_or(0);
+                if verbose > 0 {
+                    eprintln!("Using Raw ICMP mode for traceroute");
+                }
+
+                Ok(Box::new(socket))
+            }
+
+            #[cfg(not(any(
+                target_os = "windows",
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            )))]
             {
                 let _ = protocol; // Unused on other platforms
                                   // Placeholder for other platforms
@@ -162,6 +193,22 @@ pub async fn create_async_probe_socket_with_mode(
             if mode != ProbeMode::UdpWithRecverr {
                 return Err(anyhow!(
                     "Only UDP with IP_RECVERR mode is currently supported for async on Linux"
+                ));
+            }
+        }
+    }
+
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    {
+        if let Some(mode) = preferred_mode {
+            if mode != ProbeMode::RawIcmp {
+                return Err(anyhow!(
+                    "Only Raw ICMP mode is currently supported for async on BSD systems"
                 ));
             }
         }
