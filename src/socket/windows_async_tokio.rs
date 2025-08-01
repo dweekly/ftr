@@ -59,6 +59,7 @@ use windows_sys::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
 ///   the data payload, so we can't validate sequence numbers for those
 /// - We include process ID and sequence number in echo requests to match
 ///   responses from the destination
+/// 
 pub struct WindowsAsyncIcmpSocket {
     icmp_handle: HANDLE,
     destination_reached: Arc<Mutex<bool>>,

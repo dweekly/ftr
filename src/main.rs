@@ -290,6 +290,16 @@ async fn async_main(_process_start: Instant) -> Result<()> {
             // Add protocol and mode if specified
             cfg.protocol = preferred_protocol;
             cfg.socket_mode = preferred_mode;
+            
+            // Warn Windows users about potential issues with short timeouts + enrichment
+            #[cfg(target_os = "windows")]
+            if args.probe_timeout_ms < 100 && (!args.no_enrich || !args.no_rdns) {
+                eprintln!("Warning: On Windows, probe timeouts < 100ms with enrichment enabled may cause");
+                eprintln!("         unreliable results. Consider using --probe-timeout-ms 100 or higher,");
+                eprintln!("         or disable enrichment with --no-enrich --no-rdns");
+                eprintln!();
+            }
+            
             cfg
         }
         Err(e) => {
