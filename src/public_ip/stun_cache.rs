@@ -263,13 +263,19 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_stun_cache_ttl() {
-        // Clear cache
+        // Clear cache and start fresh
         {
             let mut cache = match STUN_CACHE.lock() {
                 Ok(guard) => guard,
                 Err(poisoned) => poisoned.into_inner(),
             };
             cache.clear();
+        }
+
+        // Verify cache is empty
+        {
+            let cache = STUN_CACHE.lock().unwrap();
+            assert_eq!(cache.len(), 0, "Cache should be empty after clear");
         }
 
         // Insert an entry with expired TTL
@@ -285,7 +291,7 @@ mod tests {
                     resolved_at: Instant::now() - Duration::from_secs(7200), // 2 hours ago (expired)
                 },
             );
-            assert_eq!(cache.len(), 1, "Cache should have the expired entry");
+            assert_eq!(cache.len(), 1, "Cache should have exactly 1 entry");
         }
 
         // Try to get the expired server - should NOT return the expired entry
@@ -296,10 +302,17 @@ mod tests {
         // The important thing is it didn't return the expired entry
         assert!(result.is_err(), "Should fail to resolve invalid domain");
 
-        // Cache should still have just the one entry (not updated since resolution failed)
+        // Cache should still have the same entry (failed lookups don't remove expired entries)
         {
             let cache = STUN_CACHE.lock().unwrap();
-            assert_eq!(cache.len(), 1, "Failed lookups don't update cache");
+            // Note: The cache might have other entries from prewarm_stun_cache if it ran
+            // So we just check that our entry is still there
+            assert!(
+                cache.contains_key(test_server),
+                "Original entry should still be in cache"
+            );
+            let entry = cache.get(test_server).unwrap();
+            assert_eq!(entry.addresses, old_addresses, "Entry should be unchanged");
         }
 
         // Now test with a valid server but expired entry
