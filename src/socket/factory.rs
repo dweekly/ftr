@@ -422,12 +422,15 @@ pub fn create_probe_socket_with_config(
                         (IpVersion::V4, ProbeProtocol::Icmp, SocketMode::Raw) => {
                             #[cfg(target_os = "windows")]
                             {
-                                // Windows doesn't support synchronous raw ICMP sockets through the traditional API
-                                // Users should use the async implementation instead
-                                return Err(anyhow!(
-                                    "Synchronous raw ICMP sockets are not supported on Windows. \
-                                    Please use the async implementation (default) which uses IcmpSendEcho2."
-                                ));
+                                // Windows uses async ICMP implementation
+                                use crate::socket::windows_async::WindowsAsyncIcmpSocket;
+                                let socket = WindowsAsyncIcmpSocket::new_with_config(
+                                    _timing_config.cloned().unwrap_or_default(),
+                                )?;
+                                if verbose > 0 {
+                                    eprintln!("Using Windows ICMP API (async) mode for traceroute");
+                                }
+                                return Ok(Box::new(socket));
                             }
                             #[cfg(target_os = "macos")]
                             {
