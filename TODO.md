@@ -17,6 +17,10 @@ This file tracks planned work for the ftr project.
   - Add integration tests for library API
   - Add property-based tests for parsers
   - Test concurrent operations and edge cases
+- [ ] Investigate test isolation for cache state
+  - Each test should have its own cache state to avoid tests stepping on each other
+  - Consider using thread-local caches or test-specific cache instances
+  - This would eliminate flaky test failures due to concurrent cache access
 - [ ] Enhanced path segment labeling
   - Add "TARGET" segment for hops in the same ASN as the destination
   - Consider renaming "BEYOND" to something more descriptive (e.g., "TRANSIT", "INTERNET", "BACKBONE")
