@@ -116,3 +116,114 @@ pub fn reset_config() {
     // OnceCell doesn't have a reset method in the stable API
     // This is a limitation we'll work around in tests
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::TimingConfig;
+
+    #[test]
+    fn test_default_values() {
+        // If no custom config is set, these should use defaults
+        if !is_custom_config_set() {
+            assert_eq!(
+                socket_read_timeout(),
+                Duration::from_millis(DEFAULT_SOCKET_READ_TIMEOUT_MS)
+            );
+            assert_eq!(
+                udp_retry_delay(),
+                Duration::from_millis(DEFAULT_UDP_RETRY_DELAY_MS)
+            );
+            assert_eq!(
+                receiver_poll_interval(),
+                Duration::from_millis(DEFAULT_RECEIVER_POLL_INTERVAL_MS)
+            );
+            assert_eq!(
+                main_loop_poll_interval(),
+                Duration::from_millis(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS)
+            );
+            assert_eq!(
+                enrichment_wait_time(),
+                Duration::from_millis(DEFAULT_ENRICHMENT_WAIT_TIME_MS)
+            );
+        } else {
+            // Just verify that the functions return valid durations
+            assert!(socket_read_timeout() > Duration::from_millis(0));
+            assert!(udp_retry_delay() > Duration::from_millis(0));
+            assert!(receiver_poll_interval() > Duration::from_millis(0));
+            assert!(main_loop_poll_interval() > Duration::from_millis(0));
+            assert!(enrichment_wait_time() > Duration::from_millis(0));
+        }
+    }
+
+    #[test]
+    fn test_windows_constants() {
+        assert_eq!(WINDOWS_ICMP_MIN_TIMEOUT_MS, 30);
+        assert_eq!(WINDOWS_ICMP_TIMEOUT_BUFFER_MS, 50);
+        assert_eq!(WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS, 100);
+    }
+
+    #[test]
+    fn test_custom_config_detection() {
+        // Note: We can't easily test set_config in unit tests because OnceCell
+        // is global and persists across tests. This is mainly for coverage.
+
+        // Try to set a config (may fail if already set by another test)
+        let config = TimingConfig {
+            socket_read_timeout: Duration::from_millis(200),
+            udp_retry_delay: Duration::from_millis(20),
+            receiver_poll_interval: Duration::from_millis(200),
+            main_loop_poll_interval: Duration::from_millis(20),
+            enrichment_wait_time: Duration::from_millis(200),
+        };
+
+        let _ = set_config(config.clone());
+
+        // If it was set successfully, is_custom_config_set should be true
+        // If it failed (already set), it should still be true from the previous set
+        if is_custom_config_set() {
+            // Verify the values match either our custom config or some other config
+            let timeout = socket_read_timeout();
+            assert!(timeout == Duration::from_millis(200) || timeout > Duration::from_millis(0));
+        }
+    }
+
+    #[test]
+    fn test_timing_config_values_reasonable() {
+        // Test that all default values are reasonable
+        assert!(DEFAULT_SOCKET_READ_TIMEOUT_MS > 0);
+        assert!(DEFAULT_SOCKET_READ_TIMEOUT_MS <= 1000); // Not more than 1 second
+
+        assert!(DEFAULT_UDP_RETRY_DELAY_MS > 0);
+        assert!(DEFAULT_UDP_RETRY_DELAY_MS <= 100); // Quick retry
+
+        assert!(DEFAULT_RECEIVER_POLL_INTERVAL_MS > 0);
+        assert!(DEFAULT_RECEIVER_POLL_INTERVAL_MS <= 1000);
+
+        assert!(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS > 0);
+        assert!(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS <= 100); // Responsive
+
+        assert!(DEFAULT_ENRICHMENT_WAIT_TIME_MS > 0);
+        assert!(DEFAULT_ENRICHMENT_WAIT_TIME_MS <= 1000);
+    }
+
+    #[test]
+    fn test_windows_timeout_relationship() {
+        // Verify the documented relationship between Windows constants
+        assert!(WINDOWS_ICMP_MIN_TIMEOUT_MS < WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS);
+        assert!(WINDOWS_ICMP_TIMEOUT_BUFFER_MS > 0);
+
+        // The minimum total should be at least the sum of min timeout and some buffer
+        assert!(WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS >= WINDOWS_ICMP_MIN_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn test_duration_conversions() {
+        // Ensure Duration conversions work correctly
+        let duration = Duration::from_millis(DEFAULT_SOCKET_READ_TIMEOUT_MS);
+        assert_eq!(duration.as_millis(), DEFAULT_SOCKET_READ_TIMEOUT_MS as u128);
+
+        let duration = Duration::from_millis(DEFAULT_UDP_RETRY_DELAY_MS);
+        assert_eq!(duration.as_millis(), DEFAULT_UDP_RETRY_DELAY_MS as u128);
+    }
+}

@@ -170,8 +170,13 @@ mod tests {
         };
 
         let prefix_broad: Ipv4Net = broader_prefix.parse().unwrap();
+        let size_before = ASN_CACHE.len();
         ASN_CACHE.insert(prefix_broad, broader_info);
-        assert_eq!(ASN_CACHE.len(), 2, "Cache should have 2 entries");
+        assert_eq!(
+            ASN_CACHE.len(),
+            size_before + 1,
+            "Cache should have grown by 1"
+        );
 
         // The more specific prefix should still match
         let result_specific = ASN_CACHE.get(&ip1);
@@ -180,17 +185,28 @@ mod tests {
         // The important thing is we get a result
 
         // Test multiple lookups return consistent data
-        // Note: With overlapping prefixes, we might get either one
-        let first_lookup = ASN_CACHE.get(&ip1).unwrap();
-        let expected_asn = first_lookup.asn;
-        let expected_name = first_lookup.name.clone();
+        // With overlapping prefixes, we might get either one, but it should be consistent
+        let first_lookup = ASN_CACHE.get(&ip1);
+        assert!(first_lookup.is_some(), "Should find a matching entry");
+        let first_result = first_lookup.unwrap();
 
+        // Should be one of our inserted entries
+        assert!(
+            (first_result.asn == 64512 && first_result.name == "TEST-NET-1")
+                || (first_result.asn == 64513 && first_result.name == "TEST-BROADER"),
+            "Should return one of the inserted entries"
+        );
+
+        // Subsequent lookups should return the same result
         for _ in 0..10 {
             let result = ASN_CACHE.get(&ip1);
             assert!(result.is_some(), "Repeated lookups should find the entry");
             let found = result.unwrap();
-            assert_eq!(found.asn, expected_asn, "Should return consistent ASN");
-            assert_eq!(found.name, expected_name, "Should return consistent name");
+            assert_eq!(found.asn, first_result.asn, "Should return consistent ASN");
+            assert_eq!(
+                found.name, first_result.name,
+                "Should return consistent name"
+            );
         }
 
         // Test clear

@@ -8,8 +8,12 @@ Add ftr to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ftr = "0.3"
+ftr = "0.3.1"
 tokio = { version = "1", features = ["full"] }
+
+# Async features are enabled by default in 0.3.1
+# To disable async features:
+# ftr = { version = "0.3.1", default-features = false }
 ```
 
 ## Quick Start
@@ -31,6 +35,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     Ok(())
 }
+```
+
+## Async vs Sync Mode
+
+By default, ftr uses an async implementation for better performance. As of version 0.3.1, the async implementation is available for all supported platforms:
+
+- **Linux**: Async UDP with IP_RECVERR and async raw ICMP
+- **macOS**: Async DGRAM ICMP 
+- **Windows**: Async Windows ICMP API (IcmpSendEcho2)
+- **FreeBSD/OpenBSD**: Async raw ICMP
+
+### Using Async Mode (Default)
+
+```rust
+use ftr::{trace_async, trace_with_config_async};
+
+// Simple async trace
+let result = trace_async("google.com").await?;
+
+// With configuration
+let config = TracerouteConfigBuilder::new()
+    .target("1.1.1.1")
+    .build()?;
+let result = trace_with_config_async(config).await?;
+```
+
+### Using Sync Mode (Legacy)
+
+The synchronous implementation is still available via the CLI with `--sync-mode` flag:
+
+```bash
+ftr --sync-mode google.com
 ```
 
 ## Configuration

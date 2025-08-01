@@ -7,24 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2025-08-01
+
 ### Added
 - **Async Implementation** - New default async/await-based traceroute engine
   - Immediate response processing without polling delays
   - Better performance especially for low-latency responses
-  - Async socket implementations for all platforms (Windows, macOS, Linux)
+  - Async socket implementations for all platforms (Windows, macOS, Linux, FreeBSD, OpenBSD)
   - `--sync-mode` flag to use legacy synchronous implementation
 - **Windows Async Improvements**
   - Comprehensive timeout handling with minimum 100ms for Windows ICMP API reliability
   - Performance optimization: Skip IcmpCloseHandle when pending operations exist (saves 600ms+)
   - Detailed documentation in WINDOWS_ASYNC_FINDINGS.md
   - Rigorous testing example for validating Windows implementation
+- **FreeBSD/BSD Async Support** - New async implementation for BSD systems using raw ICMP sockets
+- **Enhanced Test Coverage** - Added comprehensive tests for previously untested modules
+  - Enrichment service tests for async DNS and ASN lookups
+  - Probe type tests for async traceroute data structures
+  - Timing configuration tests for global timing management
+  - Async API tests for the high-level async traceroute interface
 - **STUN Cache Pre-warming** - Pre-fetch STUN server addresses for faster public IP detection
 - **Background Pre-fetching** - Destination IP's rDNS and ASN lookups start in background during traceroute
+- **Build Caching in CI** - Added Rust caching to GitHub Actions for faster CI builds
 
 ### Changed
 - Async implementation is now the default for all platforms
 - Updated GitHub Actions to use macos-15 (was previously macos-latest)
 - Improved test reliability by making cache tests more resilient to concurrent execution
+- Cache tests now use `serial_test` crate to prevent race conditions
+- Windows sync socket factory now automatically uses async implementation
 
 ### Fixed
 - Test failures on macOS related to async implementation
@@ -32,33 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--no-enrich` flag now properly suppresses segment types and ASN info in output
 - All clippy warnings resolved (redundant closures, unwrap usage, function arguments)
 - Flaky cache-related tests now handle concurrent test execution properly
-
-## [0.3.1] - 2025-07-29
-
-### Performance Improvements
-- **Major performance enhancements** - traceroute now completes in <100ms for most targets
-- Removed hardcoded 10ms inter-query delay that was slowing down execution
-- Added configurable inter-query delay via `-i` parameter (default 0ms)
-- Default send interval changed to 0ms for optimal performance
-- Public IP detection now runs once in parallel with probe sending instead of blocking
-- ASN and rDNS lookups now start immediately as each IP arrives (truly parallel enrichment)
-
-### Added
-- Reverse DNS lookup for public IP in ISP detection
-- Configurable inter-query delay via `-i` parameter for users who need delays
-
-### Changed
-- `-W` parameter now represents wait time after sending last probe, not total execution time
-- Verbose flag now controls debug output during traceroute execution
-
-### Fixed
-- Performance regression where execution took >1s with `-W 100`
-- Race condition causing missing intermediate hop responses
-- Raw ICMP socket issues on macOS (now properly falls back to DGRAM mode)
-- CGNAT addresses now correctly classified as ISP segment, not LAN
-- Redundant public IP detection on every run
-- `--no-enrich` flag not working correctly - ASN lookups were still being performed and displayed
-- `--no-rdns` flag not working correctly - reverse DNS was disabled when any enrichment was disabled
+- STUN cache mutex poisoning errors in CI tests
+- ASN cache test failures due to overlapping CIDR prefixes
+- Windows STUN cache TTL test failures due to Instant overflow
+- Windows performance test failures - sync raw ICMP not supported
+- rDNS lookups were incorrectly performed when `--no-rdns` flag was set
 
 ## [0.3.0] - 2025-07-28
 
@@ -299,7 +288,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dweekly/ftr/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/dweekly/ftr/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/dweekly/ftr/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/dweekly/ftr/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/dweekly/ftr/compare/v0.2.0...v0.2.1
