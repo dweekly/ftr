@@ -32,7 +32,13 @@ static STUN_CACHE: Lazy<Mutex<HashMap<String, CacheEntry>>> =
 pub async fn get_stun_server_addrs(server: &str) -> std::io::Result<Vec<SocketAddr>> {
     // Check cache first
     {
-        let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+        let cache = match STUN_CACHE.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Recover from poisoned mutex by taking the data
+                poisoned.into_inner()
+            }
+        };
         if let Some(entry) = cache.get(server) {
             if entry.resolved_at.elapsed() < CACHE_TTL {
                 return Ok(entry.addresses.clone());
@@ -52,7 +58,13 @@ pub async fn get_stun_server_addrs(server: &str) -> std::io::Result<Vec<SocketAd
 
     // Cache the result
     {
-        let mut cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+        let mut cache = match STUN_CACHE.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                // Recover from poisoned mutex by taking the data
+                poisoned.into_inner()
+            }
+        };
         cache.insert(
             server.to_string(),
             CacheEntry {
@@ -91,7 +103,10 @@ mod tests {
     async fn test_stun_cache() {
         // Clear cache to ensure clean test state
         {
-            let mut cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let mut cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             cache.clear();
         }
 
@@ -109,7 +124,10 @@ mod tests {
 
         // Verify the cache contains the entry
         {
-            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             let cached = cache.get("stun.l.google.com:19302");
             assert!(cached.is_some(), "Cache should contain the entry");
             assert_eq!(
@@ -127,7 +145,10 @@ mod tests {
 
         // Both entries should be in cache now
         {
-            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             assert!(cache.get("stun.l.google.com:19302").is_some());
             assert!(cache.get("stun1.l.google.com:19302").is_some());
         }
@@ -137,7 +158,10 @@ mod tests {
     async fn test_stun_cache_error_handling() {
         // Clear cache
         {
-            let mut cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let mut cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             cache.clear();
         }
 
@@ -147,7 +171,10 @@ mod tests {
 
         // Error results should not be cached
         {
-            let cache = STUN_CACHE.lock().expect("STUN cache lock poisoned");
+            let cache = match STUN_CACHE.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             let cached = cache.get("this.definitely.does.not.exist.invalid:12345");
             assert!(cached.is_none(), "Errors should not be cached");
         }
