@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Async Implementation** - New default async/await-based traceroute engine
+  - Immediate response processing without polling delays
+  - Better performance especially for low-latency responses
+  - Async socket implementations for all platforms (Windows, macOS, Linux)
+  - `--sync-mode` flag to use legacy synchronous implementation
+- **Windows Async Improvements**
+  - Comprehensive timeout handling with minimum 100ms for Windows ICMP API reliability
+  - Performance optimization: Skip IcmpCloseHandle when pending operations exist (saves 600ms+)
+  - Detailed documentation in WINDOWS_ASYNC_FINDINGS.md
+  - Rigorous testing example for validating Windows implementation
+- **STUN Cache Pre-warming** - Pre-fetch STUN server addresses for faster public IP detection
+- **Background Pre-fetching** - Destination IP's rDNS and ASN lookups start in background during traceroute
+
+### Changed
+- Async implementation is now the default for all platforms
+- Updated GitHub Actions to use macos-15 (was previously macos-latest)
+- Improved test reliability by making cache tests more resilient to concurrent execution
+
+### Fixed
+- Test failures on macOS related to async implementation
+- Verbose mode output now works correctly with async sockets
+- `--no-enrich` flag now properly suppresses segment types and ASN info in output
+- All clippy warnings resolved (redundant closures, unwrap usage, function arguments)
+- Flaky cache-related tests now handle concurrent test execution properly
+
 ## [0.3.1] - 2025-07-29
 
 ### Performance Improvements
