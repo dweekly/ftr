@@ -121,8 +121,10 @@ pub fn reset_config() {
 mod tests {
     use super::*;
     use crate::TimingConfig;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_default_values() {
         // If no custom config is set, these should use defaults
         if !is_custom_config_set() {
@@ -164,6 +166,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_custom_config_detection() {
         // Note: We can't easily test set_config in unit tests because OnceCell
         // is global and persists across tests. This is mainly for coverage.

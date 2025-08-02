@@ -9,7 +9,7 @@ use predicates::prelude::*;
 fn test_freebsd_requires_root() {
     // On FreeBSD, non-root execution should fail with clear error
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--max-hops", "1", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
 
@@ -42,7 +42,7 @@ fn test_freebsd_requires_root() {
 fn test_freebsd_no_dgram_icmp() {
     // FreeBSD does not support DGRAM ICMP
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--socket-mode",
         "dgram",
         "--protocol",
@@ -78,7 +78,7 @@ fn test_freebsd_raw_icmp_with_root() {
     }
 
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["-v", "--socket-mode", "raw", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["-v", "--socket-mode", "raw", "--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
         .success()
@@ -93,7 +93,7 @@ fn test_freebsd_localhost_trace_with_root() {
     }
 
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "--no-enrich", "127.0.0.1"]);
+    cmd.args(["--max-hops", "1", "--no-enrich", "127.0.0.1"]);
 
     cmd.assert()
         .success()
@@ -106,7 +106,7 @@ fn test_freebsd_ca_cert_warning() {
     // Test that we get a warning about ca_root_nss if HTTPS fails
     // This test doesn't require root
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "8.8.8.8"]);
+    cmd.args(["--max-hops", "1", "8.8.8.8"]);
 
     let output = cmd.output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -125,7 +125,7 @@ fn test_freebsd_ca_cert_warning() {
 #[test]
 fn test_freebsd_udp_mode() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--protocol", "udp", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--protocol", "udp", "--max-hops", "1", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
 
@@ -149,7 +149,7 @@ fn test_freebsd_udp_mode() {
 fn test_freebsd_tcp_mode() {
     // TCP mode is not yet implemented
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--protocol", "tcp", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--protocol", "tcp", "--max-hops", "1", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
 
@@ -171,7 +171,7 @@ fn test_freebsd_json_output_with_root() {
     }
 
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--json", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--json", "--max-hops", "1", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -195,7 +195,7 @@ fn test_freebsd_setuid_suggestion() {
     }
 
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["127.0.0.1"]);
+    cmd.args(["127.0.0.1"]);
 
     cmd.assert()
         .failure()

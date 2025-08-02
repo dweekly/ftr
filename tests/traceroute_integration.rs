@@ -6,7 +6,7 @@ use predicates::prelude::*;
 #[test]
 fn test_traceroute_to_localhost() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--start-ttl",
         "1",
         "--probe-timeout-ms",
@@ -27,7 +27,7 @@ fn test_traceroute_to_localhost() {
 #[test]
 fn test_traceroute_with_multiple_queries() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--queries",
         "2",
         "--start-ttl",
@@ -45,7 +45,7 @@ fn test_traceroute_with_multiple_queries() {
 #[test]
 fn test_udp_mode_with_custom_port() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--protocol",
         "udp",
         "--port",
@@ -71,7 +71,7 @@ fn test_udp_mode_with_custom_port() {
 #[test]
 fn test_no_rdns_flag() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--no-rdns",
         "--start-ttl",
         "1",
@@ -92,7 +92,7 @@ fn test_no_rdns_flag() {
 #[test]
 fn test_no_enrich_flag() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--no-enrich",
         "--start-ttl",
         "1",
@@ -114,7 +114,7 @@ fn test_no_enrich_flag() {
 #[test]
 fn test_json_output_structure() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--json",
         "--start-ttl",
         "1",
@@ -160,7 +160,7 @@ fn test_json_output_structure() {
 #[test]
 fn test_invalid_hostname() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["this-is-not-a-valid-hostname-12345.invalid"]);
+    cmd.args(["this-is-not-a-valid-hostname-12345.invalid"]);
 
     cmd.assert()
         .failure()
@@ -173,7 +173,7 @@ fn test_socket_mode_requires_permissions() {
     // This is a CLI test, so we just verify it exits with error status
     // The actual structured error testing is done in error_handling_test.rs
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--socket-mode", "raw", "127.0.0.1"]);
+    cmd.args(["--socket-mode", "raw", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
 

@@ -1,12 +1,14 @@
 //! Integration tests for ftr CLI functionality
 
+#![allow(clippy::unwrap_used)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
 
 #[test]
 fn test_help_output() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
     cmd.arg("--help");
 
     cmd.assert()
@@ -19,10 +21,10 @@ fn test_help_output() {
 
 #[test]
 fn test_version_output() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
     cmd.arg("--version");
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("Failed to execute command");
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -36,8 +38,8 @@ fn test_version_output() {
 
 #[test]
 fn test_json_output_format() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--json",
         "--start-ttl",
         "1",
@@ -46,7 +48,7 @@ fn test_json_output_format() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("Failed to execute command");
 
     // Should produce valid JSON
     if output.status.success() {
@@ -67,8 +69,8 @@ fn test_json_output_format() {
 
 #[test]
 fn test_port_warning_with_icmp() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--protocol",
         "icmp",
         "--port",
@@ -78,7 +80,7 @@ fn test_port_warning_with_icmp() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("Failed to execute command");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // Either we get the port warning (if socket creation succeeds)
@@ -94,8 +96,8 @@ fn test_port_warning_with_icmp() {
 
 #[test]
 fn test_verbose_mode() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--verbose",
         "--start-ttl",
         "1",
@@ -109,8 +111,8 @@ fn test_verbose_mode() {
 
 #[test]
 fn test_queries_parameter() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--queries",
         "3",
         "--start-ttl",
@@ -126,8 +128,8 @@ fn test_queries_parameter() {
 
 #[test]
 fn test_invalid_ttl() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--start-ttl", "0", "127.0.0.1"]);
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args(["--start-ttl", "0", "127.0.0.1"]);
 
     cmd.assert().failure().stderr(predicate::str::contains(
         "Error: start-ttl must be at least 1",
@@ -136,8 +138,8 @@ fn test_invalid_ttl() {
 
 #[test]
 fn test_invalid_timeout() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--probe-timeout-ms", "0", "127.0.0.1"]);
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args(["--probe-timeout-ms", "0", "127.0.0.1"]);
 
     cmd.assert().failure().stderr(predicate::str::contains(
         "Error: probe-timeout-ms must be greater than 0",
@@ -146,8 +148,8 @@ fn test_invalid_timeout() {
 
 #[test]
 fn test_localhost_traceroute() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--start-ttl",
         "1",
         "--probe-timeout-ms",
@@ -156,7 +158,7 @@ fn test_localhost_traceroute() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("Failed to execute command");
 
     // Should either succeed or fail with permission error
     if !output.status.success() {
@@ -174,8 +176,8 @@ fn test_localhost_traceroute() {
 #[test]
 fn test_socket_mode_selection() {
     // Test that we can request specific socket modes
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--socket-mode", "dgram", "--start-ttl", "1", "127.0.0.1"]);
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args(["--socket-mode", "dgram", "--start-ttl", "1", "127.0.0.1"]);
 
     // Should either work or fail with appropriate error
     cmd.assert().code(predicate::eq(0).or(predicate::eq(1)));
@@ -184,8 +186,8 @@ fn test_socket_mode_selection() {
 #[test]
 fn test_protocol_selection() {
     // Test UDP protocol selection
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    let mut cmd = Command::cargo_bin("ftr").expect("Failed to find ftr binary");
+    cmd.args([
         "--protocol",
         "udp",
         "--start-ttl",

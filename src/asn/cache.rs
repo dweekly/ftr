@@ -192,7 +192,7 @@ mod tests {
 
         // Should be one of our inserted entries
         assert!(
-            (first_result.asn == 64512 && first_result.name == "TEST-NET-1")
+            (first_result.asn == 64512 && first_result.name == "TEST-ASN-CACHE")
                 || (first_result.asn == 64513 && first_result.name == "TEST-BROADER"),
             "Should return one of the inserted entries"
         );

@@ -1,6 +1,7 @@
 //! Tests for main.rs functionality
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::*;
     use clap::Parser;
@@ -123,7 +124,7 @@ mod tests {
     #[test]
     fn test_args_parsing() {
         // Test default args
-        let args = Args::parse_from(&["ftr", "google.com"]);
+        let args = Args::parse_from(["ftr", "google.com"]);
         assert_eq!(args.host, "google.com");
         assert_eq!(args.start_ttl, 1);
         assert_eq!(args.max_hops, 30);
@@ -134,7 +135,7 @@ mod tests {
         assert!(!args.no_rdns);
 
         // Test custom args
-        let args = Args::parse_from(&[
+        let args = Args::parse_from([
             "ftr",
             "example.com",
             "--start-ttl",
@@ -157,7 +158,7 @@ mod tests {
         assert_eq!(args.port, 80);
 
         // Test protocol and socket mode
-        let args = Args::parse_from(&[
+        let args = Args::parse_from([
             "ftr",
             "test.com",
             "--protocol",

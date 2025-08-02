@@ -3,7 +3,10 @@
   "permissions": {
     "allow": [
       "Bash(cargo fmt:*)",
-      "Bash(cargo tarpaulin:*)"
+      "Bash(cargo tarpaulin:*)",
+      "Bash(RUST_BACKTRACE=1 cargo test test_global_cache -- --nocapture --test-threads=1)",
+      "Bash(cargo fmt:*)",
+      "Bash(find:*)"
     ],
     "deny": []
   }
