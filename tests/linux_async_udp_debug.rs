@@ -62,6 +62,7 @@ mod tests {
                 let probe = ProbeInfo {
                     ttl: 1,
                     sequence: 1,
+                    sent_at: std::time::Instant::now(),
                 };
 
                 eprintln!("  Sending probe to {} with TTL=1...", dest);
