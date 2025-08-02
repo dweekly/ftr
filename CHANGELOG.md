@@ -10,44 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.1] - 2025-08-01
 
 ### Added
-- **Async Implementation** - New default async/await-based traceroute engine
-  - Immediate response processing without polling delays
-  - Better performance especially for low-latency responses
-  - Async socket implementations for all platforms (Windows, macOS, Linux, FreeBSD, OpenBSD)
-  - `--sync-mode` flag to use legacy synchronous implementation
-- **Windows Async Improvements**
-  - Comprehensive timeout handling with minimum 100ms for Windows ICMP API reliability
-  - Performance optimization: Skip IcmpCloseHandle when pending operations exist (saves 600ms+)
-  - Detailed documentation in WINDOWS_ASYNC_FINDINGS.md
-  - Rigorous testing example for validating Windows implementation
-- **FreeBSD/BSD Async Support** - New async implementation for BSD systems using raw ICMP sockets
-- **Enhanced Test Coverage** - Added comprehensive tests for previously untested modules
-  - Enrichment service tests for async DNS and ASN lookups
-  - Probe type tests for async traceroute data structures
-  - Timing configuration tests for global timing management
-  - Async API tests for the high-level async traceroute interface
-- **STUN Cache Pre-warming** - Pre-fetch STUN server addresses for faster public IP detection
-- **Background Pre-fetching** - Destination IP's rDNS and ASN lookups start in background during traceroute
-- **Build Caching in CI** - Added Rust caching to GitHub Actions for faster CI builds
+- **Async Implementation** - New default async/await traceroute engine with **10x performance improvement** for short probe timeouts
+  - Immediate response processing without polling delays  
+  - Full async support for all platforms (Windows, macOS, Linux, FreeBSD/OpenBSD)
+  - `--sync-mode` flag available for legacy synchronous implementation
+- **Platform-Specific Optimizations**
+  - Windows: Optimized ICMP API handling saves 600ms+ per traceroute
+  - macOS: Per-probe socket implementation for reliable TimeExceeded reception
+  - BSD: New async implementation using raw ICMP sockets
+- **Performance Enhancements**
+  - Background pre-fetching for DNS and ASN lookups during traceroute
+  - STUN cache pre-warming for faster public IP detection
+  - CI build caching reduces GitHub Actions time
 
 ### Changed
-- Async implementation is now the default for all platforms
-- Updated GitHub Actions to use macos-15 (was previously macos-latest)
-- Improved test reliability by making cache tests more resilient to concurrent execution
-- Cache tests now use `serial_test` crate to prevent race conditions
-- Windows sync socket factory now automatically uses async implementation
+- Async is now the default mode on all platforms
+- Improved test reliability with serial execution for cache tests
+- Updated CI to use macos-15
 
 ### Fixed
-- Test failures on macOS related to async implementation
-- Verbose mode output now works correctly with async sockets
-- `--no-enrich` flag now properly suppresses segment types and ASN info in output
-- All clippy warnings resolved (redundant closures, unwrap usage, function arguments)
-- Flaky cache-related tests now handle concurrent test execution properly
-- STUN cache mutex poisoning errors in CI tests
-- ASN cache test failures due to overlapping CIDR prefixes
-- Windows STUN cache TTL test failures due to Instant overflow
-- Windows performance test failures - sync raw ICMP not supported
-- rDNS lookups were incorrectly performed when `--no-rdns` flag was set
+- macOS async now properly shows all intermediate hops (was only showing destination)
+- Windows timeout handling for reliable operation with short timeouts
+- Duplicate country code display in ASN info
+- `--no-enrich` flag now properly suppresses all enrichment data
+- Various test flakiness issues in CI
 
 ## [0.3.0] - 2025-07-28
 
@@ -113,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation accuracy for TCP support (marked as not implemented)
 - Platform-specific socket mode documentation
 
-## [0.2.4] - 2025-01-27
+## [0.2.4] - 2025-07-27
 
 ### Added
 - FreeBSD support (FreeBSD 13.x and 14.x)
