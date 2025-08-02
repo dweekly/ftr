@@ -12,6 +12,13 @@ permissions:
   contents: write  # Needed to create releases
 
 jobs:
+  # Validate the release tag before building anything
+  validate:
+    name: Validate Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/validate-release.yml
+    secrets: inherit
+
   # First, publish to crates.io (only when release is published, not on tag push)
   publish-crate:
     name: Publish to crates.io
@@ -44,6 +51,7 @@ jobs:
   build-deb:
     name: Build Debian Package
     runs-on: ubuntu-latest
+    needs: validate
     # Run on tag push to create draft release with .deb files
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
@@ -108,6 +116,7 @@ jobs:
   build-windows:
     name: Build Windows Binary
     runs-on: windows-latest
+    needs: validate
     # Run on tag push to create draft release with Windows binaries
     if: startsWith(github.ref, 'refs/tags/v')
     strategy:
