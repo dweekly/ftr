@@ -596,10 +596,18 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
             // Format ASN info
             let asn_str = if let Some(asn_info) = &hop.asn_info {
                 if asn_info.asn != 0 {
-                    format!(
-                        " [AS{} - {}, {}]",
-                        asn_info.asn, asn_info.name, asn_info.country_code
-                    )
+                    // Check if name already ends with country code
+                    if asn_info
+                        .name
+                        .ends_with(&format!(", {}", asn_info.country_code))
+                    {
+                        format!(" [AS{} - {}]", asn_info.asn, asn_info.name)
+                    } else {
+                        format!(
+                            " [AS{} - {}, {}]",
+                            asn_info.asn, asn_info.name, asn_info.country_code
+                        )
+                    }
                 } else {
                     format!(" [{}]", asn_info.name)
                 }
