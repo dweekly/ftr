@@ -59,13 +59,11 @@ impl LinuxAsyncUdpSocket {
 
         // Debug logging in CI
         if std::env::var("CI").is_ok() {
-            static mut CHECK_COUNT: u32 = 0;
-            CHECK_COUNT += 1;
-            if CHECK_COUNT <= 5 || CHECK_COUNT % 100 == 0 {
-                eprintln!(
-                    "[DEBUG] check_icmp_error: attempt {} on fd {}",
-                    CHECK_COUNT, fd
-                );
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static CHECK_COUNT: AtomicU32 = AtomicU32::new(0);
+            let count = CHECK_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+            if count <= 5 || count % 100 == 0 {
+                eprintln!("[DEBUG] check_icmp_error: attempt {} on fd {}", count, fd);
             }
         }
 
@@ -139,12 +137,11 @@ impl LinuxAsyncUdpSocket {
             } else {
                 // Debug logging in CI
                 if std::env::var("CI").is_ok() {
-                    static mut ERR_COUNT: u32 = 0;
-                    unsafe {
-                        ERR_COUNT += 1;
-                        if ERR_COUNT <= 5 {
-                            eprintln!("[DEBUG] recvmsg error: {}", err);
-                        }
+                    use std::sync::atomic::{AtomicU32, Ordering};
+                    static ERR_COUNT: AtomicU32 = AtomicU32::new(0);
+                    let count = ERR_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+                    if count <= 5 {
+                        eprintln!("[DEBUG] recvmsg error: {}", err);
                     }
                 }
                 IcmpCheckResult::Error
