@@ -1,0 +1,97 @@
+name: Validate Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  validate-release:
+    name: Validate Release Tag
+    runs-on: ubuntu-latest
+    outputs:
+      valid: ${{ steps.validate.outputs.valid }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history to check commit ancestry
+
+      - name: Validate release tag
+        id: validate
+        run: |
+          set -e
+          
+          # Extract version from tag
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Tag version: $TAG_VERSION"
+          
+          # Get the commit SHA that the tag points to
+          TAG_COMMIT=$(git rev-list -n 1 $GITHUB_REF)
+          echo "Tag commit: $TAG_COMMIT"
+          
+          # Check if this commit exists on main branch
+          if ! git merge-base --is-ancestor $TAG_COMMIT origin/main; then
+            echo "❌ Error: Tag does not point to a commit on main branch"
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "✅ Tag points to a commit on main branch"
+          
+          # Check Cargo.toml version matches tag
+          CARGO_VERSION=$(git show $TAG_COMMIT:Cargo.toml | grep "^version" | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "❌ Error: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
+            echo "valid=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo "✅ Cargo.toml version matches tag"
+          
+          # Check if the commit has passed CI by looking for successful workflow runs
+          # This requires the commit to have been part of a PR that was merged
+          echo "Checking CI status for commit $TAG_COMMIT..."
+          
+          # Use GitHub API to check commit status
+          API_URL="https://api.github.com/repos/${{ github.repository }}/commits/$TAG_COMMIT/check-runs"
+          RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                          -H "Accept: application/vnd.github.v3+json" \
+                          "$API_URL")
+          
+          # Check if there are any check runs
+          CHECK_COUNT=$(echo "$RESPONSE" | jq '.total_count // 0')
+          if [ "$CHECK_COUNT" -eq 0 ]; then
+            echo "⚠️  Warning: No CI checks found for this commit"
+            echo "This might indicate the commit was pushed directly without a PR"
+          else
+            # Check if all required checks passed
+            FAILED_CHECKS=$(echo "$RESPONSE" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' | wc -l)
+            if [ "$FAILED_CHECKS" -gt 0 ]; then
+              echo "❌ Error: Some CI checks failed for this commit"
+              echo "$RESPONSE" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "  - \(.name): \(.conclusion)"'
+              echo "valid=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            # List successful checks
+            echo "✅ CI checks passed:"
+            echo "$RESPONSE" | jq -r '.check_runs[] | select(.conclusion == "success") | "  - \(.name)"'
+          fi
+          
+          echo "✅ All validations passed"
+          echo "valid=true" >> $GITHUB_OUTPUT
+
+  run-full-ci:
+    name: Run Full CI Suite
+    needs: validate-release
+    if: needs.validate-release.outputs.valid == 'true'
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  check-ci-status:
+    name: Check CI Status
+    needs: run-full-ci
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI Validation Complete
+        run: |
+          echo "✅ Full CI suite passed for release tag"
+          echo "Release artifacts can now be built safely"

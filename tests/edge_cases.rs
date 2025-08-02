@@ -1,5 +1,7 @@
 //! Integration tests for edge cases and performance
 
+#![allow(clippy::unwrap_used)]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::time::{Duration, Instant};
@@ -7,7 +9,7 @@ use std::time::{Duration, Instant};
 #[test]
 fn test_very_low_timeout() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--probe-timeout-ms",
         "1",
         "--start-ttl",
@@ -39,7 +41,7 @@ fn test_very_low_timeout() {
 #[test]
 fn test_high_ttl_value() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--start-ttl",
         "64",
         "--probe-timeout-ms",
@@ -66,7 +68,7 @@ fn test_multiple_concurrent_instances() {
     for i in 0..3 {
         let handle = std::thread::spawn(move || {
             let mut cmd = Command::cargo_bin("ftr").unwrap();
-            cmd.args(&[
+            cmd.args([
                 "--start-ttl",
                 "1",
                 "--probe-timeout-ms",
@@ -90,7 +92,7 @@ fn test_multiple_concurrent_instances() {
 #[test]
 fn test_ipv4_address_input() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--start-ttl",
         "1",
         "--probe-timeout-ms",
@@ -119,7 +121,7 @@ fn test_queries_edge_cases() {
 
     for (queries, should_succeed) in test_cases {
         let mut cmd = Command::cargo_bin("ftr").unwrap();
-        cmd.args(&[
+        cmd.args([
             "--queries",
             queries,
             "--start-ttl",
@@ -156,7 +158,7 @@ fn test_port_boundaries() {
 
     for (port, _should_succeed) in test_cases {
         let mut cmd = Command::cargo_bin("ftr").unwrap();
-        cmd.args(&[
+        cmd.args([
             "--protocol",
             "udp",
             "--port",
@@ -177,7 +179,7 @@ fn test_port_boundaries() {
 fn test_silent_hops_minimalist_output() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
     // Use a high starting TTL to likely get some silent hops
-    cmd.args(&[
+    cmd.args([
         "--start-ttl",
         "10",
         "--probe-timeout-ms",

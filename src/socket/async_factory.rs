@@ -47,6 +47,7 @@ pub async fn create_async_probe_socket_with_options(
             #[cfg(target_os = "macos")]
             {
                 let _ = protocol; // Unused on macOS
+                                  // Use implementation that creates per-probe sockets
                 use super::macos_async::MacOSAsyncIcmpSocket;
                 let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
 
@@ -56,7 +57,7 @@ pub async fn create_async_probe_socket_with_options(
                     .and_then(|v| v.parse::<u8>().ok())
                     .unwrap_or(0);
                 if verbose > 0 {
-                    eprintln!("Using DGRAM ICMP mode for traceroute");
+                    eprintln!("Using DGRAM ICMP mode for traceroute (per-probe version)");
                 }
 
                 Ok(Box::new(socket))

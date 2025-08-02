@@ -1,6 +1,8 @@
 //! Integration tests for ftr
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
+#[allow(clippy::panic)]
 mod socket_tests {
     use crate::socket::{ProbeInfo, ProbeResponse, ResponseType};
     use std::net::{IpAddr, Ipv4Addr};

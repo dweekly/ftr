@@ -167,6 +167,7 @@ pub fn parse_cidr(cidr: &str) -> Option<Ipv4Net> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

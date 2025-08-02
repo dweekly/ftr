@@ -8,7 +8,7 @@ use predicates::prelude::*;
 #[test]
 fn test_windows_localhost_trace() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
         .success()
@@ -19,7 +19,7 @@ fn test_windows_localhost_trace() {
 #[test]
 fn test_windows_icmp_mode() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["-v", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["-v", "--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
         .success()
@@ -29,7 +29,7 @@ fn test_windows_icmp_mode() {
 #[test]
 fn test_windows_gateway_detection() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "8.8.8.8"]);
+    cmd.args(["--max-hops", "1", "8.8.8.8"]);
 
     let output = cmd.output().unwrap();
 
@@ -61,7 +61,7 @@ fn test_windows_gateway_detection() {
 #[test]
 fn test_windows_json_output() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--json", "--max-hops", "1", "127.0.0.1"]);
+    cmd.args(["--json", "--max-hops", "1", "127.0.0.1"]);
 
     let output = cmd.output().unwrap();
     assert!(output.status.success());
@@ -78,7 +78,7 @@ fn test_windows_json_output() {
 #[test]
 fn test_windows_dns_resolution() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "1", "localhost"]);
+    cmd.args(["--max-hops", "1", "localhost"]);
 
     // The test should fail because "localhost" is being treated as invalid
     // This is a bug in the DNS resolution that needs to be investigated
@@ -105,7 +105,7 @@ fn test_windows_invalid_host() {
 #[test]
 fn test_windows_timeout_handling() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&[
+    cmd.args([
         "--probe-timeout-ms",
         "1", // Very short timeout
         "--max-hops",
@@ -125,7 +125,7 @@ fn test_windows_timeout_handling() {
 #[test]
 fn test_windows_asn_lookup() {
     let mut cmd = Command::cargo_bin("ftr").unwrap();
-    cmd.args(&["--max-hops", "18", "8.8.8.8"]);
+    cmd.args(["--max-hops", "18", "8.8.8.8"]);
 
     let output = cmd.output().unwrap();
 

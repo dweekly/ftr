@@ -7,58 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Async Implementation** - New default async/await-based traceroute engine
-  - Immediate response processing without polling delays
-  - Better performance especially for low-latency responses
-  - Async socket implementations for all platforms (Windows, macOS, Linux)
-  - `--sync-mode` flag to use legacy synchronous implementation
-- **Windows Async Improvements**
-  - Comprehensive timeout handling with minimum 100ms for Windows ICMP API reliability
-  - Performance optimization: Skip IcmpCloseHandle when pending operations exist (saves 600ms+)
-  - Detailed documentation in WINDOWS_ASYNC_FINDINGS.md
-  - Rigorous testing example for validating Windows implementation
-- **STUN Cache Pre-warming** - Pre-fetch STUN server addresses for faster public IP detection
-- **Background Pre-fetching** - Destination IP's rDNS and ASN lookups start in background during traceroute
-
-### Changed
-- Async implementation is now the default for all platforms
-- Updated GitHub Actions to use macos-15 (was previously macos-latest)
-- Improved test reliability by making cache tests more resilient to concurrent execution
-
-### Fixed
-- Test failures on macOS related to async implementation
-- Verbose mode output now works correctly with async sockets
-- `--no-enrich` flag now properly suppresses segment types and ASN info in output
-- All clippy warnings resolved (redundant closures, unwrap usage, function arguments)
-- Flaky cache-related tests now handle concurrent test execution properly
-
-## [0.3.1] - 2025-07-29
-
-### Performance Improvements
-- **Major performance enhancements** - traceroute now completes in <100ms for most targets
-- Removed hardcoded 10ms inter-query delay that was slowing down execution
-- Added configurable inter-query delay via `-i` parameter (default 0ms)
-- Default send interval changed to 0ms for optimal performance
-- Public IP detection now runs once in parallel with probe sending instead of blocking
-- ASN and rDNS lookups now start immediately as each IP arrives (truly parallel enrichment)
+## [0.3.1] - 2025-08-01
 
 ### Added
-- Reverse DNS lookup for public IP in ISP detection
-- Configurable inter-query delay via `-i` parameter for users who need delays
+- **Async Implementation** - New default async/await traceroute engine with **10x performance improvement** for short probe timeouts
+  - Immediate response processing without polling delays  
+  - Full async support for all platforms (Windows, macOS, Linux, FreeBSD/OpenBSD)
+  - `--sync-mode` flag available for legacy synchronous implementation
+- **Platform-Specific Optimizations**
+  - Windows: Optimized ICMP API handling saves 600ms+ per traceroute
+  - macOS: Per-probe socket implementation for reliable TimeExceeded reception
+  - BSD: New async implementation using raw ICMP sockets
+- **Performance Enhancements**
+  - Background pre-fetching for DNS and ASN lookups during traceroute
+  - STUN cache pre-warming for faster public IP detection
+  - CI build caching reduces GitHub Actions time
 
 ### Changed
-- `-W` parameter now represents wait time after sending last probe, not total execution time
-- Verbose flag now controls debug output during traceroute execution
+- Async is now the default mode on all platforms
+- Improved test reliability with serial execution for cache tests
+- Updated CI to use macos-15
 
 ### Fixed
-- Performance regression where execution took >1s with `-W 100`
-- Race condition causing missing intermediate hop responses
-- Raw ICMP socket issues on macOS (now properly falls back to DGRAM mode)
-- CGNAT addresses now correctly classified as ISP segment, not LAN
-- Redundant public IP detection on every run
-- `--no-enrich` flag not working correctly - ASN lookups were still being performed and displayed
-- `--no-rdns` flag not working correctly - reverse DNS was disabled when any enrichment was disabled
+- macOS async now properly shows all intermediate hops (was only showing destination)
+- Windows timeout handling for reliable operation with short timeouts
+- Duplicate country code display in ASN info
+- `--no-enrich` flag now properly suppresses all enrichment data
+- Various test flakiness issues in CI
 
 ## [0.3.0] - 2025-07-28
 
@@ -124,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation accuracy for TCP support (marked as not implemented)
 - Platform-specific socket mode documentation
 
-## [0.2.4] - 2025-01-27
+## [0.2.4] - 2025-07-27
 
 ### Added
 - FreeBSD support (FreeBSD 13.x and 14.x)
@@ -299,7 +274,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/dweekly/ftr/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/dweekly/ftr/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/dweekly/ftr/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/dweekly/ftr/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/dweekly/ftr/compare/v0.2.0...v0.2.1
