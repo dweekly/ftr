@@ -4,6 +4,7 @@
 #[cfg(test)]
 mod tests {
     use ftr::{trace, TracerouteConfig};
+    use std::os::unix::io::AsRawFd;
 
     #[tokio::test]
     #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), ignore)]
@@ -13,27 +14,93 @@ mod tests {
 
         match trace(target).await {
             Ok(result) => {
-                // Debug: print what we got
-                eprintln!("Got {} hops", result.hop_count());
-                for (i, hop) in result.hops.iter().enumerate() {
-                    if let Some(addr) = hop.addr {
-                        eprintln!("  Hop {}: {}", i + 1, addr);
+                eprintln!("Async trace completed:");
+                eprintln!("  Protocol: {:?}", result.protocol_used);
+                eprintln!("  Socket mode: {:?}", result.socket_mode_used);
+                eprintln!("  Total hops: {}", result.hop_count());
+
+                // Count how many hops actually responded
+                let hops_with_responses: Vec<_> = result
+                    .hops
+                    .iter()
+                    .filter(|hop| hop.addr.is_some())
+                    .collect();
+
+                eprintln!("  Hops with responses: {}", hops_with_responses.len());
+
+                // If we got no responses at all, there's a bug in the async UDP implementation
+                if hops_with_responses.is_empty() && cfg!(target_os = "linux") {
+                    eprintln!("\n=== DEBUG: Linux async UDP got 0 responses ===");
+                    eprintln!("Environment info:");
+                    eprintln!("  USER: {:?}", std::env::var("USER"));
+                    eprintln!("  CI: {:?}", std::env::var("CI"));
+                    eprintln!("  GITHUB_ACTIONS: {:?}", std::env::var("GITHUB_ACTIONS"));
+
+                    // Check if we can create UDP socket with IP_RECVERR
+                    eprintln!("\nTesting UDP socket creation with IP_RECVERR...");
+                    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+                        let fd = socket.as_raw_fd();
+                        unsafe {
+                            let enable: i32 = 1;
+                            let ret = libc::setsockopt(
+                                fd,
+                                libc::IPPROTO_IP,
+                                libc::IP_RECVERR,
+                                &enable as *const _ as *const libc::c_void,
+                                std::mem::size_of::<i32>() as libc::socklen_t,
+                            );
+                            if ret == 0 {
+                                eprintln!("  ✓ IP_RECVERR can be enabled");
+                            } else {
+                                eprintln!(
+                                    "  ✗ Failed to enable IP_RECVERR: {}",
+                                    std::io::Error::last_os_error()
+                                );
+                            }
+                        }
                     }
-                }
 
-                // Special case: if all responses are from localhost, it might be a test
-                // environment issue (e.g., running in a container or sandbox)
-                let unique_addresses: std::collections::HashSet<_> =
-                    result.hops.iter().filter_map(|hop| hop.addr).collect();
+                    // Test if sync mode works
+                    eprintln!("\nTesting sync mode to compare...");
+                    let sync_config = TracerouteConfig::builder()
+                        .target(target)
+                        .sync_mode(true)
+                        .build()
+                        .unwrap();
 
-                if unique_addresses.len() == 1
-                    && unique_addresses.contains(&"127.0.0.1".parse().unwrap())
-                {
-                    eprintln!(
-                        "Skipping test: all responses from localhost (test environment issue)"
-                    );
+                    if let Ok(sync_result) = ftr::trace_with_config(sync_config).await {
+                        let sync_responses: Vec<_> = sync_result
+                            .hops
+                            .iter()
+                            .filter(|hop| hop.addr.is_some())
+                            .collect();
+                        eprintln!("Sync mode: {} hops with responses", sync_responses.len());
+
+                        // Show some details about sync responses
+                        for (i, hop) in sync_result.hops.iter().take(5).enumerate() {
+                            if let Some(addr) = hop.addr {
+                                eprintln!("  Hop {}: {} (RTT: {:?})", i + 1, addr, hop.rtt);
+                            }
+                        }
+
+                        if !sync_responses.is_empty() {
+                            panic!(
+                                "BUG: Sync UDP works ({} responses) but async UDP doesn't work (0 responses)\n\
+                                This indicates a bug in the Linux async UDP implementation.",
+                                sync_responses.len()
+                            );
+                        }
+                    }
+
+                    eprintln!("\nBoth sync and async UDP modes failed to get responses");
+                    eprintln!("This might be a network restriction in the CI environment");
+                    eprintln!("Consider that GitHub Actions may block UDP traceroute entirely.");
                     return;
                 }
+
+                // Verify we have responses from different addresses
+                let unique_addresses: std::collections::HashSet<_> =
+                    result.hops.iter().filter_map(|hop| hop.addr).collect();
 
                 // We should see at least 3 hops for internet destinations
                 assert!(
@@ -79,6 +146,16 @@ mod tests {
                     result.hop_count() >= 3,
                     "macOS async ICMP should show multiple hops, got {}",
                     result.hop_count()
+                );
+
+                // Check we got actual responses
+                let hops_with_responses =
+                    result.hops.iter().filter(|hop| hop.addr.is_some()).count();
+
+                assert!(
+                    hops_with_responses >= 2,
+                    "macOS async ICMP should show responses from multiple hops, got {}",
+                    hops_with_responses
                 );
             }
             Err(e) => {

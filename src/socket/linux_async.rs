@@ -57,6 +57,18 @@ impl LinuxAsyncUdpSocket {
         let mut from_addr: libc::sockaddr_in = std::mem::zeroed();
         let from_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
 
+        // Debug logging in CI
+        if std::env::var("CI").is_ok() {
+            static mut CHECK_COUNT: u32 = 0;
+            CHECK_COUNT += 1;
+            if CHECK_COUNT <= 5 || CHECK_COUNT % 100 == 0 {
+                eprintln!(
+                    "[DEBUG] check_icmp_error: attempt {} on fd {}",
+                    CHECK_COUNT, fd
+                );
+            }
+        }
+
         let mut iovec = libc::iovec {
             iov_base: buf.as_mut_ptr() as *mut libc::c_void,
             iov_len: buf.len(),
@@ -75,6 +87,11 @@ impl LinuxAsyncUdpSocket {
         let ret = libc::recvmsg(fd, &mut msg, libc::MSG_ERRQUEUE | libc::MSG_DONTWAIT);
 
         if ret >= 0 {
+            // Debug logging in CI
+            if std::env::var("CI").is_ok() {
+                eprintln!("[DEBUG] recvmsg returned {} bytes", ret);
+            }
+
             // Parse control messages to find IP_RECVERR
             let mut cmsg: *const libc::cmsghdr = libc::CMSG_FIRSTHDR(&msg);
 
@@ -100,6 +117,14 @@ impl LinuxAsyncUdpSocket {
                         // Determine if this is destination (Port Unreachable)
                         let is_destination = sock_err.ee_type == 3 && sock_err.ee_code == 3;
 
+                        // Debug logging in CI
+                        if std::env::var("CI").is_ok() {
+                            eprintln!(
+                                "[DEBUG] ICMP response: from={}, type={}, code={}, is_dest={}",
+                                from_ip, sock_err.ee_type, sock_err.ee_code, is_destination
+                            );
+                        }
+
                         return IcmpCheckResult::Found(from_ip, is_destination);
                     }
                 }
@@ -107,10 +132,23 @@ impl LinuxAsyncUdpSocket {
                 cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
             }
             IcmpCheckResult::NoData
-        } else if std::io::Error::last_os_error().raw_os_error() == Some(libc::EAGAIN) {
-            IcmpCheckResult::NoData
         } else {
-            IcmpCheckResult::Error
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EAGAIN) {
+                IcmpCheckResult::NoData
+            } else {
+                // Debug logging in CI
+                if std::env::var("CI").is_ok() {
+                    static mut ERR_COUNT: u32 = 0;
+                    unsafe {
+                        ERR_COUNT += 1;
+                        if ERR_COUNT <= 5 {
+                            eprintln!("[DEBUG] recvmsg error: {}", err);
+                        }
+                    }
+                }
+                IcmpCheckResult::Error
+            }
         }
     }
 
@@ -190,7 +228,15 @@ impl AsyncProbeSocket for LinuxAsyncUdpSocket {
         let sent_at = Instant::now();
 
         // Send probe
-        async_socket.send(&payload).await?;
+        let bytes_sent = async_socket.send(&payload).await?;
+
+        // Debug logging in CI
+        if std::env::var("CI").is_ok() {
+            eprintln!(
+                "[DEBUG] UDP probe sent: {} bytes to {}, TTL={}, seq={}",
+                bytes_sent, target_addr, probe.ttl, probe.sequence
+            );
+        }
 
         // Clone necessary data for the spawned task
         let destination_reached = self.destination_reached.clone();
@@ -201,9 +247,13 @@ impl AsyncProbeSocket for LinuxAsyncUdpSocket {
         // Create oneshot channel for response
         let (tx, rx) = oneshot::channel();
 
+        // Get the raw fd before moving the socket
+        let fd = async_socket.as_raw_fd();
+
         // Spawn task to read from error queue
         tokio::spawn(async move {
-            let fd = async_socket.as_raw_fd();
+            // Keep the socket alive in this task
+            let _socket_guard = async_socket;
             let mut retry_count = 0;
             const MAX_RETRIES: u32 = 1000; // 1 second with 1ms delays
 
