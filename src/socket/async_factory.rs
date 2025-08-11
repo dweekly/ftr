@@ -22,13 +22,19 @@ pub async fn create_async_probe_socket_with_options(
     target: IpAddr,
     timing_config: TimingConfig,
     protocol: Option<ProbeProtocol>,
-    _socket_mode: Option<SocketMode>,
+    socket_mode: Option<SocketMode>,
 ) -> Result<Box<dyn AsyncProbeSocket>> {
+    // Check for unsupported protocols
+    if let Some(ProbeProtocol::Tcp) = protocol {
+        return Err(anyhow!("TCP traceroute is not yet implemented"));
+    }
+
     match target {
         IpAddr::V4(_) => {
             #[cfg(target_os = "windows")]
             {
                 let _ = protocol; // Unused on Windows
+                let _ = socket_mode; // Unused on Windows
                 use super::windows_async_tokio::WindowsAsyncIcmpSocket;
                 let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
 
@@ -47,7 +53,8 @@ pub async fn create_async_probe_socket_with_options(
             #[cfg(target_os = "macos")]
             {
                 let _ = protocol; // Unused on macOS
-                                  // Use implementation that creates per-probe sockets
+                let _ = socket_mode; // Unused on macOS
+                                     // Use implementation that creates per-probe sockets
                 use super::macos_async::MacOSAsyncIcmpSocket;
                 let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
 
@@ -65,53 +72,51 @@ pub async fn create_async_probe_socket_with_options(
 
             #[cfg(target_os = "linux")]
             {
-                // On Linux, check if ICMP was specifically requested
-                match protocol {
-                    Some(ProbeProtocol::Icmp) => {
-                        // Check if we can create raw ICMP socket
-                        use socket2::{Domain, Protocol, Socket, Type};
-                        match Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)) {
-                            Ok(_) => {
-                                // We have permissions for raw ICMP
-                                use super::linux_async::LinuxAsyncIcmpSocket;
-                                let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
+                // On Linux, check if ICMP was specifically requested or Raw mode was requested
+                let use_icmp = matches!(protocol, Some(ProbeProtocol::Icmp))
+                    || matches!(socket_mode, Some(SocketMode::Raw));
 
-                                // Print verbose mode info if requested
-                                let verbose = std::env::var("FTR_VERBOSE")
-                                    .ok()
-                                    .and_then(|v| v.parse::<u8>().ok())
-                                    .unwrap_or(0);
-                                if verbose > 0 {
-                                    eprintln!("Using Raw ICMP mode for traceroute");
-                                }
+                if use_icmp {
+                    // Check if we can create raw ICMP socket
+                    use socket2::{Domain, Protocol, Socket, Type};
+                    match Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)) {
+                        Ok(_) => {
+                            // We have permissions for raw ICMP
+                            use super::linux_async::LinuxAsyncIcmpSocket;
+                            let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                                Ok(Box::new(socket))
+                            // Print verbose mode info if requested
+                            let verbose = std::env::var("FTR_VERBOSE")
+                                .ok()
+                                .and_then(|v| v.parse::<u8>().ok())
+                                .unwrap_or(0);
+                            if verbose > 0 {
+                                eprintln!("Using Raw ICMP mode for traceroute");
                             }
-                            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                                Err(anyhow!(
-                                    "ICMP mode requires root or CAP_NET_RAW capability. \
+
+                            Ok(Box::new(socket))
+                        }
+                        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(anyhow!(
+                            "ICMP mode requires root or CAP_NET_RAW capability. \
                                     Try running with sudo or use UDP mode (--udp)"
-                                ))
-                            }
-                            Err(e) => Err(anyhow!("Failed to create ICMP socket: {}", e)),
-                        }
+                        )),
+                        Err(e) => Err(anyhow!("Failed to create ICMP socket: {}", e)),
                     }
-                    _ => {
-                        // Default to UDP or when explicitly requested
-                        use super::linux_async::LinuxAsyncUdpSocket;
-                        let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
+                } else {
+                    // Default to UDP or when explicitly requested
+                    use super::linux_async::LinuxAsyncUdpSocket;
+                    let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
 
-                        // Print verbose mode info if requested
-                        let verbose = std::env::var("FTR_VERBOSE")
-                            .ok()
-                            .and_then(|v| v.parse::<u8>().ok())
-                            .unwrap_or(0);
-                        if verbose > 0 {
-                            eprintln!("Using UDP with IP_RECVERR (no root required)");
-                        }
-
-                        Ok(Box::new(socket))
+                    // Print verbose mode info if requested
+                    let verbose = std::env::var("FTR_VERBOSE")
+                        .ok()
+                        .and_then(|v| v.parse::<u8>().ok())
+                        .unwrap_or(0);
+                    if verbose > 0 {
+                        eprintln!("Using UDP with IP_RECVERR (no root required)");
                     }
+
+                    Ok(Box::new(socket))
                 }
             }
 
@@ -123,6 +128,7 @@ pub async fn create_async_probe_socket_with_options(
             ))]
             {
                 let _ = protocol; // Unused on BSDs
+                let _ = socket_mode; // Unused on BSDs
                 use super::bsd_async::BsdAsyncIcmpSocket;
                 let socket = BsdAsyncIcmpSocket::new_with_config(timing_config)?;
 
