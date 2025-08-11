@@ -6,7 +6,10 @@
       "Bash(cargo tarpaulin:*)",
       "Bash(RUST_BACKTRACE=1 cargo test test_global_cache -- --nocapture --test-threads=1)",
       "Bash(cargo fmt:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)"
     ],
     "deny": []
   }

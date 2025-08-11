@@ -81,10 +81,6 @@ struct Args {
     #[clap(short, long, default_value_t = 33434)]
     port: u16,
 
-    /// Use synchronous implementation (legacy mode)
-    #[clap(long)]
-    sync_mode: bool,
-
     /// Specify public IP address (skip STUN detection)
     #[clap(long)]
     public_ip: Option<String>,
@@ -171,7 +167,6 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     let args = Args::parse();
 
     // Handle public IP option - skip STUN if provided
-    #[cfg(feature = "async")]
     if args.public_ip.is_none() {
         // Set custom STUN server if provided
         if let Some(stun_server) = &args.stun_server {
@@ -197,7 +192,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     }
 
     // Check if running without root on a platform that requires it
-    if !ftr::socket::factory::is_root() && !ftr::socket::factory::has_non_root_capability() {
+    if !ftr::socket::utils::is_root() && !ftr::socket::utils::has_non_root_capability() {
         eprintln!(
             "Error: ftr requires root privileges on {}",
             std::env::consts::OS
@@ -229,7 +224,6 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     let target_ip = resolve_target(&args.host).await?;
 
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
-    #[cfg(feature = "async")]
     {
         let target_ip_clone = target_ip;
         let no_enrich = args.no_enrich;
@@ -356,96 +350,8 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
     }
 
-    // Run traceroute
-    #[cfg(feature = "async")]
-    let result = if !args.sync_mode {
-        // Use async implementation (default)
-        match ftr::traceroute::async_api::trace_with_config_async(config).await {
-            Ok(result) => result,
-            Err(TracerouteError::InsufficientPermissions {
-                required,
-                suggestion,
-            }) => {
-                eprintln!("\nError: Insufficient permissions");
-                eprintln!("Required: {}", required);
-                eprintln!("Suggestion: {}", suggestion);
-                eprintln!(
-                    "\nTo run with elevated privileges: sudo {}",
-                    std::env::args().collect::<Vec<_>>().join(" ")
-                );
-                std::process::exit(1);
-            }
-            Err(TracerouteError::NotImplemented { feature }) => {
-                eprintln!("\nError: {} is not yet implemented", feature);
-                eprintln!("This feature is planned for a future release.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::Ipv6NotSupported) => {
-                eprintln!("\nError: IPv6 targets are not yet supported");
-                eprintln!("Please use an IPv4 address or hostname that resolves to IPv4.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::ResolutionError(msg)) => {
-                eprintln!("\nError: {}", msg);
-                eprintln!("Please check the hostname and your network connection.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::ConfigError(msg)) => {
-                eprintln!("\nError: Invalid configuration - {}", msg);
-                eprintln!("Run 'ftr --help' for usage information.");
-                std::process::exit(1);
-            }
-            Err(e) => {
-                eprintln!("\nError: {}", e);
-                std::process::exit(1);
-            }
-        }
-    } else {
-        // Use standard implementation
-        match ftr::trace_with_config(config).await {
-            Ok(result) => result,
-            Err(TracerouteError::InsufficientPermissions {
-                required,
-                suggestion,
-            }) => {
-                eprintln!("\nError: Insufficient permissions");
-                eprintln!("Required: {}", required);
-                eprintln!("Suggestion: {}", suggestion);
-                eprintln!(
-                    "\nTo run with elevated privileges: sudo {}",
-                    std::env::args().collect::<Vec<_>>().join(" ")
-                );
-                std::process::exit(1);
-            }
-            Err(TracerouteError::NotImplemented { feature }) => {
-                eprintln!("\nError: {} is not yet implemented", feature);
-                eprintln!("This feature is planned for a future release.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::Ipv6NotSupported) => {
-                eprintln!("\nError: IPv6 targets are not yet supported");
-                eprintln!("Please use an IPv4 address or hostname that resolves to IPv4.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::ResolutionError(msg)) => {
-                eprintln!("\nError: {}", msg);
-                eprintln!("Please check the hostname and your network connection.");
-                std::process::exit(1);
-            }
-            Err(TracerouteError::ConfigError(msg)) => {
-                eprintln!("\nError: Invalid configuration - {}", msg);
-                eprintln!("Run 'ftr --help' for usage information.");
-                std::process::exit(1);
-            }
-            Err(e) => {
-                eprintln!("\nError: {}", e);
-                std::process::exit(1);
-            }
-        }
-    };
-
-    #[cfg(not(feature = "async"))]
-    let result = match ftr::trace_with_config(config).await {
+    // Run traceroute using async implementation
+    let result = match ftr::traceroute::async_api::trace_with_config_async(config).await {
         Ok(result) => result,
         Err(TracerouteError::InsufficientPermissions {
             required,
