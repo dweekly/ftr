@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.2] - TBD
+## [0.4.0] - TBD
 
 ### Changed
 - **BREAKING**: Removed synchronous implementation - library is now async-only
