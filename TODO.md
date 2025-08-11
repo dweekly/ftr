@@ -4,20 +4,6 @@ This file tracks planned work for the ftr project.
 
 ## High Priority
 
-- [x] Add missing tests for complex logic
-  - UDP socket error handling
-  - ICMP packet parsing edge cases
-  - ASN lookup failures
-  - Mock-based engine tests (timeout scenarios, destination detection)
-  - Error path testing (socket creation failures, DNS failures)
-- [x] Increase test coverage to 50%+ (achieved ~42% in v0.3.1)
-  - Added integration tests for library API
-  - Added tests for enrichment service, probe types, timing config, async API
-  - Test concurrent operations and edge cases
-- [x] Investigate test isolation for cache state
-  - Implemented serial_test crate for cache-related tests
-  - Tests now run serially to avoid cache conflicts
-  - Fixed all flaky test failures due to concurrent cache access
 - [ ] Enhanced path segment labeling
   - Add "TARGET" segment for hops in the same ASN as the destination
   - Consider renaming "BEYOND" to something more descriptive (e.g., "TRANSIT", "INTERNET", "BACKBONE")
@@ -29,14 +15,6 @@ This file tracks planned work for the ftr project.
   - Add `platform` field (e.g., "freebsd", "openbsd", "macos", "linux", "windows")
   - Add `timestamp` field with ISO 8601 format of when traceroute started
   - Consider adding `platform_version` for OS version information
-- [x] Add async implementation for all platforms (completed in v0.3.1)
-  - Async sockets for Windows, macOS, Linux, FreeBSD, OpenBSD
-  - Immediate response processing without polling delays
-  - Better performance especially for low-latency responses
-- [x] Remove sync implementation once all platforms have async (completed in v0.3.2)
-  - All platforms now have async implementation
-  - Removed sync mode and simplified codebase to async-only
-  - Async provides 16-115x faster response processing
 - [ ] Add optional disk cache for DNS/ASN lookups
   - Cache DNS reverse lookups and ASN information to disk
   - Use a simple SQLite database or JSON file
