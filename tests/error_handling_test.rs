@@ -161,8 +161,8 @@ async fn test_config_validation_errors() {
 
 // Helper function to check if running as root
 fn is_root() -> bool {
-    // Use the same helper from the library
-    ftr::socket::factory::is_root()
+    // Use the helper from utils module
+    ftr::socket::utils::is_root()
 }
 
 #[tokio::test]
