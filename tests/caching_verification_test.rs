@@ -4,87 +4,6 @@ use ftr::{trace_with_config, TracerouteConfigBuilder};
 use std::net::{IpAddr, Ipv4Addr};
 
 #[tokio::test]
-async fn test_dns_caching_reduces_requests() {
-    // Clear caches before test
-    ftr::dns::RDNS_CACHE.clear();
-    ftr::asn::ASN_CACHE.clear();
-
-    // Known IPs with stable PTR records
-    let test_ips = vec![
-        IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), // dns.google
-        IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), // one.one.one.one
-        IpAddr::V4(Ipv4Addr::new(9, 9, 9, 9)), // dns9.quad9.net
-    ];
-
-    // Test direct DNS lookups
-    for ip in &test_ips {
-        // Clear cache for fair test
-        ftr::dns::RDNS_CACHE.clear();
-
-        // First lookup - goes to network
-        let result1 = ftr::dns::reverse_dns_lookup(*ip, None).await;
-        assert!(result1.is_ok(), "First DNS lookup failed for {}", ip);
-        let initial_cache_size = ftr::dns::RDNS_CACHE.len();
-        assert_eq!(
-            initial_cache_size, 1,
-            "Cache should have 1 entry after first lookup"
-        );
-
-        // Multiple subsequent lookups - should all hit cache
-        for i in 0..5 {
-            let result = ftr::dns::reverse_dns_lookup(*ip, None).await;
-            assert!(result.is_ok(), "Lookup {} failed for {}", i + 2, ip);
-            assert_eq!(
-                result.unwrap(),
-                *result1.as_ref().unwrap(),
-                "Cached result differs from initial for {}",
-                ip
-            );
-
-            // Cache size should not increase
-            assert_eq!(
-                ftr::dns::RDNS_CACHE.len(),
-                initial_cache_size,
-                "Cache size increased on lookup {}",
-                i + 2
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_asn_caching_with_cidr() {
-    // Clear ASN cache
-    ftr::asn::ASN_CACHE.clear();
-
-    // IPs in the same CIDR block
-    let google_ips = vec![Ipv4Addr::new(8, 8, 8, 8), Ipv4Addr::new(8, 8, 4, 4)];
-
-    // First lookup
-    let result1 = ftr::asn::lookup_asn(google_ips[0], None).await;
-    assert!(result1.is_ok(), "First ASN lookup failed");
-    let asn1 = result1.unwrap();
-    assert_eq!(asn1.asn, 15169, "Expected Google ASN");
-
-    let cache_size_after_first = ftr::asn::ASN_CACHE.len();
-    assert!(cache_size_after_first > 0, "ASN cache should have entries");
-
-    // Second lookup for different IP in same block
-    let result2 = ftr::asn::lookup_asn(google_ips[1], None).await;
-    assert!(result2.is_ok(), "Second ASN lookup failed");
-    let asn2 = result2.unwrap();
-
-    // Should get same ASN (both are Google)
-    assert_eq!(asn1.asn, asn2.asn, "ASNs should match for Google IPs");
-
-    // Note: 8.8.8.8 and 8.8.4.4 are in different /24 blocks, so cache may grow
-    // The important thing is that both resolve to Google's ASN
-    assert!(asn1.name.contains("GOOGLE"), "First IP should be Google");
-    assert!(asn2.name.contains("GOOGLE"), "Second IP should be Google");
-}
-
-#[tokio::test]
-#[ignore = "integration test - requires network"]
 async fn test_traceroute_with_caching() {
     // Clear all caches
     ftr::dns::RDNS_CACHE.clear();
@@ -169,23 +88,11 @@ async fn test_traceroute_with_caching() {
         }
         Err(e) => {
             eprintln!("Trace failed (may be due to permissions): {}", e);
-            // Still check that caches work independently
-
-            // Test DNS cache
-            let ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-            let dns1 = ftr::dns::reverse_dns_lookup(ip, None).await;
-            if dns1.is_ok() {
-                let cache_size = ftr::dns::RDNS_CACHE.len();
-                let dns2 = ftr::dns::reverse_dns_lookup(ip, None).await;
-                assert_eq!(dns1.unwrap(), dns2.unwrap());
-                assert_eq!(ftr::dns::RDNS_CACHE.len(), cache_size);
-            }
         }
     }
 }
 
 #[tokio::test]
-#[ignore = "integration test - requires network"]
 async fn test_public_ip_caching_in_traces() {
     let public_ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
 

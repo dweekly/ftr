@@ -55,6 +55,8 @@ lazy_static = "1.5"
 async-trait = "0.1"
 tokio-util = "0.7"
 getrandom = "0.2"
+ip_network_table = "0.2.0"
+ip_network = "0.4.1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

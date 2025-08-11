@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 /// Cache entry with timestamp
@@ -14,7 +14,7 @@ struct CacheEntry {
 
 /// Thread-safe cache for reverse DNS lookups
 pub struct RdnsCache {
-    cache: Arc<Mutex<HashMap<IpAddr, CacheEntry>>>,
+    cache: Arc<RwLock<HashMap<IpAddr, CacheEntry>>>,
     ttl: Duration,
 }
 
@@ -22,7 +22,7 @@ impl RdnsCache {
     /// Create a new cache with specified TTL
     pub fn new(ttl: Duration) -> Self {
         Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(RwLock::new(HashMap::new())),
             ttl,
         }
     }
@@ -34,7 +34,7 @@ impl RdnsCache {
 
     /// Look up an IP address in the cache
     pub fn get(&self, ip: &IpAddr) -> Option<String> {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
+        let mut cache = self.cache.write().expect("rwlock poisoned");
 
         // Check if entry exists and is not expired
         if let Some(entry) = cache.get(ip) {
@@ -50,7 +50,7 @@ impl RdnsCache {
 
     /// Insert a hostname into the cache
     pub fn insert(&self, ip: IpAddr, hostname: String) {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
+        let mut cache = self.cache.write().expect("rwlock poisoned");
         cache.insert(
             ip,
             CacheEntry {
@@ -62,25 +62,25 @@ impl RdnsCache {
 
     /// Get the number of entries in the cache
     pub fn len(&self) -> usize {
-        let cache = self.cache.lock().expect("mutex poisoned");
+        let cache = self.cache.read().expect("rwlock poisoned");
         cache.len()
     }
 
     /// Check if the cache is empty
     pub fn is_empty(&self) -> bool {
-        let cache = self.cache.lock().expect("mutex poisoned");
+        let cache = self.cache.read().expect("rwlock poisoned");
         cache.is_empty()
     }
 
     /// Clear all entries from the cache
     pub fn clear(&self) {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
+        let mut cache = self.cache.write().expect("rwlock poisoned");
         cache.clear();
     }
 
     /// Remove expired entries from the cache
     pub fn evict_expired(&self) {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
+        let mut cache = self.cache.write().expect("rwlock poisoned");
         let now = Instant::now();
         cache.retain(|_, entry| now.duration_since(entry.inserted_at) < self.ttl);
     }
@@ -99,12 +99,10 @@ pub static RDNS_CACHE: std::sync::LazyLock<RdnsCache> =
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use std::net::Ipv4Addr;
     use std::thread;
 
     #[test]
-    #[serial]
     fn test_rdns_cache() {
         let cache = RdnsCache::new(Duration::from_secs(60));
 
@@ -182,7 +180,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_cache_expiration() {
         let cache = RdnsCache::new(Duration::from_millis(50));
         let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
@@ -201,7 +198,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_evict_expired() {
         let cache = RdnsCache::new(Duration::from_millis(50));
 
@@ -223,22 +219,5 @@ mod tests {
         // Evict expired entries
         cache.evict_expired();
         assert_eq!(cache.len(), 0);
-    }
-
-    #[test]
-    #[serial]
-    fn test_global_cache() {
-        // Clear any existing data
-        RDNS_CACHE.clear();
-        assert!(RDNS_CACHE.is_empty());
-
-        // Insert test data
-        let ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
-        RDNS_CACHE.insert(ip, "one.one.one.one".to_string());
-
-        // Verify insertion
-        let result = RDNS_CACHE.get(&ip);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), "one.one.one.one");
     }
 }

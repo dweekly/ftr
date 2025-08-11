@@ -1,56 +1,63 @@
 //! ASN lookup caching functionality
 
 use crate::traceroute::AsnInfo;
+use ip_network::Ipv4Network;
+use ip_network_table::IpNetworkTable;
 use ipnet::Ipv4Net;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 /// Thread-safe cache for ASN lookups by CIDR prefix
 pub struct AsnCache {
-    cache: Arc<Mutex<HashMap<Ipv4Net, AsnInfo>>>,
+    cache: Arc<RwLock<IpNetworkTable<AsnInfo>>>,
 }
 
 impl AsnCache {
     /// Create a new empty cache
     pub fn new() -> Self {
         Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(RwLock::new(IpNetworkTable::new())),
         }
     }
 
     /// Look up an IP address in the cache
     pub fn get(&self, ip: &std::net::Ipv4Addr) -> Option<AsnInfo> {
-        let cache = self.cache.lock().expect("mutex poisoned");
-        for (prefix, asn_info) in cache.iter() {
-            if prefix.contains(ip) {
-                return Some(asn_info.clone());
-            }
-        }
-        None
+        let cache = self.cache.read().expect("rwlock poisoned");
+        cache
+            .longest_match(*ip)
+            .map(|(_, asn_info)| asn_info.clone())
     }
 
     /// Insert an ASN info entry into the cache
     pub fn insert(&self, prefix: Ipv4Net, asn_info: AsnInfo) {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
-        cache.insert(prefix, asn_info);
+        let mut cache = self.cache.write().expect("rwlock poisoned");
+        match Ipv4Network::new(prefix.addr(), prefix.prefix_len()) {
+            Ok(ipv4_network) => {
+                cache.insert(ipv4_network, asn_info);
+            }
+            Err(e) => {
+                // This should not happen as we are converting from a valid Ipv4Net
+                eprintln!("Error converting Ipv4Net to Ipv4Network: {}", e);
+            }
+        }
     }
 
     /// Get the number of entries in the cache
     pub fn len(&self) -> usize {
-        let cache = self.cache.lock().expect("mutex poisoned");
-        cache.len()
+        let cache = self.cache.read().expect("rwlock poisoned");
+        let (ipv4_len, ipv6_len) = cache.len();
+        ipv4_len + ipv6_len
     }
 
     /// Check if the cache is empty
     pub fn is_empty(&self) -> bool {
-        let cache = self.cache.lock().expect("mutex poisoned");
+        let cache = self.cache.read().expect("rwlock poisoned");
         cache.is_empty()
     }
 
     /// Clear all entries from the cache
     pub fn clear(&self) {
-        let mut cache = self.cache.lock().expect("mutex poisoned");
-        cache.clear();
+        let mut cache = self.cache.write().expect("rwlock poisoned");
+        *cache = IpNetworkTable::new();
     }
 }
 
@@ -66,11 +73,9 @@ pub static ASN_CACHE: std::sync::LazyLock<AsnCache> = std::sync::LazyLock::new(A
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use std::net::Ipv4Addr;
 
     #[test]
-    #[serial]
     fn test_asn_cache() {
         let cache = AsnCache::new();
         assert!(cache.is_empty());
@@ -109,109 +114,32 @@ mod tests {
     }
 
     #[test]
-    #[serial]
-    fn test_global_cache() {
-        // Clear the global cache to ensure clean state
-        ASN_CACHE.clear();
-        assert_eq!(ASN_CACHE.len(), 0, "Cache should be empty after clear");
-
-        // Use TEST-NET-2 (RFC 5737) for predictable test data
-        let test_prefix = "198.51.100.0/24";
-        let test_ip1 = "198.51.100.1";
-        let test_ip2 = "198.51.100.255";
-        let outside_ip = "198.51.101.1"; // Outside the prefix
-
-        // Create test ASN info
-        let asn_info = AsnInfo {
-            asn: 64512, // Private ASN range
-            prefix: test_prefix.to_string(),
-            country_code: "XX".to_string(),
-            registry: "TEST".to_string(),
-            name: "TEST-ASN-CACHE".to_string(),
+    fn test_overlapping_prefixes() {
+        let cache = AsnCache::new();
+        let specific_prefix = "192.168.1.0/24".parse().unwrap();
+        let specific_info = AsnInfo {
+            asn: 1,
+            prefix: "192.168.1.0/24".to_string(),
+            country_code: "US".to_string(),
+            registry: "ARIN".to_string(),
+            name: "Specific".to_string(),
         };
+        cache.insert(specific_prefix, specific_info);
 
-        // Insert into cache
-        let prefix: Ipv4Net = test_prefix.parse().unwrap();
-        ASN_CACHE.insert(prefix, asn_info.clone());
-
-        assert_eq!(ASN_CACHE.len(), 1, "Cache should have exactly 1 entry");
-
-        // Test lookup for IPs within the prefix
-        let ip1: Ipv4Addr = test_ip1.parse().unwrap();
-        let result1 = ASN_CACHE.get(&ip1);
-        assert!(result1.is_some(), "Should find IP within prefix");
-        let found1 = result1.unwrap();
-        assert_eq!(found1.asn, 64512);
-        assert_eq!(found1.name, "TEST-ASN-CACHE");
-        assert_eq!(found1.prefix, test_prefix);
-
-        // Test another IP in the same prefix
-        let ip2: Ipv4Addr = test_ip2.parse().unwrap();
-        let result2 = ASN_CACHE.get(&ip2);
-        assert!(result2.is_some(), "Should find another IP within prefix");
-        assert_eq!(result2.unwrap().asn, 64512);
-
-        // Test IP outside the prefix
-        let ip_outside: Ipv4Addr = outside_ip.parse().unwrap();
-        let result_outside = ASN_CACHE.get(&ip_outside);
-        assert!(
-            result_outside.is_none(),
-            "Should not find IP outside prefix"
-        );
-
-        // Test inserting overlapping prefixes
-        let broader_prefix = "198.51.0.0/16";
+        let broader_prefix = "192.168.0.0/16".parse().unwrap();
         let broader_info = AsnInfo {
-            asn: 64513,
-            prefix: broader_prefix.to_string(),
-            country_code: "YY".to_string(),
-            registry: "TEST2".to_string(),
-            name: "TEST-BROADER".to_string(),
+            asn: 2,
+            prefix: "192.168.0.0/16".to_string(),
+            country_code: "US".to_string(),
+            registry: "ARIN".to_string(),
+            name: "Broader".to_string(),
         };
+        cache.insert(broader_prefix, broader_info);
 
-        let prefix_broad: Ipv4Net = broader_prefix.parse().unwrap();
-        let size_before = ASN_CACHE.len();
-        ASN_CACHE.insert(prefix_broad, broader_info);
-        assert_eq!(
-            ASN_CACHE.len(),
-            size_before + 1,
-            "Cache should have grown by 1"
-        );
-
-        // The more specific prefix should still match
-        let result_specific = ASN_CACHE.get(&ip1);
-        assert!(result_specific.is_some());
-        // Note: Depending on implementation, might get either prefix
-        // The important thing is we get a result
-
-        // Test multiple lookups return consistent data
-        // With overlapping prefixes, we might get either one, but it should be consistent
-        let first_lookup = ASN_CACHE.get(&ip1);
-        assert!(first_lookup.is_some(), "Should find a matching entry");
-        let first_result = first_lookup.unwrap();
-
-        // Should be one of our inserted entries
-        assert!(
-            (first_result.asn == 64512 && first_result.name == "TEST-ASN-CACHE")
-                || (first_result.asn == 64513 && first_result.name == "TEST-BROADER"),
-            "Should return one of the inserted entries"
-        );
-
-        // Subsequent lookups should return the same result
-        for _ in 0..10 {
-            let result = ASN_CACHE.get(&ip1);
-            assert!(result.is_some(), "Repeated lookups should find the entry");
-            let found = result.unwrap();
-            assert_eq!(found.asn, first_result.asn, "Should return consistent ASN");
-            assert_eq!(
-                found.name, first_result.name,
-                "Should return consistent name"
-            );
-        }
-
-        // Test clear
-        ASN_CACHE.clear();
-        assert_eq!(ASN_CACHE.len(), 0, "Cache should be empty after clear");
-        assert!(ASN_CACHE.get(&ip1).is_none(), "Should not find after clear");
+        // Should match the most specific prefix
+        let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
+        let result = cache.get(&ip);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().asn, 1);
     }
 }

@@ -9,7 +9,11 @@
       "Bash(find:*)",
       "Bash(cargo check:*)",
       "Bash(cargo test:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(ssh:*)",
+      "Bash(timeout 10s cargo test --test caching_verification_test -- --nocapture)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(gtimeout 10s cargo test --test caching_verification_test -- --nocapture)"
     ],
     "deny": []
   }
