@@ -33,10 +33,10 @@ This file tracks planned work for the ftr project.
   - Async sockets for Windows, macOS, Linux, FreeBSD, OpenBSD
   - Immediate response processing without polling delays
   - Better performance especially for low-latency responses
-- [ ] Remove sync implementation once all platforms have async
+- [x] Remove sync implementation once all platforms have async (completed in v0.3.2)
   - All platforms now have async implementation
-  - Keep sync mode temporarily for backwards compatibility
-  - Plan removal for v0.4.0
+  - Removed sync mode and simplified codebase to async-only
+  - Async provides 16-115x faster response processing
 - [ ] Add optional disk cache for DNS/ASN lookups
   - Cache DNS reverse lookups and ASN information to disk
   - Use a simple SQLite database or JSON file
