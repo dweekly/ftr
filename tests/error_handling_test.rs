@@ -14,7 +14,9 @@ async fn test_insufficient_permissions_error() {
         .build()
         .unwrap();
 
-    // Only run this test if we're not root
+    // Only run this test if we're not root and on Linux
+    // macOS doesn't require root for DGRAM ICMP sockets
+    #[cfg(target_os = "linux")]
     if !is_root() {
         let result = ftr::trace_with_config(config).await;
 
@@ -37,6 +39,12 @@ async fn test_insufficient_permissions_error() {
                 panic!("Expected permission error but operation succeeded");
             }
         }
+    }
+
+    // On non-Linux platforms, just check that the test compiles and can run
+    #[cfg(not(target_os = "linux"))]
+    {
+        println!("Skipping permission test on non-Linux platform");
     }
 }
 
