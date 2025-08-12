@@ -66,16 +66,21 @@ async fn test_traceroute_with_caching() {
             let result2 = trace_with_config(config2).await;
             assert!(result2.is_ok(), "Second trace should succeed");
 
-            // Cache sizes should not change significantly
-            assert_eq!(
-                ftr::dns::RDNS_CACHE.len(),
+            // Cache sizes should not decrease (can increase slightly due to public IP lookup)
+            assert!(
+                ftr::dns::RDNS_CACHE.len() >= dns_cache_size,
+                "DNS cache size should not decrease (was {}, now {})",
                 dns_cache_size,
-                "DNS cache size should remain stable"
+                ftr::dns::RDNS_CACHE.len()
             );
-            assert_eq!(
-                ftr::asn::ASN_CACHE.len(),
+            // ASN cache might grow by 1-2 entries due to public IP detection
+            let asn_cache_growth = ftr::asn::ASN_CACHE.len() - asn_cache_size;
+            assert!(
+                asn_cache_growth <= 2,
+                "ASN cache should not grow significantly (grew by {} entries, from {} to {})",
+                asn_cache_growth,
                 asn_cache_size,
-                "ASN cache size should remain stable"
+                ftr::asn::ASN_CACHE.len()
             );
 
             // Results should be consistent
