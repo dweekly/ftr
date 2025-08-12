@@ -344,7 +344,7 @@ mod tests {
     fn test_create_socket() {
         // This will fail without root
         let result = BsdAsyncIcmpSocket::new();
-        if !crate::socket::factory::is_root() {
+        if !crate::socket::utils::is_root() {
             assert!(result.is_err());
         }
     }
