@@ -3,6 +3,8 @@
 //! These tests verify that the library returns proper structured errors
 //! that are easy for developers to handle programmatically.
 
+#[cfg(target_os = "linux")]
+use ftr::SocketMode;
 use ftr::{ProbeProtocol, TracerouteConfigBuilder, TracerouteError};
 
 #[tokio::test]
