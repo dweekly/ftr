@@ -64,7 +64,8 @@ pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAdd
     }
 
     // Get server addresses from cache
-    let server_addrs = crate::public_ip::stun_cache::get_stun_server_addrs(server)
+    let server_addrs = crate::public_ip::stun_cache::STUN_CACHE
+        .get_stun_server_addrs(server)
         .await
         .map_err(|e| {
             if verbose >= 2 {
