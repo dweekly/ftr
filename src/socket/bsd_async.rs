@@ -341,11 +341,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_create_socket() {
-        // This will fail without root
+    fn test_socket_initialization() {
+        // BsdAsyncIcmpSocket::new() just initializes the struct, doesn't create actual socket
+        // The actual socket is created when sending probes
         let result = BsdAsyncIcmpSocket::new();
-        if !crate::socket::utils::is_root() {
-            assert!(result.is_err());
-        }
+        assert!(
+            result.is_ok(),
+            "Socket struct initialization should always succeed"
+        );
+
+        let socket = result.unwrap();
+        assert_eq!(socket.mode, ProbeMode::RawIcmp);
     }
 }
