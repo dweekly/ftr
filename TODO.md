@@ -2,6 +2,10 @@
 
 This file tracks planned work for the ftr project.
 
+## Architectural Improvements
+
+- [ ] **Refactor to Eliminate Global Caches (Handle Pattern)**: Implement the `Ftr` struct to own all caches and resources, removing global static variables. This will improve testability, flexibility, and code clarity. See `docs/HANDLE_PATTERN_REFACTOR.md` for the detailed plan.
+
 ## High Priority
 
 - [ ] Enhanced path segment labeling
