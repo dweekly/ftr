@@ -307,6 +307,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
   - **macOS**: Root privileges may be required for raw socket access
   - **Windows**: No additional requirements (uses native Windows ICMP API)
     - Note: Windows Firewall may prompt for permission on first run
+    - **CI/Cloud Limitation**: GitHub Actions Windows runners and Azure VMs block inbound ICMP packets, preventing traceroute from receiving responses. This is an Azure network-level restriction that cannot be bypassed with firewall rules. Consider using self-hosted runners for full network testing on Windows.
   - **FreeBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
   - **OpenBSD**: Root privileges required for ICMP (no DGRAM ICMP support)
 

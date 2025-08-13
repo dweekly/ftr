@@ -33,6 +33,16 @@ jobs:
       with:
         # Share cache between different jobs but keep OS-specific
         shared-key: "ci-${{ matrix.os }}"
+    - name: Configure Windows Firewall for ICMP
+      if: runner.os == 'Windows'
+      run: |
+        # Allow ICMP Time Exceeded (Type 11) - essential for traceroute
+        netsh advfirewall firewall add rule name="Allow ICMP Time Exceeded" protocol=icmpv4:11,any dir=in action=allow
+        # Allow ICMP Echo Reply (Type 0) - for ping responses
+        netsh advfirewall firewall add rule name="Allow ICMP Echo Reply" protocol=icmpv4:0,any dir=in action=allow
+        # Allow ICMP Destination Unreachable (Type 3) - for unreachable responses
+        netsh advfirewall firewall add rule name="Allow ICMP Destination Unreachable" protocol=icmpv4:3,any dir=in action=allow
+      shell: pwsh
     - name: Build
       run: cargo build --verbose
     - name: Run tests

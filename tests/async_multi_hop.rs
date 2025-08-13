@@ -28,35 +28,29 @@ mod tests {
 
                 eprintln!("  Hops with responses: {}", hops_with_responses.len());
 
-                // If we got no responses at all, there's a bug in the async UDP implementation
-                if hops_with_responses.is_empty() && cfg!(target_os = "linux") {
-                    eprintln!("\n=== DEBUG: Linux async UDP got 0 responses ===");
+                // Debug info if we got no responses
+                if hops_with_responses.is_empty() {
+                    eprintln!("\n=== DEBUG: Got 0 responses ===");
                     eprintln!("Environment info:");
-                    eprintln!("  USER: {:?}", std::env::var("USER"));
+                    eprintln!("  OS: {}", std::env::consts::OS);
                     eprintln!("  CI: {:?}", std::env::var("CI"));
                     eprintln!("  GITHUB_ACTIONS: {:?}", std::env::var("GITHUB_ACTIONS"));
 
-                    // Check if we can create UDP socket
-                    eprintln!("\nTesting UDP socket creation...");
-                    if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
-                        eprintln!("  ✓ UDP socket can be created");
-                        if socket.set_ttl(1).is_ok() {
-                            eprintln!("  ✓ Can set TTL on UDP socket");
-                        }
-                    } else {
-                        eprintln!("  ✗ Failed to create UDP socket");
+                    // GitHub Actions Windows runners are hosted in Azure which blocks inbound ICMP
+                    // See: https://docs.github.com/en/actions/using-github-hosted-runners/about-github-hosted-runners
+                    if cfg!(target_os = "windows") && std::env::var("GITHUB_ACTIONS").is_ok() {
+                        eprintln!("\nNo ICMP responses on GitHub Actions Windows runner");
+                        eprintln!("This is expected - Azure blocks inbound ICMP packets.");
+                        eprintln!("GitHub hosts Windows runners in Azure data centers.");
+                        eprintln!("Skipping test on GitHub Actions Windows.");
+                        return;
                     }
 
-                    // Test if sync mode works
-                    eprintln!("\nTesting sync mode to compare...");
-                    // Note: sync mode is no longer available, all tests use async now
-                    eprintln!("Note: All implementations are now async, no sync mode to compare");
-
-                    eprintln!("\nAsync UDP mode got 0 responses in CI environment");
-                    eprintln!("This might be a network restriction in the CI environment");
-                    eprintln!("Consider that GitHub Actions may block UDP traceroute entirely.");
-                    eprintln!("The test passes on real Linux systems (verified on Ubuntu 24.04).");
-                    return;
+                    eprintln!("\nUnexpected: No ICMP responses received");
+                    eprintln!("This could indicate:");
+                    eprintln!("  - Firewall blocking ICMP");
+                    eprintln!("  - Network configuration issues");
+                    eprintln!("  - Target unreachable");
                 }
 
                 // Verify we have responses from different addresses

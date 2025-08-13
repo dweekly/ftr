@@ -31,6 +31,12 @@ async fn test_traceroute_performance_localhost() {
 
 #[tokio::test]
 async fn test_traceroute_performance_remote() {
+    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
+    if cfg!(target_os = "windows") && std::env::var("GITHUB_ACTIONS").is_ok() {
+        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
+        return;
+    }
+
     let start = Instant::now();
 
     let config = TracerouteConfig::builder()
@@ -66,6 +72,12 @@ async fn test_traceroute_performance_remote() {
 
 #[tokio::test]
 async fn test_event_driven_efficiency() {
+    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
+    if cfg!(target_os = "windows") && std::env::var("GITHUB_ACTIONS").is_ok() {
+        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
+        return;
+    }
+
     // Test that demonstrates the efficiency of event-driven approach
     // by running multiple concurrent traceroutes
     let targets = vec!["1.1.1.1", "8.8.8.8", "9.9.9.9"];
