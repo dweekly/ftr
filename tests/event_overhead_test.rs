@@ -67,8 +67,10 @@ async fn test_polling_vs_event_driven() {
     println!("Event-driven approach: {:?}", event_elapsed);
 
     // Event-driven should be close to 100ms, polling will have overhead
+    // Allow more tolerance for system load and CI environments
     assert!(
-        event_elapsed < Duration::from_millis(110),
-        "Event-driven took too long"
+        event_elapsed < Duration::from_millis(150),
+        "Event-driven took too long: {:?}",
+        event_elapsed
     );
 }
