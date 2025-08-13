@@ -175,7 +175,7 @@ fn build_binding_request() -> Vec<u8> {
 
     // Transaction ID (12 bytes) - random
     let mut transaction_id = [0u8; 12];
-    getrandom::getrandom(&mut transaction_id).unwrap_or_else(|_| {
+    getrandom::fill(&mut transaction_id).unwrap_or_else(|_| {
         // Fallback to timestamp-based ID if random fails
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

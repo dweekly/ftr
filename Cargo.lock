@@ -472,7 +472,7 @@ dependencies = [
  "clap",
  "criterion",
  "futures",
- "getrandom 0.2.16",
+ "getrandom 0.3.3",
  "hickory-resolver",
  "ip_network",
  "ip_network_table",
