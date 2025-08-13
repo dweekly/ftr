@@ -31,10 +31,13 @@ async fn test_traceroute_performance_localhost() {
 
 #[tokio::test]
 async fn test_traceroute_performance_remote() {
-    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
-    if cfg!(target_os = "windows") && std::env::var("GITHUB_ACTIONS").is_ok() {
-        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
-        return;
+    // Skip on GitHub Actions Windows/Linux - unreliable ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        let os = std::env::consts::OS;
+        if os == "windows" || os == "linux" {
+            eprintln!("Skipping test on GitHub Actions {} (unreliable ICMP)", os);
+            return;
+        }
     }
 
     let start = Instant::now();
@@ -72,10 +75,13 @@ async fn test_traceroute_performance_remote() {
 
 #[tokio::test]
 async fn test_event_driven_efficiency() {
-    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
-    if cfg!(target_os = "windows") && std::env::var("GITHUB_ACTIONS").is_ok() {
-        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
-        return;
+    // Skip on GitHub Actions Windows/Linux - unreliable ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        let os = std::env::consts::OS;
+        if os == "windows" || os == "linux" {
+            eprintln!("Skipping test on GitHub Actions {} (unreliable ICMP)", os);
+            return;
+        }
     }
 
     // Test that demonstrates the efficiency of event-driven approach

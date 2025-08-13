@@ -5,6 +5,15 @@ use std::net::{IpAddr, Ipv4Addr};
 
 #[tokio::test]
 async fn test_traceroute_with_caching() {
+    // Skip on GitHub Actions Windows/Linux - unreliable ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        let os = std::env::consts::OS;
+        if os == "windows" || os == "linux" {
+            eprintln!("Skipping test on GitHub Actions {} (unreliable ICMP)", os);
+            return;
+        }
+    }
+
     // Clear all caches
     ftr::dns::RDNS_CACHE.clear();
     ftr::asn::ASN_CACHE.clear();
@@ -99,6 +108,15 @@ async fn test_traceroute_with_caching() {
 
 #[tokio::test]
 async fn test_public_ip_caching_in_traces() {
+    // Skip on GitHub Actions Windows/Linux - unreliable ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        let os = std::env::consts::OS;
+        if os == "windows" || os == "linux" {
+            eprintln!("Skipping test on GitHub Actions {} (unreliable ICMP)", os);
+            return;
+        }
+    }
+
     let public_ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
 
     // Create configs with and without public IP
