@@ -3,7 +3,9 @@
 #[cfg(feature = "async")]
 #[cfg(test)]
 mod tests {
-    use ftr::{trace, TracerouteConfig};
+    use ftr::trace;
+    #[cfg(target_os = "macos")]
+    use ftr::TracerouteConfig;
 
     #[tokio::test]
     #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), ignore)]
