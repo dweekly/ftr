@@ -1,6 +1,7 @@
 name: Validate Release
 
 on:
+  workflow_call:  # Make this workflow reusable
   push:
     tags:
       - 'v*'
