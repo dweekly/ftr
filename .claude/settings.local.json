@@ -6,7 +6,14 @@
       "Bash(cargo tarpaulin:*)",
       "Bash(RUST_BACKTRACE=1 cargo test test_global_cache -- --nocapture --test-threads=1)",
       "Bash(cargo fmt:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(cargo check:*)",
+      "Bash(cargo test:*)",
+      "Bash(cargo build:*)",
+      "Bash(ssh:*)",
+      "Bash(timeout 10s cargo test --test caching_verification_test -- --nocapture)",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(gtimeout 10s cargo test --test caching_verification_test -- --nocapture)"
     ],
     "deny": []
   }

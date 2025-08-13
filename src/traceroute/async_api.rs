@@ -22,6 +22,14 @@ pub struct AsyncTraceroute {
 impl AsyncTraceroute {
     /// Create a new async traceroute from configuration
     pub async fn new(mut config: TracerouteConfig) -> Result<Self, TracerouteError> {
+        // Check if target is an IP address literal
+        if let Ok(ip) = config.target.parse::<IpAddr>() {
+            if ip.is_ipv6() {
+                return Err(TracerouteError::Ipv6NotSupported);
+            }
+            config.target_ip = Some(ip);
+        }
+
         // Resolve target if needed
         let target_ip = if let Some(ip) = config.target_ip {
             ip
@@ -38,11 +46,18 @@ impl AsyncTraceroute {
                 .await
                 .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
 
+            // Check if we got any IPv6 addresses but no IPv4
+            let has_ipv6 = response.iter().any(|ip| ip.is_ipv6());
+
             response
                 .iter()
                 .find(std::net::IpAddr::is_ipv4)
                 .ok_or_else(|| {
-                    TracerouteError::ResolutionError("No IPv4 address found".to_string())
+                    if has_ipv6 {
+                        TracerouteError::Ipv6NotSupported
+                    } else {
+                        TracerouteError::ResolutionError("No IPv4 address found".to_string())
+                    }
                 })?
         };
 
@@ -80,7 +95,21 @@ impl AsyncTraceroute {
             self.config.socket_mode,
         )
         .await
-        .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
+        .map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("TCP traceroute is not yet implemented") {
+                TracerouteError::NotImplemented {
+                    feature: "TCP traceroute".to_string(),
+                }
+            } else if err_str.contains("requires root or CAP_NET_RAW") {
+                TracerouteError::InsufficientPermissions {
+                    required: "root or CAP_NET_RAW capability".to_string(),
+                    suggestion: "Try running with sudo or use UDP mode (--udp)".to_string(),
+                }
+            } else {
+                TracerouteError::SocketError(err_str)
+            }
+        })?;
 
         // Create and run fully parallel async engine
         let engine = FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)

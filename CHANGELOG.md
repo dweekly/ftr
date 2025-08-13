@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - TBD
+
+### Changed
+- **BREAKING**: Removed synchronous implementation - library is now async-only
+  - Eliminated `--sync-mode` CLI flag (async is the only mode)
+  - Removed sync socket implementations and TracerouteEngine
+  - Simplified public API to only expose async functions
+  - All library users must now use async/await (with tokio runtime)
+
+### Removed
+- Sync socket implementations (`icmp_v4.rs`, `udp.rs`, `factory.rs`)
+- Sync TracerouteEngine and API wrapper
+- `--sync-mode` command-line flag
+- `create_probe_socket` family of functions from public API
+- `test_socket.rs` example that used sync API
+
+### Internal
+- Consolidated error types into single `TracerouteError` enum
+- Added `socket::utils` module for permission check helpers
+- Reduced codebase by ~4,800 lines of code
+- Simplified maintenance with single implementation path
+
+### Performance
+- Async-only implementation maintains 16-115x faster response processing
+- Eliminated 200ms+ polling delays from sync implementation
+
 ## [0.3.1] - 2025-08-01
 
 ### Added

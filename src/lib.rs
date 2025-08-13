@@ -139,9 +139,6 @@ pub mod traceroute;
 mod tests;
 
 // Re-export core types for library users
-pub use socket::factory::{
-    create_probe_socket, create_probe_socket_with_mode, create_probe_socket_with_options,
-};
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
     trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType,
@@ -149,6 +146,5 @@ pub use traceroute::{
     TracerouteProgress, TracerouteResult,
 };
 
-// Re-export async API when feature is enabled
-#[cfg(feature = "async")]
+// Re-export async API
 pub use traceroute::async_api;

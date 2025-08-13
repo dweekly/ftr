@@ -64,7 +64,8 @@ pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAdd
     }
 
     // Get server addresses from cache
-    let server_addrs = crate::public_ip::stun_cache::get_stun_server_addrs(server)
+    let server_addrs = crate::public_ip::stun_cache::STUN_CACHE
+        .get_stun_server_addrs(server)
         .await
         .map_err(|e| {
             if verbose >= 2 {
@@ -174,7 +175,7 @@ fn build_binding_request() -> Vec<u8> {
 
     // Transaction ID (12 bytes) - random
     let mut transaction_id = [0u8; 12];
-    getrandom::getrandom(&mut transaction_id).unwrap_or_else(|_| {
+    getrandom::fill(&mut transaction_id).unwrap_or_else(|_| {
         // Fallback to timestamp-based ID if random fails
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

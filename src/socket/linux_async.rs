@@ -72,15 +72,15 @@ impl LinuxAsyncUdpSocket {
             iov_len: buf.len(),
         };
 
-        let mut msg = libc::msghdr {
-            msg_name: &mut from_addr as *mut _ as *mut libc::c_void,
-            msg_namelen: from_len,
-            msg_iov: &mut iovec,
-            msg_iovlen: 1,
-            msg_control: control_buf.as_mut_ptr() as *mut libc::c_void,
-            msg_controllen: control_buf.len(),
-            msg_flags: 0,
-        };
+        // Initialize msghdr - musl and glibc have different field types
+        let mut msg: libc::msghdr = unsafe { std::mem::zeroed() };
+        msg.msg_name = &mut from_addr as *mut _ as *mut libc::c_void;
+        msg.msg_namelen = from_len;
+        msg.msg_iov = &mut iovec;
+        msg.msg_iovlen = 1;
+        msg.msg_control = control_buf.as_mut_ptr() as *mut libc::c_void;
+        msg.msg_controllen = control_buf.len() as _; // Cast to handle u32 vs usize
+        msg.msg_flags = 0;
 
         let ret = libc::recvmsg(fd, &mut msg, libc::MSG_ERRQUEUE | libc::MSG_DONTWAIT);
 

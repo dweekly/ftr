@@ -104,6 +104,12 @@ fn test_windows_invalid_host() {
 
 #[test]
 fn test_windows_timeout_handling() {
+    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
+        return;
+    }
+
     let mut cmd = Command::cargo_bin("ftr").unwrap();
     cmd.args([
         "--probe-timeout-ms",
@@ -124,6 +130,12 @@ fn test_windows_timeout_handling() {
 
 #[test]
 fn test_windows_asn_lookup() {
+    // Skip on GitHub Actions Windows - Azure blocks inbound ICMP
+    if std::env::var("GITHUB_ACTIONS").is_ok() {
+        eprintln!("Skipping test on GitHub Actions Windows (Azure blocks ICMP)");
+        return;
+    }
+
     let mut cmd = Command::cargo_bin("ftr").unwrap();
     cmd.args(["--max-hops", "18", "8.8.8.8"]);
 
