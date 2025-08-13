@@ -133,38 +133,108 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_localhost_single_hop() {
-        // Localhost should typically be a single hop, but some network configurations
-        // may report 2 hops (e.g., when there's a virtual interface or loopback quirk)
-        let target = "127.0.0.1";
+    async fn test_parallel_probing_to_external_target() {
+        // Test that parallel probing works correctly for an external target
+        // This exercises the concurrent probe sending and response collection
+        let target = "1.1.1.1"; // Cloudflare DNS - reliable and fast
 
         match trace(target).await {
             Ok(result) => {
-                let hop_count = result.hop_count();
+                // Should have multiple hops for an external target
+                assert!(
+                    result.hop_count() >= 2,
+                    "External target should have multiple hops, got {}",
+                    result.hop_count()
+                );
 
-                // Debug output to help diagnose issues
-                if hop_count > 1 {
-                    eprintln!("DEBUG: Localhost trace returned {} hops:", hop_count);
-                    for (i, hop) in result.hops.iter().enumerate() {
-                        eprintln!("  Hop {}: {:?}", i + 1, hop.addr);
+                // Verify TTLs are in ascending order
+                let mut prev_ttl = 0;
+                for hop in &result.hops {
+                    assert!(
+                        hop.ttl > prev_ttl,
+                        "TTLs should be in ascending order: {} <= {}",
+                        hop.ttl,
+                        prev_ttl
+                    );
+                    prev_ttl = hop.ttl;
+                }
+
+                // Should not have huge gaps in TTL sequence (no more than 5 missing hops)
+                let ttls: Vec<u8> = result.hops.iter().map(|h| h.ttl).collect();
+                for window in ttls.windows(2) {
+                    assert!(
+                        window[1] - window[0] <= 5,
+                        "Large gap in TTL sequence: {} to {}",
+                        window[0],
+                        window[1]
+                    );
+                }
+            }
+            Err(e) => {
+                // Skip on permission error or network issues
+                if e.to_string().contains("Permission denied") {
+                    eprintln!("Skipping external target test due to permissions");
+                    return;
+                }
+                if e.to_string().contains("timed out") || e.to_string().contains("unreachable") {
+                    eprintln!("Skipping external target test due to network issues");
+                    return;
+                }
+                panic!("External trace failed: {}", e);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_localhost_trace_completes_quickly() {
+        // Test that localhost traces complete quickly and reach the destination
+        // We don't care about the exact hop count since parallel probing can
+        // cause any TTL >= 1 to reach localhost
+        let target = "127.0.0.1";
+        let start = std::time::Instant::now();
+
+        match trace(target).await {
+            Ok(result) => {
+                let elapsed = start.elapsed();
+
+                // Localhost should complete very quickly (< 500ms even on slow systems)
+                assert!(
+                    elapsed.as_millis() < 500,
+                    "Localhost trace took too long: {:?}",
+                    elapsed
+                );
+
+                // Should have at least one hop
+                assert!(
+                    !result.hops.is_empty(),
+                    "Localhost trace should have at least one hop"
+                );
+
+                // All reported hops should be loopback addresses
+                for hop in &result.hops {
+                    if let Some(addr) = hop.addr {
+                        assert!(
+                            addr.is_loopback(),
+                            "Hop {} should be loopback address, got {}",
+                            hop.ttl,
+                            addr
+                        );
                     }
                 }
 
-                // Accept 1 or 2 hops as valid for localhost
-                // Some systems may report an intermediate hop due to network stack implementation
+                // Should have reached the destination
                 assert!(
-                    hop_count >= 1 && hop_count <= 2,
-                    "Localhost should be 1-2 hops, got {}",
-                    hop_count
+                    result.destination_hop().is_some(),
+                    "Should have reached localhost destination"
                 );
 
-                // Verify that we actually reached localhost
-                if let Some(final_hop) = result.hops.last() {
-                    if let Some(addr) = final_hop.addr {
-                        assert!(
-                            addr.is_loopback(),
-                            "Final hop should be loopback address, got {}",
-                            addr
+                // The destination hop should be localhost
+                if let Some(dest_hop) = result.destination_hop() {
+                    if let Some(addr) = dest_hop.addr {
+                        assert_eq!(
+                            addr.to_string(),
+                            "127.0.0.1",
+                            "Destination should be 127.0.0.1"
                         );
                     }
                 }
