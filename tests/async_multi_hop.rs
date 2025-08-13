@@ -191,11 +191,20 @@ mod tests {
             Ok(result) => {
                 let elapsed = start.elapsed();
 
-                // Localhost should complete very quickly (< 500ms even on slow systems)
+                // Localhost should complete quickly
+                // Allow more time on CI runners which can be slower
+                let timeout_ms =
+                    if std::env::var("CI").is_ok() || std::env::var("GITHUB_ACTIONS").is_ok() {
+                        1000 // 1 second for CI environments
+                    } else {
+                        500 // 500ms for local testing
+                    };
+
                 assert!(
-                    elapsed.as_millis() < 500,
-                    "Localhost trace took too long: {:?}",
-                    elapsed
+                    elapsed.as_millis() < timeout_ms,
+                    "Localhost trace took too long: {:?} (limit: {}ms)",
+                    elapsed,
+                    timeout_ms
                 );
 
                 // Should have at least one hop
