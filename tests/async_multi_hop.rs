@@ -8,7 +8,6 @@ mod tests {
     use ftr::TracerouteConfig;
 
     #[tokio::test]
-    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), ignore)]
     async fn test_async_shows_multiple_hops() {
         // Test with a well-known destination that should have multiple hops
         let target = "8.8.8.8";

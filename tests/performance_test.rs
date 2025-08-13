@@ -30,7 +30,6 @@ async fn test_traceroute_performance_localhost() {
 }
 
 #[tokio::test]
-#[ignore] // Requires network
 async fn test_traceroute_performance_remote() {
     let start = Instant::now();
 
@@ -66,7 +65,6 @@ async fn test_traceroute_performance_remote() {
 }
 
 #[tokio::test]
-#[ignore] // Requires network
 async fn test_event_driven_efficiency() {
     // Test that demonstrates the efficiency of event-driven approach
     // by running multiple concurrent traceroutes
