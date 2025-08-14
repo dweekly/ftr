@@ -198,7 +198,8 @@ mod tests {
         let target = "127.0.0.1";
         let start = std::time::Instant::now();
 
-        match trace(target).await {
+        let ftr_instance = Ftr::new();
+        match ftr_instance.trace(target).await {
             Ok(result) => {
                 let elapsed = start.elapsed();
 
