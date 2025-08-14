@@ -166,6 +166,9 @@ fn main() {
 async fn async_main(_process_start: Instant) -> Result<()> {
     let args = Args::parse();
 
+    // Create Ftr instance with fresh caches
+    let ftr_instance = ftr::Ftr::new();
+
     // Handle public IP option - skip STUN if provided
     if args.public_ip.is_none() {
         // Set custom STUN server if provided
@@ -174,6 +177,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
 
         // Pre-warm STUN cache immediately for faster public IP detection
+        // Note: Still using global cache for now, will be updated in Phase 5
         let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
     }
 
@@ -350,8 +354,8 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
     }
 
-    // Run traceroute using async implementation
-    let result = match ftr::traceroute::async_api::trace_with_config_async(config).await {
+    // Run traceroute using the Ftr instance
+    let result = match ftr_instance.trace_with_config(config).await {
         Ok(result) => result,
         Err(TracerouteError::InsufficientPermissions {
             required,
