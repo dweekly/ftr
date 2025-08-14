@@ -29,6 +29,10 @@ pub const WINDOWS_ICMP_MIN_TIMEOUT_MS: u32 = 100;
 /// Minimum total timeout for Windows ICMP in milliseconds
 pub const WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS: u32 = 100;
 
+/// Buffer added to Windows ICMP timeout to ensure Tokio timeout fires first
+/// This prevents race conditions between Windows and Tokio timeouts
+pub const WINDOWS_ICMP_TIMEOUT_BUFFER_MS: u32 = 50;
+
 /// Timing configuration for traceroute operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimingConfig {
