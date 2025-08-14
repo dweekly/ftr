@@ -141,8 +141,6 @@ async fn test_high_concurrency_no_interference() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_separate_instances_separate_caches() {
-    use std::net::Ipv4Addr;
-
     // Create two separate Ftr instances
     let ftr1 = Ftr::new();
     let ftr2 = Ftr::new();

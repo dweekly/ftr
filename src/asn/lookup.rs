@@ -27,7 +27,8 @@ pub enum AsnLookupError {
 }
 
 /// Performs ASN lookup using Team Cymru's whois service with injected cache
-pub async fn lookup_asn_with_cache(
+/// (Internal use only - users should use AsnLookup service)
+pub(crate) async fn lookup_asn_with_cache(
     ipv4_addr: Ipv4Addr,
     cache: &Arc<RwLock<AsnCache>>,
     resolver: Option<Arc<TokioResolver>>,

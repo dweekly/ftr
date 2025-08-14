@@ -21,7 +21,8 @@ pub enum ReverseDnsError {
 }
 
 /// Perform reverse DNS lookup for an IP address with injected cache
-pub async fn reverse_dns_lookup_with_cache(
+/// (Internal use only - users should use RdnsLookup service)
+pub(crate) async fn reverse_dns_lookup_with_cache(
     ip: IpAddr,
     cache: &Arc<RwLock<RdnsCache>>,
     resolver: Option<Arc<TokioResolver>>,

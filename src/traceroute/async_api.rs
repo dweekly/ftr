@@ -3,7 +3,7 @@
 //! This module provides the async API for performing traceroute operations
 //! with immediate response processing using Tokio.
 
-use crate::caches::Caches;
+use crate::services::Services;
 use crate::socket::async_factory::create_async_probe_socket_with_options;
 use crate::traceroute::fully_parallel_async_engine::FullyParallelAsyncEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
@@ -18,14 +18,14 @@ use std::net::IpAddr;
 pub struct AsyncTraceroute {
     config: TracerouteConfig,
     target_ip: IpAddr,
-    caches: Option<Caches>,
+    services: Option<Services>,
 }
 
 impl AsyncTraceroute {
-    /// Create a new async traceroute from configuration with injected caches
-    pub async fn new_with_caches(
+    /// Create a new async traceroute from configuration with injected services
+    pub async fn new_with_services(
         mut config: TracerouteConfig,
-        caches: Caches,
+        services: Services,
     ) -> Result<Self, TracerouteError> {
         // Check if target is an IP address literal
         if let Ok(ip) = config.target.parse::<IpAddr>() {
@@ -71,7 +71,7 @@ impl AsyncTraceroute {
         Ok(Self {
             config,
             target_ip,
-            caches: Some(caches),
+            services: Some(services),
         })
     }
 
@@ -126,7 +126,7 @@ impl AsyncTraceroute {
         Ok(Self {
             config,
             target_ip,
-            caches: None,
+            services: None,
         })
     }
 
@@ -165,12 +165,12 @@ impl AsyncTraceroute {
         })?;
 
         // Create and run fully parallel async engine
-        let engine = if let Some(caches) = self.caches {
-            FullyParallelAsyncEngine::new_with_caches(
+        let engine = if let Some(services) = self.services {
+            FullyParallelAsyncEngine::new_with_services(
                 socket,
                 self.config.clone(),
                 self.target_ip,
-                caches,
+                std::sync::Arc::new(services),
             )
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?
@@ -207,12 +207,12 @@ pub async fn trace_with_config_async(
     traceroute.run().await
 }
 
-/// Run an async traceroute with injected caches (internal API for Ftr struct)
-pub(crate) async fn trace_with_caches(
+/// Run an async traceroute with injected services (internal API for Ftr struct)
+pub(crate) async fn trace_with_services(
     config: TracerouteConfig,
-    caches: &Caches,
+    services: &Services,
 ) -> Result<TracerouteResult, TracerouteError> {
-    let traceroute = AsyncTraceroute::new_with_caches(config, caches.clone()).await?;
+    let traceroute = AsyncTraceroute::new_with_services(config, services.clone()).await?;
     traceroute.run().await
 }
 

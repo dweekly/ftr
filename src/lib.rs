@@ -114,6 +114,7 @@
 pub mod asn;
 pub mod caches;
 pub mod config;
+pub mod services;
 /// Simple debug print macro for conditional debug output
 #[macro_export]
 macro_rules! debug_print {
@@ -156,13 +157,13 @@ pub use traceroute::{
 // Re-export async API
 pub use traceroute::async_api;
 
-use caches::Caches;
+use services::Services;
 
 /// Main handle for the Ftr library
 ///
-/// The `Ftr` struct owns all caches and resources needed for traceroute operations.
-/// This design allows for multiple independent instances with isolated caches,
-/// improving testability and enabling concurrent operations without shared state.
+/// The `Ftr` struct owns all services needed for traceroute operations.
+/// This design allows for multiple independent instances with isolated state,
+/// improving testability and enabling concurrent operations.
 ///
 /// # Examples
 ///
@@ -182,14 +183,15 @@ use caches::Caches;
 /// }
 /// ```
 pub struct Ftr {
-    caches: Caches,
+    /// The services container for direct access to individual services
+    pub services: Services,
 }
 
 impl Ftr {
-    /// Create a new Ftr instance with fresh caches
+    /// Create a new Ftr instance with fresh services
     pub fn new() -> Self {
         Self {
-            caches: Caches::default(),
+            services: Services::new(),
         }
     }
 
@@ -215,9 +217,10 @@ impl Ftr {
         rdns_cache: Option<crate::dns::cache::RdnsCache>,
         stun_cache: Option<crate::public_ip::stun_cache::StunCache>,
     ) -> Self {
-        Self {
-            caches: Caches::new(asn_cache, rdns_cache, stun_cache),
-        }
+        // Create services with the provided caches
+        let services = Services::with_caches(asn_cache, rdns_cache, stun_cache);
+
+        Self { services }
     }
 
     /// Run a traceroute to the specified target with default configuration
@@ -255,8 +258,118 @@ impl Ftr {
         &self,
         config: TracerouteConfig,
     ) -> Result<TracerouteResult, TracerouteError> {
-        // Use the cache-aware implementation
-        traceroute::async_api::trace_with_caches(config, &self.caches).await
+        // Use the services-aware implementation
+        traceroute::async_api::trace_with_services(config, &self.services).await
+    }
+
+    /// Look up ASN information for an IP address
+    ///
+    /// This is a convenience method that provides direct access to the ASN
+    /// lookup service without needing to interact with Arc<RwLock>.
+    ///
+    /// Note: Currently only IPv4 is supported. IPv6 addresses will return
+    /// an error.
+    ///
+    /// # Arguments
+    ///
+    /// * `ip` - The IP address to look up
+    ///
+    /// # Returns
+    ///
+    /// ASN information including AS number, prefix, country, and organization name
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    /// use std::net::IpAddr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let ip: IpAddr = "8.8.8.8".parse()?;
+    ///     let asn_info = ftr.lookup_asn(ip).await?;
+    ///     println!("AS{}: {}", asn_info.asn, asn_info.name);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn lookup_asn(
+        &self,
+        ip: std::net::IpAddr,
+    ) -> Result<crate::traceroute::AsnInfo, crate::asn::AsnLookupError> {
+        self.services.asn.lookup(ip).await
+    }
+
+    /// Look up the hostname for an IP address
+    ///
+    /// This is a convenience method that provides direct access to the reverse
+    /// DNS lookup service without needing to interact with Arc<RwLock>.
+    ///
+    /// # Arguments
+    ///
+    /// * `ip` - The IP address to look up
+    ///
+    /// # Returns
+    ///
+    /// The hostname associated with the IP address
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    /// use std::net::IpAddr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let ip: IpAddr = "8.8.8.8".parse()?;
+    ///     let hostname = ftr.lookup_rdns(ip).await?;
+    ///     println!("{} -> {}", ip, hostname);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn lookup_rdns(
+        &self,
+        ip: std::net::IpAddr,
+    ) -> Result<String, crate::dns::ReverseDnsError> {
+        self.services.rdns.lookup(ip).await
+    }
+
+    /// Get the public IP address of this machine
+    ///
+    /// This is a convenience method that uses STUN protocol to detect
+    /// the public IP address as seen from the internet.
+    ///
+    /// # Returns
+    ///
+    /// The public IP address
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let public_ip = ftr.get_public_ip().await?;
+    ///     println!("Public IP: {}", public_ip);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn get_public_ip(
+        &self,
+    ) -> Result<std::net::IpAddr, crate::public_ip::providers::PublicIpError> {
+        self.services.stun.get_public_ip().await
+    }
+
+    /// Clear all caches across all services
+    ///
+    /// This removes all cached data, forcing fresh lookups for all
+    /// subsequent queries. Useful for testing or when cached data
+    /// may be stale.
+    pub async fn clear_all_caches(&self) {
+        self.services.clear_all_caches().await;
     }
 }
 

@@ -6,9 +6,9 @@
 //! 3. Starting ASN/rDNS enrichment immediately as each response arrives
 //! 4. Using caches to avoid duplicate lookups
 
-use crate::caches::Caches;
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
+use crate::services::Services;
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::trace_time;
@@ -36,16 +36,16 @@ pub struct FullyParallelAsyncEngine {
     target: IpAddr,
     enrichment_service: Arc<AsyncEnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
-    caches: Option<Caches>,
+    services: Option<Arc<Services>>,
 }
 
 impl FullyParallelAsyncEngine {
-    /// Create a new fully parallel async traceroute engine with injected caches
-    pub async fn new_with_caches(
+    /// Create a new fully parallel async traceroute engine with injected services
+    pub async fn new_with_services(
         socket: Box<dyn AsyncProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
-        caches: Caches,
+        services: Arc<Services>,
     ) -> Result<Self> {
         // Create enrichment service upfront
         let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
@@ -56,7 +56,7 @@ impl FullyParallelAsyncEngine {
             target,
             enrichment_service,
             enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
-            caches: Some(caches),
+            services: Some(services),
         })
     }
 
@@ -75,7 +75,7 @@ impl FullyParallelAsyncEngine {
             target,
             enrichment_service,
             enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
-            caches: None,
+            services: None,
         })
     }
 
@@ -98,13 +98,13 @@ impl FullyParallelAsyncEngine {
                     public_ip
                 );
                 let verbose = self.config.verbose;
-                if let Some(ref caches) = self.caches {
-                    // Use injected caches
-                    let caches = caches.clone();
+                if let Some(ref services) = self.services {
+                    // Use injected services
+                    let services = services.clone();
                     Some(tokio::spawn(async move {
                         let isp_start = Instant::now();
-                        let result = crate::public_ip::detect_isp_from_ip_with_caches(
-                            public_ip, None, &caches,
+                        let result = crate::public_ip::detect_isp_from_ip_with_services(
+                            public_ip, &services,
                         )
                         .await;
                         trace_time!(
@@ -115,7 +115,7 @@ impl FullyParallelAsyncEngine {
                         result
                     }))
                 } else {
-                    // Cannot detect ISP without caches
+                    // Cannot detect ISP without services
                     None
                 }
             } else {
@@ -125,14 +125,13 @@ impl FullyParallelAsyncEngine {
                     "Starting ISP detection (STUN) in parallel"
                 );
                 let verbose = self.config.verbose;
-                if let Some(ref caches) = self.caches {
-                    // Use injected caches
-                    let caches = caches.clone();
+                if let Some(ref services) = self.services {
+                    // Use injected services
+                    let services = services.clone();
                     Some(tokio::spawn(async move {
                         let isp_start = Instant::now();
                         let result =
-                            crate::public_ip::detect_isp_with_default_resolver_and_caches(&caches)
-                                .await;
+                            crate::public_ip::detect_isp_stun_with_services(&services).await;
                         trace_time!(
                             verbose,
                             "ISP detection completed in {:?}",
@@ -141,7 +140,7 @@ impl FullyParallelAsyncEngine {
                         result
                     }))
                 } else {
-                    // Cannot detect ISP without caches
+                    // Cannot detect ISP without services
                     None
                 }
             }

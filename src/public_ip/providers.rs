@@ -29,6 +29,10 @@ pub enum PublicIpError {
     /// ASN lookup failed
     #[error("ASN lookup failed: {0}")]
     AsnLookupFailed(String),
+
+    /// Other error
+    #[error("{0}")]
+    Other(String),
 }
 
 /// Public IP provider services
@@ -259,6 +263,7 @@ mod tests {
                 PublicIpError::AllProvidersFailed => assert!(error_str.contains("All")),
                 PublicIpError::UnsupportedIpVersion => assert!(error_str.contains("IPv6")),
                 PublicIpError::AsnLookupFailed(msg) => assert!(error_str.contains(&msg)),
+                PublicIpError::Other(msg) => assert!(error_str.contains(&msg)),
             }
         }
     }

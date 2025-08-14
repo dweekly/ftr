@@ -4,50 +4,47 @@
 mod tests {
     use crate::{Ftr, TracerouteConfigBuilder};
     use std::net::{IpAddr, Ipv4Addr};
-    use std::sync::Arc;
     use std::time::Duration;
-    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_rdns_caching() {
-        // Create isolated cache for test
-        let cache = Arc::new(RwLock::new(crate::dns::cache::RdnsCache::with_default_ttl()));
+        // Create service with its internal cache
+        let rdns_service = crate::dns::service::RdnsLookup::new();
 
         let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
 
         // First lookup should hit the network
-        let result1 = crate::dns::reverse_dns_lookup_with_cache(ip, &cache, None).await;
+        let result1 = rdns_service.lookup(ip).await;
         assert!(result1.is_ok() || result1.is_err()); // May succeed or fail depending on network
 
         // Second lookup should be from cache if first succeeded
         if result1.is_ok() {
             let hostname1 = result1.unwrap();
-            let result2 = crate::dns::reverse_dns_lookup_with_cache(ip, &cache, None).await;
+            let result2 = rdns_service.lookup(ip).await;
             assert!(result2.is_ok());
             assert_eq!(hostname1, result2.unwrap());
 
-            // Verify it's in the cache
-            let cache_read = cache.read().await;
-            assert!(cache_read.get(&ip).is_some());
+            // Verify it's cached
+            assert!(rdns_service.is_cached(&ip).await);
         }
     }
 
     #[tokio::test]
     async fn test_asn_caching() {
-        // Create isolated cache for test
-        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
+        // Create service with its internal cache
+        let asn_service = crate::asn::service::AsnLookup::new();
 
         // Use a private IP that will always return consistent results
         let ip = Ipv4Addr::new(192, 168, 1, 1);
 
         // First lookup
-        let result1 = crate::asn::lookup::lookup_asn_with_cache(ip, &cache, None).await;
+        let result1 = asn_service.lookup_ipv4(ip).await;
         assert!(result1.is_ok());
         let asn1 = result1.unwrap();
         assert_eq!(asn1.name, "Private Network");
 
         // Second lookup should be from cache
-        let result2 = crate::asn::lookup::lookup_asn_with_cache(ip, &cache, None).await;
+        let result2 = asn_service.lookup_ipv4(ip).await;
         assert!(result2.is_ok());
         let asn2 = result2.unwrap();
 
@@ -55,9 +52,8 @@ mod tests {
         assert_eq!(asn1.asn, asn2.asn);
         assert_eq!(asn1.name, asn2.name);
 
-        // Verify cache has entries
-        let cache_read = cache.read().await;
-        assert!(!cache_read.is_empty());
+        // Verify it's cached
+        assert!(asn_service.is_cached(&ip).await);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
