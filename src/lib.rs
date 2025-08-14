@@ -265,7 +265,7 @@ impl Ftr {
     /// Look up ASN information for an IP address
     ///
     /// This is a convenience method that provides direct access to the ASN
-    /// lookup service without needing to interact with Arc<RwLock>.
+    /// lookup service without needing to interact with `Arc<RwLock>`.
     ///
     /// Note: Currently only IPv4 is supported. IPv6 addresses will return
     /// an error.
@@ -303,7 +303,7 @@ impl Ftr {
     /// Look up the hostname for an IP address
     ///
     /// This is a convenience method that provides direct access to the reverse
-    /// DNS lookup service without needing to interact with Arc<RwLock>.
+    /// DNS lookup service without needing to interact with `Arc<RwLock>`.
     ///
     /// # Arguments
     ///
