@@ -1,7 +1,6 @@
 //! Rigorous test of Windows ICMP implementation using ftr as a library
 
-use ftr::traceroute::async_api::trace_with_config_async;
-use ftr::TracerouteConfig;
+use ftr::{Ftr, TracerouteConfig};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
@@ -9,6 +8,9 @@ use std::time::{Duration, Instant};
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("FTR Windows ICMP Rigorous Test (Library Mode)");
     println!("============================================\n");
+
+    // Create an Ftr instance
+    let ftr = Ftr::new();
 
     // Test configurations
     let test_configs = vec![
@@ -42,7 +44,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()?;
 
             let start = Instant::now();
-            match trace_with_config_async(config).await {
+            match ftr.trace_with_config(config).await {
                 Ok(result) => {
                     let elapsed = start.elapsed();
                     execution_times.push(elapsed.as_millis());
@@ -125,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .build()?;
 
         let start = Instant::now();
-        let _ = trace_with_config_async(config).await;
+        let _ = ftr.trace_with_config(config).await;
         let elapsed = start.elapsed();
         stress_times.push(elapsed.as_millis());
         println!("  Run {}: {}ms", i, elapsed.as_millis());

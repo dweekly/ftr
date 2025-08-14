@@ -3,7 +3,7 @@
 #[cfg(feature = "async")]
 #[cfg(test)]
 mod tests {
-    use ftr::trace;
+    use ftr::Ftr;
     #[cfg(target_os = "macos")]
     use ftr::TracerouteConfig;
 
@@ -12,7 +12,8 @@ mod tests {
         // Test with a well-known destination that should have multiple hops
         let target = "8.8.8.8";
 
-        match trace(target).await {
+        let ftr_instance = Ftr::new();
+        match ftr_instance.trace(target).await {
             Ok(result) => {
                 eprintln!("Async trace completed:");
                 eprintln!("  Protocol: {:?}", result.protocol_used);
@@ -104,7 +105,8 @@ mod tests {
             .build()
             .unwrap();
 
-        match ftr::trace_with_config(config).await {
+        let ftr_instance = Ftr::new();
+        match ftr_instance.trace_with_config(config).await {
             Ok(result) => {
                 // Should get multiple hops
                 assert!(
@@ -140,7 +142,8 @@ mod tests {
         // This exercises the concurrent probe sending and response collection
         let target = "1.1.1.1"; // Cloudflare DNS - reliable and fast
 
-        match trace(target).await {
+        let ftr_instance = Ftr::new();
+        match ftr_instance.trace(target).await {
             Ok(result) => {
                 // Should have multiple hops for an external target
                 assert!(

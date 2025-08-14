@@ -21,7 +21,8 @@ async fn test_insufficient_permissions_error() {
             .unwrap();
 
         if !ftr::socket::utils::is_root() {
-            let result = ftr::trace_with_config(config).await;
+            let ftr_instance = ftr::Ftr::new();
+            let result = ftr_instance.trace_with_config(config).await;
 
             match result {
                 Err(TracerouteError::InsufficientPermissions {
@@ -60,7 +61,8 @@ async fn test_tcp_not_implemented_error() {
         .build()
         .unwrap();
 
-    let result = ftr::trace_with_config(config).await;
+    let ftr_instance = ftr::Ftr::new();
+    let result = ftr_instance.trace_with_config(config).await;
 
     match result {
         Err(TracerouteError::NotImplemented { feature }) => {
@@ -84,7 +86,8 @@ async fn test_ipv6_not_supported_error() {
         .build()
         .unwrap();
 
-    let result = ftr::trace_with_config(config).await;
+    let ftr_instance = ftr::Ftr::new();
+    let result = ftr_instance.trace_with_config(config).await;
 
     match result {
         Err(TracerouteError::Ipv6NotSupported) => {
@@ -107,7 +110,8 @@ async fn test_resolution_error() {
         .build()
         .unwrap();
 
-    let result = ftr::trace_with_config(config).await;
+    let ftr_instance = ftr::Ftr::new();
+    let result = ftr_instance.trace_with_config(config).await;
 
     match result {
         Err(TracerouteError::ResolutionError(msg)) => {
@@ -159,7 +163,8 @@ async fn test_config_validation_errors() {
 
     match config {
         Err(_msg) => {
-            let result = ftr::trace(&"").await;
+            let ftr_instance = ftr::Ftr::new();
+            let result = ftr_instance.trace(&"").await;
             match result {
                 Err(TracerouteError::ConfigError(e)) => {
                     println!("Got expected ConfigError: {}", e);

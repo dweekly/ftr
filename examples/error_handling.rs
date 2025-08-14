@@ -2,11 +2,14 @@
 //!
 //! Run with: cargo run --example error_handling
 
-use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError};
+use ftr::{Ftr, ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError};
 
 #[tokio::main]
 async fn main() {
     println!("ftr Error Handling Example\n");
+
+    // Create an Ftr instance
+    let ftr = Ftr::new();
 
     // Example 1: Handle permission errors gracefully
     println!("1. Testing permission handling:");
@@ -16,7 +19,7 @@ async fn main() {
         .build()
         .unwrap();
 
-    match ftr::trace_with_config(config).await {
+    match ftr.trace_with_config(config).await {
         Ok(result) => {
             println!("  Traceroute succeeded! Found {} hops", result.hop_count());
         }
@@ -42,7 +45,7 @@ async fn main() {
         .build()
         .unwrap();
 
-    match ftr::trace_with_config(config).await {
+    match ftr.trace_with_config(config).await {
         Ok(_) => println!("  Unexpected success!"),
         Err(TracerouteError::NotImplemented { feature }) => {
             println!("  Feature not implemented: {}", feature);
@@ -53,7 +56,7 @@ async fn main() {
 
     // Example 3: Handle IPv6 not supported
     println!("\n3. Testing IPv6 handling:");
-    match ftr::trace("2001:4860:4860::8888").await {
+    match ftr.trace("2001:4860:4860::8888").await {
         Ok(_) => println!("  Unexpected success!"),
         Err(TracerouteError::Ipv6NotSupported) => {
             println!("  IPv6 not supported yet");
@@ -64,7 +67,7 @@ async fn main() {
 
     // Example 4: Handle resolution errors
     println!("\n4. Testing DNS resolution error handling:");
-    match ftr::trace("this-definitely-does-not-exist.invalid").await {
+    match ftr.trace("this-definitely-does-not-exist.invalid").await {
         Ok(_) => println!("  Unexpected success!"),
         Err(TracerouteError::ResolutionError(msg)) => {
             println!("  DNS resolution failed: {}", msg);
@@ -110,7 +113,7 @@ async fn main() {
             .build()
             .unwrap();
 
-        match ftr::trace_with_config(config).await {
+        match ftr.trace_with_config(config).await {
             Ok(result) => {
                 println!(
                     "  ✓ Success with {}! Found {} hops",
@@ -138,7 +141,7 @@ async fn main() {
             .build()
             .unwrap();
 
-        match ftr::trace_with_config(config).await {
+        match ftr.trace_with_config(config).await {
             Ok(result) => {
                 println!("  ✓ Success with UDP! Found {} hops", result.hop_count());
             }
