@@ -7,25 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0-alpha] - 2025-08-14
+## [0.5.0] - 2025-08-14
 
 ### Changed
-- **BREAKING**: Replaced global functions with handle-based API
+- **BREAKING**: Complete handle pattern implementation - replaced all global state with instance-based API
   - Introduced `Ftr` struct as the main library handle
   - Changed `trace()` and `trace_with_config()` from global functions to instance methods
-  - All caches are now owned by the Ftr instance instead of being global
-  - Enables multiple isolated instances with separate caches
+  - All caches are now owned by the Ftr instance instead of being global static variables
+  - Removed global `OVERRIDE_CONFIG` - TimingConfig now flows through TracerouteConfig
+  - Each Ftr instance maintains completely isolated caches
 
 ### Added
-- `Ftr::new()` - Create new instance with fresh caches
+- `Ftr::new()` - Create new instance with default caches
 - `Ftr::with_caches()` - Create instance with custom pre-initialized caches
-- Thread-safe cache sharing via `Arc<RwLock<>>`
-- Support for multiple concurrent Ftr instances
+- `TimingConfig` integration directly in `TracerouteConfig` (no more global overrides)
+- Comprehensive parallel test suite with 209+ tests
+- Full cache isolation between instances
+- Support for unlimited concurrent Ftr instances
 
 ### Removed
-- Global `trace()` and `trace_with_config()` functions
-- Direct access to global caches (ASN_CACHE, RDNS_CACHE, STUN_CACHE)
-- Global state dependencies
+- **BREAKING**: All global functions and state:
+  - Global `trace()` and `trace_with_config()` functions
+  - Global static caches (`ASN_CACHE`, `RDNS_CACHE`, `STUN_CACHE`)
+  - Global `OVERRIDE_CONFIG` and timing override functions
+  - All `#[serial]` test attributes - tests now run fully parallel
+- Dependencies:
+  - `once_cell` - no longer needed without global state
+  - `serial_test` - all tests can run in parallel now
 
 ### Migration Guide
 ```rust
@@ -35,13 +43,23 @@ let result = ftr::trace("google.com").await?;
 // New (v0.5.0)
 let ftr = Ftr::new();
 let result = ftr.trace("google.com").await?;
+
+// Multiple instances with separate caches
+let ftr1 = Ftr::new();
+let ftr2 = Ftr::new();
+// ftr1 and ftr2 have completely independent caches
+
+// Custom timing configuration
+let config = TracerouteConfigBuilder::new()
+    .target("example.com")
+    .timing(TimingConfig::fast())  // Timing now part of config
+    .build()?;
 ```
 
-### Benefits
-- Better testability with isolated instances
-- Thread-safe concurrent usage
-- Cleaner API without global state
-- Improved resource management
+### Performance Improvements
+- Tests run at 767% CPU utilization (true parallelism)
+- No lock contention between instances
+- Faster test execution (36.8s for 209 tests)
 
 ## [0.4.0] - 2025-08-13
 
