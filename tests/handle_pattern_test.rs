@@ -95,3 +95,38 @@ async fn test_legacy_api_still_works() {
     let result = ftr::trace("127.0.0.1").await;
     assert!(result.is_ok(), "Legacy API should still work: {:?}", result);
 }
+
+#[tokio::test]
+async fn test_ftr_uses_injected_caches() {
+    // This test verifies that Ftr uses its own caches, not global ones
+    // We can't fully test cache isolation until Phase 5 removes global caches,
+    // but we can verify the plumbing works
+
+    // Create custom caches
+    let asn_cache = ftr::asn::cache::AsnCache::new();
+    let rdns_cache = ftr::dns::cache::RdnsCache::with_default_ttl();
+    let stun_cache = ftr::public_ip::stun_cache::StunCache::new();
+
+    // Create Ftr with custom caches
+    let ftr = Ftr::with_caches(Some(asn_cache), Some(rdns_cache), Some(stun_cache));
+
+    // Configure a trace with enrichment enabled to exercise the caches
+    let config = ftr::TracerouteConfigBuilder::new()
+        .target("127.0.0.1")
+        .max_hops(3)
+        .queries(1)
+        .enable_asn_lookup(true)
+        .enable_rdns(true)
+        .build()
+        .expect("Failed to build config");
+
+    let result = ftr.trace_with_config(config).await;
+    assert!(
+        result.is_ok(),
+        "Trace with custom caches failed: {:?}",
+        result
+    );
+
+    // Once Phase 5 is complete, we can add assertions to verify
+    // cache isolation between instances
+}

@@ -37,7 +37,6 @@ pub struct FullyParallelAsyncEngine {
     target: IpAddr,
     enrichment_service: Arc<AsyncEnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
-    #[allow(dead_code)] // Will be used in Phase 3
     caches: Option<Caches>,
 }
 
@@ -100,16 +99,35 @@ impl FullyParallelAsyncEngine {
                     public_ip
                 );
                 let verbose = self.config.verbose;
-                Some(tokio::spawn(async move {
-                    let isp_start = Instant::now();
-                    let result = detect_isp_from_ip(public_ip, None).await;
-                    trace_time!(
-                        verbose,
-                        "ISP detection from provided IP completed in {:?}",
-                        isp_start.elapsed()
-                    );
-                    result
-                }))
+                if let Some(ref caches) = self.caches {
+                    // Use injected caches
+                    let caches = caches.clone();
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result = crate::public_ip::detect_isp_from_ip_with_caches(
+                            public_ip, None, &caches,
+                        )
+                        .await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection from provided IP completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                } else {
+                    // Fall back to global caches
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result = detect_isp_from_ip(public_ip, None).await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection from provided IP completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                }
             } else {
                 // Use STUN detection
                 trace_time!(
@@ -117,16 +135,34 @@ impl FullyParallelAsyncEngine {
                     "Starting ISP detection (STUN) in parallel"
                 );
                 let verbose = self.config.verbose;
-                Some(tokio::spawn(async move {
-                    let isp_start = Instant::now();
-                    let result = detect_isp_with_default_resolver().await;
-                    trace_time!(
-                        verbose,
-                        "ISP detection completed in {:?}",
-                        isp_start.elapsed()
-                    );
-                    result
-                }))
+                if let Some(ref caches) = self.caches {
+                    // Use injected caches
+                    let caches = caches.clone();
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result =
+                            crate::public_ip::detect_isp_with_default_resolver_and_caches(&caches)
+                                .await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                } else {
+                    // Fall back to global caches
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result = detect_isp_with_default_resolver().await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                }
             }
         } else {
             None
