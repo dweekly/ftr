@@ -3,14 +3,12 @@
 #[cfg(test)]
 mod tests {
     use crate::{Ftr, TracerouteConfigBuilder};
-    use serial_test::serial;
     use std::net::{IpAddr, Ipv4Addr};
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::RwLock;
 
     #[tokio::test]
-    #[serial]
     async fn test_rdns_caching() {
         // Create isolated cache for test
         let cache = Arc::new(RwLock::new(crate::dns::cache::RdnsCache::with_default_ttl()));
@@ -35,7 +33,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_asn_caching() {
         // Create isolated cache for test
         let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
@@ -138,7 +135,6 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_cache_thread_safety() {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;

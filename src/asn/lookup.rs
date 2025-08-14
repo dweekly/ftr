@@ -185,7 +185,6 @@ pub fn create_default_resolver() -> Arc<TokioResolver> {
 mod tests {
     use super::*;
     use crate::dns::create_default_resolver;
-    use serial_test::serial;
 
     #[tokio::test]
     async fn test_lookup_private_ip() {
@@ -224,7 +223,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_cache_usage() {
         // Create isolated cache for test
         let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
@@ -330,7 +328,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_cache_multiple_ips_same_prefix() {
         // Create isolated cache for test
         let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
@@ -374,7 +371,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_concurrent_lookups() {
         use tokio::task::JoinSet;
 
