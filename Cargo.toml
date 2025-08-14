@@ -1,6 +1,6 @@
 [package]
 name = "ftr"
-version = "0.4.0"
+version = "0.5.0-alpha"
 edition = "2021"
 authors = ["David Weekly <david@weekly.org>"]
 description = "A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection"

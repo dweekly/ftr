@@ -34,12 +34,15 @@ ftr --json --max-hops 20 google.com
 ### As a Library
 
 ```rust
-use ftr::{trace, TracerouteConfig};
+use ftr::{Ftr, TracerouteConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create an Ftr instance
+    let ftr = Ftr::new();
+    
     // Simple trace
-    let result = trace("google.com").await?;
+    let result = ftr.trace("google.com").await?;
     println!("Found {} hops", result.hop_count());
     
     // Custom configuration
@@ -47,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .target("1.1.1.1")
         .max_hops(20)
         .build()?;
-    let result = ftr::trace_with_config(config).await?;
+    let result = ftr.trace_with_config(config).await?;
     
     Ok(())
 }

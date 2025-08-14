@@ -15,12 +15,15 @@
 //! # Quick Start
 //!
 //! ```no_run
-//! use ftr::{trace, TracerouteConfig};
+//! use ftr::{Ftr, TracerouteConfig};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     // Create an Ftr instance
+//!     let ftr = Ftr::new();
+//!     
 //!     // Simple trace with defaults
-//!     let result = trace("google.com").await?;
+//!     let result = ftr.trace("google.com").await?;
 //!     
 //!     for hop in result.hops {
 //!         println!("Hop {}: {:?}", hop.ttl, hop.addr);
@@ -33,10 +36,12 @@
 //! # Advanced Usage
 //!
 //! ```no_run
-//! use ftr::{TracerouteConfigBuilder, ProbeProtocol};
+//! use ftr::{Ftr, TracerouteConfigBuilder, ProbeProtocol};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let ftr = Ftr::new();
+//!     
 //!     let config = TracerouteConfigBuilder::new()
 //!         .target("1.1.1.1")
 //!         .protocol(ProbeProtocol::Tcp)
@@ -48,7 +53,7 @@
 //!         .enable_rdns(true)
 //!         .build()?;
 //!     
-//!     let result = ftr::trace_with_config(config).await?;
+//!     let result = ftr.trace_with_config(config).await?;
 //!     println!("Trace complete: {} hops", result.hops.len());
 //!     
 //!     Ok(())
@@ -62,9 +67,10 @@
 //!
 //! ```no_run
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use ftr::{trace, TracerouteError};
+//! use ftr::{Ftr, TracerouteError};
 //!
-//! match trace("example.com").await {
+//! let ftr = Ftr::new();
+//! match ftr.trace("example.com").await {
 //!     Ok(result) => println!("Success! Found {} hops", result.hop_count()),
 //!     
 //!     // Permission errors include structured information

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0-alpha] - 2025-08-14
+
+### Changed
+- **BREAKING**: Replaced global functions with handle-based API
+  - Introduced `Ftr` struct as the main library handle
+  - Changed `trace()` and `trace_with_config()` from global functions to instance methods
+  - All caches are now owned by the Ftr instance instead of being global
+  - Enables multiple isolated instances with separate caches
+
+### Added
+- `Ftr::new()` - Create new instance with fresh caches
+- `Ftr::with_caches()` - Create instance with custom pre-initialized caches
+- Thread-safe cache sharing via `Arc<RwLock<>>`
+- Support for multiple concurrent Ftr instances
+
+### Removed
+- Global `trace()` and `trace_with_config()` functions
+- Direct access to global caches (ASN_CACHE, RDNS_CACHE, STUN_CACHE)
+- Global state dependencies
+
+### Migration Guide
+```rust
+// Old (v0.4.x)
+let result = ftr::trace("google.com").await?;
+
+// New (v0.5.0)
+let ftr = Ftr::new();
+let result = ftr.trace("google.com").await?;
+```
+
+### Benefits
+- Better testability with isolated instances
+- Thread-safe concurrent usage
+- Cleaner API without global state
+- Improved resource management
+
 ## [0.4.0] - 2025-08-13
 
 ### Changed
