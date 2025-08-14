@@ -11,6 +11,18 @@ pub struct AsnCache {
     cache: Arc<RwLock<IpNetworkTable<AsnInfo>>>,
 }
 
+impl std::fmt::Debug for AsnCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AsnCache").finish()
+    }
+}
+
+impl Default for AsnCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AsnCache {
     /// Create a new empty cache
     pub fn new() -> Self {
@@ -58,12 +70,6 @@ impl AsnCache {
     pub fn clear(&self) {
         let mut cache = self.cache.write().expect("rwlock poisoned");
         *cache = IpNetworkTable::new();
-    }
-}
-
-impl Default for AsnCache {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

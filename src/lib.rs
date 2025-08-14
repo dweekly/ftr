@@ -106,6 +106,7 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod asn;
+pub mod caches;
 pub mod config;
 /// Simple debug print macro for conditional debug output
 #[macro_export]
@@ -148,3 +149,113 @@ pub use traceroute::{
 
 // Re-export async API
 pub use traceroute::async_api;
+
+use caches::Caches;
+
+/// Main handle for the Ftr library
+///
+/// The `Ftr` struct owns all caches and resources needed for traceroute operations.
+/// This design allows for multiple independent instances with isolated caches,
+/// improving testability and enabling concurrent operations without shared state.
+///
+/// # Examples
+///
+/// ```no_run
+/// use ftr::Ftr;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let ftr = Ftr::new();
+///     let result = ftr.trace("google.com").await?;
+///     
+///     for hop in result.hops {
+///         println!("Hop {}: {:?}", hop.ttl, hop.addr);
+///     }
+///     
+///     Ok(())
+/// }
+/// ```
+pub struct Ftr {
+    caches: Caches,
+}
+
+impl Ftr {
+    /// Create a new Ftr instance with fresh caches
+    pub fn new() -> Self {
+        Self {
+            caches: Caches::default(),
+        }
+    }
+
+    /// Create a new Ftr instance with optional pre-initialized caches
+    ///
+    /// Any cache not provided will be created fresh.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// // With all fresh caches
+    /// let ftr = Ftr::with_caches(None, None, None);
+    ///
+    /// // With a pre-populated ASN cache
+    /// let asn_cache = ftr::asn::cache::AsnCache::new();
+    /// // ... populate cache ...
+    /// let ftr = Ftr::with_caches(Some(asn_cache), None, None);
+    /// ```
+    pub fn with_caches(
+        asn_cache: Option<crate::asn::cache::AsnCache>,
+        rdns_cache: Option<crate::dns::cache::RdnsCache>,
+        stun_cache: Option<crate::public_ip::stun_cache::StunCache>,
+    ) -> Self {
+        Self {
+            caches: Caches::new(asn_cache, rdns_cache, stun_cache),
+        }
+    }
+
+    /// Run a traceroute to the specified target with default configuration
+    ///
+    /// This is a convenience method equivalent to creating a default
+    /// [`TracerouteConfig`] with the target and calling [`trace_with_config`].
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - The target hostname or IP address
+    ///
+    /// # Returns
+    ///
+    /// A [`TracerouteResult`] containing the trace results, or a [`TracerouteError`]
+    /// if the trace fails.
+    pub async fn trace(&self, target: &str) -> Result<TracerouteResult, TracerouteError> {
+        let config = TracerouteConfig::builder()
+            .target(target)
+            .build()
+            .map_err(TracerouteError::ConfigError)?;
+        self.trace_with_config(config).await
+    }
+
+    /// Run a traceroute with custom configuration
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The traceroute configuration
+    ///
+    /// # Returns
+    ///
+    /// A [`TracerouteResult`] containing the trace results, or a [`TracerouteError`]
+    /// if the trace fails.
+    pub async fn trace_with_config(
+        &self,
+        config: TracerouteConfig,
+    ) -> Result<TracerouteResult, TracerouteError> {
+        // Use the cache-aware implementation
+        traceroute::async_api::trace_with_caches(config, &self.caches).await
+    }
+}
+
+impl Default for Ftr {
+    fn default() -> Self {
+        Self::new()
+    }
+}

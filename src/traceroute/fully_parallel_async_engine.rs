@@ -6,6 +6,7 @@
 //! 3. Starting ASN/rDNS enrichment immediately as each response arrives
 //! 4. Using caches to avoid duplicate lookups
 
+use crate::caches::Caches;
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::public_ip::{detect_isp_from_ip, detect_isp_with_default_resolver};
@@ -36,10 +37,32 @@ pub struct FullyParallelAsyncEngine {
     target: IpAddr,
     enrichment_service: Arc<AsyncEnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
+    #[allow(dead_code)] // Will be used in Phase 3
+    caches: Option<Caches>,
 }
 
 impl FullyParallelAsyncEngine {
-    /// Create a new fully parallel async traceroute engine
+    /// Create a new fully parallel async traceroute engine with injected caches
+    pub async fn new_with_caches(
+        socket: Box<dyn AsyncProbeSocket>,
+        config: crate::TracerouteConfig,
+        target: IpAddr,
+        caches: Caches,
+    ) -> Result<Self> {
+        // Create enrichment service upfront
+        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+
+        Ok(Self {
+            socket: Arc::new(socket),
+            config,
+            target,
+            enrichment_service,
+            enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
+            caches: Some(caches),
+        })
+    }
+
+    /// Create a new fully parallel async traceroute engine (uses global caches)
     pub async fn new(
         socket: Box<dyn AsyncProbeSocket>,
         config: crate::TracerouteConfig,
@@ -54,6 +77,7 @@ impl FullyParallelAsyncEngine {
             target,
             enrichment_service,
             enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
+            caches: None,
         })
     }
 

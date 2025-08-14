@@ -13,6 +13,7 @@ struct CacheEntry {
 }
 
 /// Thread-safe cache for reverse DNS lookups
+#[derive(Debug)]
 pub struct RdnsCache {
     cache: Arc<RwLock<HashMap<IpAddr, CacheEntry>>>,
     ttl: Duration,

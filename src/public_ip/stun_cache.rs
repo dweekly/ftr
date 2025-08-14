@@ -25,8 +25,15 @@ struct CacheEntry {
 const CACHE_TTL: Duration = Duration::from_secs(3600);
 
 /// Thread-safe cache for STUN server addresses
+#[derive(Debug)]
 pub struct StunCache {
     cache: Arc<Mutex<HashMap<String, CacheEntry>>>,
+}
+
+impl Default for StunCache {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StunCache {
@@ -78,12 +85,6 @@ impl StunCache {
     pub fn clear(&self) {
         let mut cache = self.cache.lock().expect("mutex poisoned");
         cache.clear();
-    }
-}
-
-impl Default for StunCache {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
