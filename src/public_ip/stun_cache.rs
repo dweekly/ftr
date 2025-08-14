@@ -91,7 +91,20 @@ impl StunCache {
 /// Global cache for STUN server addresses
 pub static STUN_CACHE: Lazy<StunCache> = Lazy::new(StunCache::new);
 
-/// Pre-warm the cache with common STUN servers
+/// Pre-warm the cache with common STUN servers (with injected cache)
+pub async fn prewarm_stun_cache_with_cache(cache: &Arc<tokio::sync::RwLock<StunCache>>) {
+    let servers = vec![
+        "stun.l.google.com:19302".to_string(),
+        "stun1.l.google.com:19302".to_string(),
+    ];
+
+    for server in &servers {
+        let cache_read = cache.read().await;
+        let _ = cache_read.get_stun_server_addrs(server).await;
+    }
+}
+
+/// Pre-warm the cache with common STUN servers (uses global cache)
 pub async fn prewarm_stun_cache() {
     let mut servers = vec![
         "stun.l.google.com:19302",

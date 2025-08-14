@@ -8,7 +8,9 @@
 //! - ~RTT latency instead of multiple round trips
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 /// STUN magic cookie (fixed value in all STUN messages)
 const STUN_MAGIC_COOKIE: u32 = 0x2112A442;
@@ -52,7 +54,65 @@ pub enum StunError {
     Timeout,
 }
 
-/// Get public IP using STUN protocol
+/// Get public IP using STUN protocol with injected cache
+pub async fn get_public_ip_stun_with_cache(
+    server: &str,
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+) -> Result<IpAddr, StunError> {
+    let verbose = std::env::var("FTR_VERBOSE")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+        .unwrap_or(0);
+
+    if verbose >= 2 {
+        eprintln!("[STUN] Attempting to contact STUN server: {}", server);
+    }
+
+    // Get server addresses from provided cache
+    let cache_read = cache.read().await;
+    let server_addrs = cache_read
+        .get_stun_server_addrs(server)
+        .await
+        .map_err(|e| {
+            if verbose >= 2 {
+                eprintln!("[STUN] Failed to resolve {}: {}", server, e);
+            }
+            StunError::IoError(e)
+        })?;
+    drop(cache_read);
+
+    // Try each address until one works
+    for server_addr in server_addrs {
+        if verbose >= 2 {
+            eprintln!("[STUN] Trying {} (resolved from {})", server_addr, server);
+        }
+        match get_public_ip_stun_addr(server_addr, timeout).await {
+            Ok(ip) => {
+                if verbose >= 2 {
+                    eprintln!(
+                        "[STUN] Successfully obtained public IP {} from {}",
+                        ip, server
+                    );
+                }
+                return Ok(ip);
+            }
+            Err(e) => {
+                if verbose >= 2 {
+                    eprintln!("[STUN] Failed to get IP from {}: {:?}", server_addr, e);
+                }
+                continue; // Try next address
+            }
+        }
+    }
+
+    if verbose >= 2 {
+        eprintln!("[STUN] All addresses for {} failed", server);
+    }
+    Err(StunError::Timeout)
+}
+
+/// Get public IP using STUN protocol (uses global cache)
 pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAddr, StunError> {
     let verbose = std::env::var("FTR_VERBOSE")
         .ok()
@@ -132,7 +192,38 @@ async fn get_public_ip_stun_addr(
     parse_stun_response(&buf[..size])
 }
 
-/// Get public IP using STUN with fallback to multiple servers
+/// Get public IP using STUN with fallback to multiple servers (with injected cache)
+pub async fn get_public_ip_stun_with_fallback_and_cache(
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+) -> Result<IpAddr, StunError> {
+    // Pre-warm cache if not already done (this is fast if already cached)
+    let _ = crate::public_ip::stun_cache::prewarm_stun_cache_with_cache(cache).await;
+
+    // Check for custom STUN server from environment
+    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
+        if let Ok(ip) = get_public_ip_stun_with_cache(&custom_server, timeout, cache).await {
+            return Ok(ip);
+        }
+        // If custom server fails, fall back to default servers
+    }
+
+    // Try primary server first (Google's is most reliable)
+    if let Ok(ip) = get_public_ip_stun_with_cache(STUN_SERVERS[0], timeout, cache).await {
+        return Ok(ip);
+    }
+
+    // Fall back to other servers
+    for server in &STUN_SERVERS[1..] {
+        match get_public_ip_stun_with_cache(server, timeout, cache).await {
+            Ok(ip) => return Ok(ip),
+            Err(_) => continue, // Try next server
+        }
+    }
+    Err(StunError::Timeout)
+}
+
+/// Get public IP using STUN with fallback to multiple servers (uses global cache)
 pub async fn get_public_ip_stun_with_fallback(timeout: Duration) -> Result<IpAddr, StunError> {
     // Pre-warm cache if not already done (this is fast if already cached)
     let _ = crate::public_ip::stun_cache::prewarm_stun_cache().await;
