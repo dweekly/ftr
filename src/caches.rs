@@ -24,7 +24,12 @@ impl Caches {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```no_run
+    /// use ftr::caches::Caches;
+    /// use ftr::asn::cache::AsnCache;
+    /// use ftr::dns::cache::RdnsCache;
+    /// use ftr::public_ip::stun_cache::StunCache;
+    ///
     /// // All new caches
     /// let caches = Caches::new(None, None, None);
     ///
@@ -34,7 +39,9 @@ impl Caches {
     /// let caches = Caches::new(Some(asn_cache), None, None);
     ///
     /// // With multiple pre-initialized caches
-    /// let caches = Caches::new(Some(asn_cache), Some(rdns_cache), None);
+    /// let asn_cache2 = AsnCache::new();
+    /// let rdns_cache = RdnsCache::with_default_ttl();
+    /// let caches = Caches::new(Some(asn_cache2), Some(rdns_cache), None);
     /// ```
     pub fn new(
         asn_cache: Option<crate::asn::cache::AsnCache>,
