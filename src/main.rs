@@ -177,8 +177,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
 
         // Pre-warm STUN cache immediately for faster public IP detection
-        // Note: Still using global cache for now, will be updated in Phase 5
-        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+        // (Cache warming is now handled internally by Ftr instance)
     }
 
     // Initialize debug mode if requested
@@ -230,7 +229,6 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
     {
         let target_ip_clone = target_ip;
-        let no_enrich = args.no_enrich;
         let no_rdns = args.no_rdns;
         tokio::spawn(async move {
             // Pre-warm DNS reverse lookup only if rDNS is enabled
@@ -245,12 +243,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
                 let _ = resolver.reverse_lookup(target_ip_clone).await;
             }
 
-            // Pre-warm ASN lookup only if enrichment is enabled
-            if !no_enrich {
-                if let IpAddr::V4(ipv4) = target_ip_clone {
-                    let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
-                }
-            }
+            // ASN pre-warming removed - caches are now managed by Ftr instance
         });
     }
 

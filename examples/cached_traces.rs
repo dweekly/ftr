@@ -111,10 +111,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         improvement
     );
 
-    // Show cache statistics
-    println!("\nCache statistics:");
-    println!("ASN cache entries: {}", ftr::asn::ASN_CACHE.len());
-    println!("rDNS cache entries: {}", ftr::dns::RDNS_CACHE.len());
+    // Note about caches
+    println!("\nNote: Caches are now managed internally by the Ftr instance");
+    println!("Each Ftr instance maintains its own ASN and rDNS caches for improved performance");
 
     Ok(())
 }

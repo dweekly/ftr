@@ -93,10 +93,6 @@ impl Default for RdnsCache {
     }
 }
 
-/// Global rDNS cache instance
-pub static RDNS_CACHE: std::sync::LazyLock<RdnsCache> =
-    std::sync::LazyLock::new(RdnsCache::with_default_ttl);
-
 #[cfg(test)]
 mod tests {
     use super::*;

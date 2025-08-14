@@ -112,58 +112,6 @@ pub async fn get_public_ip_stun_with_cache(
     Err(StunError::Timeout)
 }
 
-/// Get public IP using STUN protocol (uses global cache)
-pub async fn get_public_ip_stun(server: &str, timeout: Duration) -> Result<IpAddr, StunError> {
-    let verbose = std::env::var("FTR_VERBOSE")
-        .ok()
-        .and_then(|v| v.parse::<u8>().ok())
-        .unwrap_or(0);
-
-    if verbose >= 2 {
-        eprintln!("[STUN] Attempting to contact STUN server: {}", server);
-    }
-
-    // Get server addresses from cache
-    let server_addrs = crate::public_ip::stun_cache::STUN_CACHE
-        .get_stun_server_addrs(server)
-        .await
-        .map_err(|e| {
-            if verbose >= 2 {
-                eprintln!("[STUN] Failed to resolve {}: {}", server, e);
-            }
-            StunError::IoError(e)
-        })?;
-
-    // Try each address until one works
-    for server_addr in server_addrs {
-        if verbose >= 2 {
-            eprintln!("[STUN] Trying {} (resolved from {})", server_addr, server);
-        }
-        match get_public_ip_stun_addr(server_addr, timeout).await {
-            Ok(ip) => {
-                if verbose >= 2 {
-                    eprintln!(
-                        "[STUN] Successfully obtained public IP {} from {}",
-                        ip, server
-                    );
-                }
-                return Ok(ip);
-            }
-            Err(e) => {
-                if verbose >= 2 {
-                    eprintln!("[STUN] Failed to get IP from {}: {:?}", server_addr, e);
-                }
-                continue; // Try next address
-            }
-        }
-    }
-
-    if verbose >= 2 {
-        eprintln!("[STUN] All addresses for {} failed", server);
-    }
-    Err(StunError::Timeout)
-}
-
 /// Get public IP using STUN protocol with a specific server address
 async fn get_public_ip_stun_addr(
     server_addr: SocketAddr,
@@ -216,34 +164,6 @@ pub async fn get_public_ip_stun_with_fallback_and_cache(
     // Fall back to other servers
     for server in &STUN_SERVERS[1..] {
         match get_public_ip_stun_with_cache(server, timeout, cache).await {
-            Ok(ip) => return Ok(ip),
-            Err(_) => continue, // Try next server
-        }
-    }
-    Err(StunError::Timeout)
-}
-
-/// Get public IP using STUN with fallback to multiple servers (uses global cache)
-pub async fn get_public_ip_stun_with_fallback(timeout: Duration) -> Result<IpAddr, StunError> {
-    // Pre-warm cache if not already done (this is fast if already cached)
-    let _ = crate::public_ip::stun_cache::prewarm_stun_cache().await;
-
-    // Check for custom STUN server from environment
-    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
-        if let Ok(ip) = get_public_ip_stun(&custom_server, timeout).await {
-            return Ok(ip);
-        }
-        // If custom server fails, fall back to default servers
-    }
-
-    // Try primary server first (Google's is most reliable)
-    if let Ok(ip) = get_public_ip_stun(STUN_SERVERS[0], timeout).await {
-        return Ok(ip);
-    }
-
-    // Fall back to other servers
-    for server in &STUN_SERVERS[1..] {
-        match get_public_ip_stun(server, timeout).await {
             Ok(ip) => return Ok(ip),
             Err(_) => continue, // Try next server
         }
@@ -406,7 +326,13 @@ mod tests {
     #[tokio::test]
     async fn test_stun_google() {
         // This test requires internet connectivity
-        let result = get_public_ip_stun("stun.l.google.com:19302", Duration::from_secs(2)).await;
+        let cache = Arc::new(RwLock::new(crate::public_ip::stun_cache::StunCache::new()));
+        let result = get_public_ip_stun_with_cache(
+            "stun.l.google.com:19302",
+            Duration::from_secs(2),
+            &cache,
+        )
+        .await;
 
         match result {
             Ok(ip) => {

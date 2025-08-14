@@ -132,14 +132,8 @@ impl AsyncTraceroute {
 
     /// Run the async traceroute
     pub async fn run(self) -> Result<TracerouteResult, TracerouteError> {
-        // Create timing config from traceroute config
-        let timing_config = crate::TimingConfig {
-            receiver_poll_interval: self.config.send_interval,
-            main_loop_poll_interval: self.config.send_interval,
-            enrichment_wait_time: self.config.overall_timeout,
-            socket_read_timeout: self.config.probe_timeout,
-            udp_retry_delay: self.config.send_interval,
-        };
+        // Use timing config from traceroute config
+        let timing_config = self.config.timing.clone();
 
         // Set verbose flag in environment for socket to pick up
         if self.config.verbose > 0 {

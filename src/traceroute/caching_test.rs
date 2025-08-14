@@ -2,54 +2,55 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::asn::{lookup_asn, ASN_CACHE};
-    use crate::dns::RDNS_CACHE;
-    use crate::{trace_with_config, TracerouteConfigBuilder};
+    use crate::{Ftr, TracerouteConfigBuilder};
     use serial_test::serial;
     use std::net::{IpAddr, Ipv4Addr};
+    use std::sync::Arc;
     use std::time::Duration;
+    use tokio::sync::RwLock;
 
     #[tokio::test]
     #[serial]
     async fn test_rdns_caching() {
-        // Clear cache
-        RDNS_CACHE.clear();
+        // Create isolated cache for test
+        let cache = Arc::new(RwLock::new(crate::dns::cache::RdnsCache::with_default_ttl()));
 
         let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
 
         // First lookup should hit the network
-        let result1 = crate::dns::reverse_dns_lookup(ip, None).await;
+        let result1 = crate::dns::reverse_dns_lookup_with_cache(ip, &cache, None).await;
         assert!(result1.is_ok() || result1.is_err()); // May succeed or fail depending on network
 
         // Second lookup should be from cache if first succeeded
         if result1.is_ok() {
             let hostname1 = result1.unwrap();
-            let result2 = crate::dns::reverse_dns_lookup(ip, None).await;
+            let result2 = crate::dns::reverse_dns_lookup_with_cache(ip, &cache, None).await;
             assert!(result2.is_ok());
             assert_eq!(hostname1, result2.unwrap());
 
             // Verify it's in the cache
-            assert!(RDNS_CACHE.get(&ip).is_some());
+            let cache_read = cache.read().await;
+            assert!(cache_read.get(&ip).is_some());
         }
     }
 
     #[tokio::test]
     #[serial]
     async fn test_asn_caching() {
-        // Clear cache
-        ASN_CACHE.clear();
+        // Create isolated cache for test
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
 
         // Use a private IP that will always return consistent results
         let ip = Ipv4Addr::new(192, 168, 1, 1);
 
         // First lookup
-        let result1 = lookup_asn(ip, None).await;
+        let result1 = crate::asn::lookup::lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result1.is_ok());
         let asn1 = result1.unwrap();
         assert_eq!(asn1.name, "Private Network");
 
         // Second lookup should be from cache
-        let result2 = lookup_asn(ip, None).await;
+        let result2 = crate::asn::lookup::lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result2.is_ok());
         let asn2 = result2.unwrap();
 
@@ -58,11 +59,13 @@ mod tests {
         assert_eq!(asn1.name, asn2.name);
 
         // Verify cache has entries
-        assert!(!ASN_CACHE.is_empty());
+        let cache_read = cache.read().await;
+        assert!(!cache_read.is_empty());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_public_ip_parameter() {
+        let ftr = Ftr::new();
         let public_ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
 
         let config = TracerouteConfigBuilder::new()
@@ -76,7 +79,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = tokio::time::timeout(Duration::from_secs(2), trace_with_config(config)).await;
+        let result =
+            tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config)).await;
 
         match result {
             Ok(Ok(trace_result)) => {
@@ -93,12 +97,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn test_repeated_traces_use_cache() {
+        let ftr = Ftr::new();
         let target = "8.8.8.8";
         let target_ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
-
-        // Clear caches
-        RDNS_CACHE.clear();
-        ASN_CACHE.clear();
 
         // First trace
         let config1 = TracerouteConfigBuilder::new()
@@ -113,13 +114,10 @@ mod tests {
             .unwrap();
 
         let result1 =
-            tokio::time::timeout(Duration::from_secs(2), trace_with_config(config1)).await;
+            tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config1)).await;
 
         if let Ok(Ok(_)) = result1 {
-            // Cache should have entries now
-            let cache_size_after_first = ASN_CACHE.len();
-
-            // Second trace with same parameters
+            // Second trace with same parameters - should use cached data
             let config2 = TracerouteConfigBuilder::new()
                 .target(target)
                 .target_ip(target_ip)
@@ -132,12 +130,10 @@ mod tests {
                 .unwrap();
 
             let result2 =
-                tokio::time::timeout(Duration::from_secs(2), trace_with_config(config2)).await;
+                tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config2)).await;
 
-            if let Ok(Ok(_)) = result2 {
-                // Cache size should be the same or larger (not smaller)
-                assert!(ASN_CACHE.len() >= cache_size_after_first);
-            }
+            // Both traces should succeed
+            assert!(result2.is_ok());
         }
     }
 
@@ -148,19 +144,26 @@ mod tests {
         use std::sync::Arc;
         use std::thread;
 
+        // Create a shared cache
+        let cache = Arc::new(std::sync::RwLock::new(
+            crate::dns::cache::RdnsCache::with_default_ttl(),
+        ));
+
         // Track if operations completed successfully
         let success = Arc::new(AtomicBool::new(true));
 
         let handles: Vec<_> = (0..10)
             .map(|i| {
                 let success = Arc::clone(&success);
+                let cache = Arc::clone(&cache);
                 thread::spawn(move || {
                     // Use unique IPs to avoid conflicts with other tests
                     let ip = IpAddr::V4(Ipv4Addr::new(10, 250, i, 1));
 
                     // Try to insert - this should not panic
                     match std::panic::catch_unwind(|| {
-                        RDNS_CACHE.insert(ip, format!("test-host-{}.local", i));
+                        let cache_write = cache.write().unwrap();
+                        cache_write.insert(ip, format!("test-host-{}.local", i));
                     }) {
                         Ok(_) => {}
                         Err(_) => {
@@ -173,7 +176,8 @@ mod tests {
                     for j in 0..10 {
                         let check_ip = IpAddr::V4(Ipv4Addr::new(10, 250, j, 1));
                         match std::panic::catch_unwind(|| {
-                            let _ = RDNS_CACHE.get(&check_ip);
+                            let cache_read = cache.read().unwrap();
+                            let _ = cache_read.get(&check_ip);
                         }) {
                             Ok(_) => {}
                             Err(_) => {

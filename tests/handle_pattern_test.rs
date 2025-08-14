@@ -90,13 +90,6 @@ async fn test_ftr_default_impl() {
 }
 
 #[tokio::test]
-async fn test_legacy_api_still_works() {
-    // Verify the old API continues to function
-    let result = ftr::trace("127.0.0.1").await;
-    assert!(result.is_ok(), "Legacy API should still work: {:?}", result);
-}
-
-#[tokio::test]
 async fn test_ftr_uses_injected_caches() {
     // This test verifies that Ftr uses its own caches, not global ones
     // We can't fully test cache isolation until Phase 5 removes global caches,

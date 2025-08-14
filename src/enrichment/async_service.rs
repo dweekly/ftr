@@ -28,7 +28,7 @@ pub struct EnrichmentResult {
 /// Async enrichment service
 pub struct AsyncEnrichmentService {
     dns_resolver: Arc<TokioResolver>,
-    asn_cache: Arc<AsnCache>,
+    asn_cache: Arc<RwLock<AsnCache>>,
     seen_addresses: Arc<RwLock<HashSet<IpAddr>>>,
     enrichment_tx: mpsc::UnboundedSender<IpAddr>,
     enrichment_rx: Arc<RwLock<mpsc::UnboundedReceiver<IpAddr>>>,
@@ -47,7 +47,7 @@ impl AsyncEnrichmentService {
 
         Ok(Self {
             dns_resolver: Arc::new(dns_resolver),
-            asn_cache: Arc::new(asn_cache),
+            asn_cache: Arc::new(RwLock::new(asn_cache)),
             seen_addresses: Arc::new(RwLock::new(HashSet::new())),
             enrichment_tx,
             enrichment_rx: Arc::new(RwLock::new(enrichment_rx)),
@@ -161,23 +161,12 @@ async fn lookup_dns(resolver: Arc<TokioResolver>, addr: IpAddr) -> Option<String
 }
 
 /// Perform ASN lookup
-async fn lookup_asn(asn_cache: Arc<AsnCache>, addr: IpAddr) -> Option<AsnInfo> {
+async fn lookup_asn(asn_cache: Arc<RwLock<AsnCache>>, addr: IpAddr) -> Option<AsnInfo> {
     if let IpAddr::V4(ipv4) = addr {
-        // First check cache
-        if let Some(asn_info) = asn_cache.get(&ipv4) {
-            return Some(asn_info);
-        }
-
-        // If not in cache, perform lookup
-        if let Ok(asn_info) = crate::asn::lookup::lookup_asn(ipv4, None).await {
-            // Cache the result
-            if let Ok(prefix) = asn_info.prefix.parse() {
-                asn_cache.insert(prefix, asn_info.clone());
-            }
-            Some(asn_info)
-        } else {
-            None
-        }
+        // Use the cache-injected lookup function
+        crate::asn::lookup::lookup_asn_with_cache(ipv4, &asn_cache, None)
+            .await
+            .ok()
     } else {
         None
     }

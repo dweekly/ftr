@@ -8,7 +8,6 @@
 //! especially important since STUN is used for fast public IP detection
 //! (replacing slow HTTPS calls).
 
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -88,9 +87,6 @@ impl StunCache {
     }
 }
 
-/// Global cache for STUN server addresses
-pub static STUN_CACHE: Lazy<StunCache> = Lazy::new(StunCache::new);
-
 /// Pre-warm the cache with common STUN servers (with injected cache)
 pub async fn prewarm_stun_cache_with_cache(cache: &Arc<tokio::sync::RwLock<StunCache>>) {
     let servers = vec![
@@ -101,24 +97,6 @@ pub async fn prewarm_stun_cache_with_cache(cache: &Arc<tokio::sync::RwLock<StunC
     for server in &servers {
         let cache_read = cache.read().await;
         let _ = cache_read.get_stun_server_addrs(server).await;
-    }
-}
-
-/// Pre-warm the cache with common STUN servers (uses global cache)
-pub async fn prewarm_stun_cache() {
-    let mut servers = vec![
-        "stun.l.google.com:19302",
-        "stun1.l.google.com:19302",
-        "stun2.l.google.com:19302",
-    ];
-
-    // Add custom STUN server if provided
-    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
-        servers.insert(0, Box::leak(custom_server.into_boxed_str()));
-    }
-
-    for server in &servers {
-        let _ = STUN_CACHE.get_stun_server_addrs(server).await;
     }
 }
 

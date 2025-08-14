@@ -9,7 +9,6 @@
 use crate::caches::Caches;
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::public_ip::{detect_isp_from_ip, detect_isp_with_default_resolver};
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::trace_time;
@@ -116,17 +115,8 @@ impl FullyParallelAsyncEngine {
                         result
                     }))
                 } else {
-                    // Fall back to global caches
-                    Some(tokio::spawn(async move {
-                        let isp_start = Instant::now();
-                        let result = detect_isp_from_ip(public_ip, None).await;
-                        trace_time!(
-                            verbose,
-                            "ISP detection from provided IP completed in {:?}",
-                            isp_start.elapsed()
-                        );
-                        result
-                    }))
+                    // Cannot detect ISP without caches
+                    None
                 }
             } else {
                 // Use STUN detection
@@ -151,17 +141,8 @@ impl FullyParallelAsyncEngine {
                         result
                     }))
                 } else {
-                    // Fall back to global caches
-                    Some(tokio::spawn(async move {
-                        let isp_start = Instant::now();
-                        let result = detect_isp_with_default_resolver().await;
-                        trace_time!(
-                            verbose,
-                            "ISP detection completed in {:?}",
-                            isp_start.elapsed()
-                        );
-                        result
-                    }))
+                    // Cannot detect ISP without caches
+                    None
                 }
             }
         } else {

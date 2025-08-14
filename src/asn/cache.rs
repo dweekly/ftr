@@ -73,9 +73,6 @@ impl AsnCache {
     }
 }
 
-/// Global ASN cache instance
-pub static ASN_CACHE: std::sync::LazyLock<AsnCache> = std::sync::LazyLock::new(AsnCache::new);
-
 #[cfg(test)]
 mod tests {
     use super::*;
