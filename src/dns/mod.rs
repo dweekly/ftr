@@ -7,4 +7,6 @@ pub mod reverse;
 pub mod test_utils;
 
 pub use cache::{RdnsCache, RDNS_CACHE};
-pub use reverse::{create_default_resolver, reverse_dns_lookup, ReverseDnsError};
+pub use reverse::{
+    create_default_resolver, reverse_dns_lookup, reverse_dns_lookup_with_cache, ReverseDnsError,
+};

@@ -5,6 +5,7 @@ pub mod stun;
 pub mod stun_cache;
 
 use crate::asn::lookup_asn;
+use crate::caches::Caches;
 use crate::traceroute::IspInfo;
 use hickory_resolver::TokioResolver;
 use std::sync::Arc;
@@ -13,7 +14,52 @@ use std::time::Duration;
 pub use providers::{get_public_ip, PublicIpError, PublicIpProvider};
 pub use stun::{get_public_ip_stun_with_fallback, StunError};
 
-/// Detect ISP information from public IP using STUN (fast path)
+/// Detect ISP information from public IP using STUN (fast path) with injected caches
+pub async fn detect_isp_stun_with_caches(
+    resolver: Option<Arc<TokioResolver>>,
+    caches: &Caches,
+) -> Result<IspInfo, PublicIpError> {
+    // Try STUN first (much faster than HTTPS)
+    let public_ip = match stun::get_public_ip_stun_with_fallback_and_cache(
+        Duration::from_millis(200),
+        &caches.stun,
+    )
+    .await
+    {
+        Ok(ip) => ip,
+        Err(_) => {
+            // Fall back to HTTPS if STUN fails
+            get_public_ip(PublicIpProvider::default()).await?
+        }
+    };
+
+    // Only handle IPv4 for now
+    let ipv4 = match public_ip {
+        std::net::IpAddr::V4(ip) => ip,
+        std::net::IpAddr::V6(_) => {
+            return Err(PublicIpError::UnsupportedIpVersion);
+        }
+    };
+
+    // Look up ASN information with cache
+    let asn_info = crate::asn::lookup_asn_with_cache(ipv4, &caches.asn, resolver.clone())
+        .await
+        .map_err(|e| PublicIpError::AsnLookupFailed(e.to_string()))?;
+
+    // Look up reverse DNS for the public IP with cache
+    let hostname = crate::dns::reverse_dns_lookup_with_cache(public_ip, &caches.rdns, resolver)
+        .await
+        .ok();
+
+    Ok(IspInfo {
+        public_ip,
+        asn: asn_info.asn,
+        name: asn_info.name,
+        hostname,
+    })
+}
+
+/// Detect ISP information from public IP using STUN (fast path) - uses global caches
 pub async fn detect_isp_stun(
     resolver: Option<Arc<TokioResolver>>,
 ) -> Result<IspInfo, PublicIpError> {
@@ -84,13 +130,53 @@ pub async fn detect_isp(resolver: Option<Arc<TokioResolver>>) -> Result<IspInfo,
     })
 }
 
-/// Detect ISP with default resolver using STUN (fast)
+/// Detect ISP with default resolver using STUN (fast) with injected caches
+pub async fn detect_isp_with_default_resolver_and_caches(
+    caches: &Caches,
+) -> Result<IspInfo, PublicIpError> {
+    let resolver = Arc::new(crate::dns::create_default_resolver());
+    detect_isp_stun_with_caches(Some(resolver), caches).await
+}
+
+/// Detect ISP with default resolver using STUN (fast) - uses global caches
 pub async fn detect_isp_with_default_resolver() -> Result<IspInfo, PublicIpError> {
     let resolver = Arc::new(crate::dns::create_default_resolver());
     detect_isp_stun(Some(resolver)).await
 }
 
-/// Detect ISP from a provided public IP address
+/// Detect ISP from a provided public IP address with injected caches
+pub async fn detect_isp_from_ip_with_caches(
+    public_ip: std::net::IpAddr,
+    resolver: Option<Arc<TokioResolver>>,
+    caches: &Caches,
+) -> Result<IspInfo, PublicIpError> {
+    // Only handle IPv4 for now
+    let ipv4 = match public_ip {
+        std::net::IpAddr::V4(ip) => ip,
+        std::net::IpAddr::V6(_) => {
+            return Err(PublicIpError::UnsupportedIpVersion);
+        }
+    };
+
+    // Look up ASN information with cache
+    let asn_info = crate::asn::lookup_asn_with_cache(ipv4, &caches.asn, resolver.clone())
+        .await
+        .map_err(|e| PublicIpError::AsnLookupFailed(e.to_string()))?;
+
+    // Look up reverse DNS for the public IP with cache
+    let hostname = crate::dns::reverse_dns_lookup_with_cache(public_ip, &caches.rdns, resolver)
+        .await
+        .ok();
+
+    Ok(IspInfo {
+        public_ip,
+        asn: asn_info.asn,
+        name: asn_info.name,
+        hostname,
+    })
+}
+
+/// Detect ISP from a provided public IP address - uses global caches
 pub async fn detect_isp_from_ip(
     public_ip: std::net::IpAddr,
     resolver: Option<Arc<TokioResolver>>,

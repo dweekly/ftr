@@ -1,10 +1,12 @@
 //! Reverse DNS lookup functionality
 
+use crate::dns::cache::RdnsCache;
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;
 use std::net::IpAddr;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Error type for reverse DNS operations
 #[derive(Debug, thiserror::Error)]
@@ -18,7 +20,54 @@ pub enum ReverseDnsError {
     NotFound,
 }
 
-/// Perform reverse DNS lookup for an IP address
+/// Perform reverse DNS lookup for an IP address with injected cache
+pub async fn reverse_dns_lookup_with_cache(
+    ip: IpAddr,
+    cache: &Arc<RwLock<RdnsCache>>,
+    resolver: Option<Arc<TokioResolver>>,
+) -> Result<String, ReverseDnsError> {
+    // Check cache first
+    {
+        let cache_read = cache.read().await;
+        if let Some(hostname) = cache_read.get(&ip) {
+            return Ok(hostname);
+        }
+    }
+
+    // Use provided resolver or create a new one
+    let resolver = match resolver {
+        Some(r) => r,
+        None => Arc::new(create_default_resolver()),
+    };
+
+    let lookup = resolver
+        .reverse_lookup(ip)
+        .await
+        .map_err(|e| ReverseDnsError::ResolutionError(e.to_string()))?;
+
+    // Get the first PTR record
+    let name = lookup
+        .iter()
+        .next()
+        .map(|name| {
+            let name_str = name.to_string();
+            // Remove trailing dot if present
+            if name_str.ends_with('.') {
+                name_str[..name_str.len() - 1].to_string()
+            } else {
+                name_str
+            }
+        })
+        .ok_or(ReverseDnsError::NotFound)?;
+
+    // Cache the result
+    let cache_write = cache.write().await;
+    cache_write.insert(ip, name.clone());
+
+    Ok(name)
+}
+
+/// Perform reverse DNS lookup for an IP address - uses global cache
 pub async fn reverse_dns_lookup(
     ip: IpAddr,
     resolver: Option<Arc<TokioResolver>>,

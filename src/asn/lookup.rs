@@ -1,6 +1,6 @@
 //! ASN lookup functionality using Team Cymru's whois service
 
-use crate::asn::cache::ASN_CACHE;
+use crate::asn::cache::{AsnCache, ASN_CACHE};
 use crate::traceroute::{is_cgnat, is_internal_ip, AsnInfo};
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
@@ -8,6 +8,7 @@ use hickory_resolver::TokioResolver;
 use ipnet::Ipv4Net;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Error type for ASN lookup operations
 #[derive(Debug, thiserror::Error)]
@@ -25,7 +26,148 @@ pub enum AsnLookupError {
     NotFound,
 }
 
-/// Performs ASN lookup using Team Cymru's whois service
+/// Performs ASN lookup using Team Cymru's whois service with injected cache
+pub async fn lookup_asn_with_cache(
+    ipv4_addr: Ipv4Addr,
+    cache: &Arc<RwLock<AsnCache>>,
+    resolver: Option<Arc<TokioResolver>>,
+) -> Result<AsnInfo, AsnLookupError> {
+    // Check if it's a private or special IP first, before cache
+    if is_internal_ip(&ipv4_addr)
+        || is_cgnat(&ipv4_addr)
+        || ipv4_addr.is_link_local()
+        || ipv4_addr.is_broadcast()
+        || ipv4_addr.is_documentation()
+        || ipv4_addr.is_unspecified()
+    {
+        let name = if ipv4_addr.is_loopback() {
+            "Loopback"
+        } else if ipv4_addr.is_private() {
+            "Private Network"
+        } else if is_cgnat(&ipv4_addr) {
+            "Carrier Grade NAT"
+        } else {
+            "Special Use"
+        }
+        .to_string();
+
+        let asn_info = AsnInfo {
+            asn: 0, // 0 indicates N/A for private/special IPs
+            prefix: ipv4_addr.to_string() + "/32",
+            country_code: "N/A".to_string(),
+            registry: "N/A".to_string(),
+            name,
+        };
+
+        // Cache the result
+        if let Ok(net) = asn_info.prefix.parse::<Ipv4Net>() {
+            let cache_write = cache.write().await;
+            cache_write.insert(net, asn_info.clone());
+        }
+
+        return Ok(asn_info);
+    }
+
+    // Check cache for non-special IPs
+    {
+        let cache_read = cache.read().await;
+        if let Some(cached) = cache_read.get(&ipv4_addr) {
+            return Ok(cached);
+        }
+    }
+
+    // Use provided resolver or create a new one
+    let resolver = match resolver {
+        Some(r) => r,
+        None => Arc::new(
+            TokioResolver::builder_with_config(
+                ResolverConfig::cloudflare(),
+                TokioConnectionProvider::default(),
+            )
+            .build(),
+        ),
+    };
+
+    // Query Team Cymru DNS
+    let octets = ipv4_addr.octets();
+    let query = format!(
+        "{}.{}.{}.{}.origin.asn.cymru.com",
+        octets[3], octets[2], octets[1], octets[0]
+    );
+
+    let lookup = resolver
+        .txt_lookup(query)
+        .await
+        .map_err(|e| AsnLookupError::DnsError(e.to_string()))?;
+
+    let record = lookup.iter().next().ok_or(AsnLookupError::NotFound)?;
+
+    let txt_data = record
+        .iter()
+        .map(|data| String::from_utf8_lossy(data))
+        .collect::<Vec<_>>()
+        .join("");
+
+    let parts: Vec<&str> = txt_data.split('|').map(str::trim).collect();
+    if parts.len() < 3 {
+        return Err(AsnLookupError::InvalidFormat);
+    }
+
+    // Parse ASN as u32, handling potential "AS" prefix
+    let asn_str = parts[0].trim_start_matches("AS");
+    let asn = asn_str.parse::<u32>().unwrap_or(0);
+    let prefix = parts[1].to_string();
+    let country_code = parts[2].to_string();
+    let registry = if parts.len() > 3 {
+        parts[3].to_string()
+    } else {
+        String::new()
+    };
+
+    // Parse prefix to create Ipv4Net
+    let net = prefix
+        .parse::<Ipv4Net>()
+        .map_err(|_| AsnLookupError::InvalidFormat)?;
+
+    // Query for AS name
+    let as_query = format!("AS{asn}.asn.cymru.com");
+    let name = match resolver.txt_lookup(as_query).await {
+        Ok(as_lookup) => {
+            if let Some(as_record) = as_lookup.iter().next() {
+                let as_txt = as_record
+                    .iter()
+                    .map(|data| String::from_utf8_lossy(data))
+                    .collect::<Vec<_>>()
+                    .join("");
+                let as_parts: Vec<&str> = as_txt.split('|').map(str::trim).collect();
+                if as_parts.len() >= 2 {
+                    as_parts[1].to_string()
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        }
+        Err(_) => String::new(),
+    };
+
+    let asn_info = AsnInfo {
+        asn,
+        prefix: prefix.clone(),
+        country_code,
+        registry,
+        name,
+    };
+
+    // Cache the result
+    let cache_write = cache.write().await;
+    cache_write.insert(net, asn_info.clone());
+
+    Ok(asn_info)
+}
+
+/// Performs ASN lookup using Team Cymru's whois service - uses global cache
 pub async fn lookup_asn(
     ipv4_addr: Ipv4Addr,
     resolver: Option<Arc<TokioResolver>>,
