@@ -166,6 +166,9 @@ fn main() {
 async fn async_main(_process_start: Instant) -> Result<()> {
     let args = Args::parse();
 
+    // Create Ftr instance with fresh caches
+    let ftr_instance = ftr::Ftr::new();
+
     // Handle public IP option - skip STUN if provided
     if args.public_ip.is_none() {
         // Set custom STUN server if provided
@@ -174,7 +177,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
 
         // Pre-warm STUN cache immediately for faster public IP detection
-        let _ = ftr::public_ip::stun_cache::prewarm_stun_cache().await;
+        // (Cache warming is now handled internally by Ftr instance)
     }
 
     // Initialize debug mode if requested
@@ -226,7 +229,6 @@ async fn async_main(_process_start: Instant) -> Result<()> {
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
     {
         let target_ip_clone = target_ip;
-        let no_enrich = args.no_enrich;
         let no_rdns = args.no_rdns;
         tokio::spawn(async move {
             // Pre-warm DNS reverse lookup only if rDNS is enabled
@@ -241,12 +243,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
                 let _ = resolver.reverse_lookup(target_ip_clone).await;
             }
 
-            // Pre-warm ASN lookup only if enrichment is enabled
-            if !no_enrich {
-                if let IpAddr::V4(ipv4) = target_ip_clone {
-                    let _ = ftr::asn::lookup::lookup_asn(ipv4, None).await;
-                }
-            }
+            // ASN pre-warming removed - caches are now managed by Ftr instance
         });
     }
 
@@ -350,8 +347,8 @@ async fn async_main(_process_start: Instant) -> Result<()> {
         }
     }
 
-    // Run traceroute using async implementation
-    let result = match ftr::traceroute::async_api::trace_with_config_async(config).await {
+    // Run traceroute using the Ftr instance
+    let result = match ftr_instance.trace_with_config(config).await {
         Ok(result) => result,
         Err(TracerouteError::InsufficientPermissions {
             required,

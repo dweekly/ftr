@@ -1,6 +1,6 @@
 //! ASN lookup functionality using Team Cymru's whois service
 
-use crate::asn::cache::ASN_CACHE;
+use crate::asn::cache::AsnCache;
 use crate::traceroute::{is_cgnat, is_internal_ip, AsnInfo};
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
@@ -8,6 +8,7 @@ use hickory_resolver::TokioResolver;
 use ipnet::Ipv4Net;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 /// Error type for ASN lookup operations
 #[derive(Debug, thiserror::Error)]
@@ -25,9 +26,11 @@ pub enum AsnLookupError {
     NotFound,
 }
 
-/// Performs ASN lookup using Team Cymru's whois service
-pub async fn lookup_asn(
+/// Performs ASN lookup using Team Cymru's whois service with injected cache
+/// (Internal use only - users should use AsnLookup service)
+pub(crate) async fn lookup_asn_with_cache(
     ipv4_addr: Ipv4Addr,
+    cache: &Arc<RwLock<AsnCache>>,
     resolver: Option<Arc<TokioResolver>>,
 ) -> Result<AsnInfo, AsnLookupError> {
     // Check if it's a private or special IP first, before cache
@@ -59,15 +62,19 @@ pub async fn lookup_asn(
 
         // Cache the result
         if let Ok(net) = asn_info.prefix.parse::<Ipv4Net>() {
-            ASN_CACHE.insert(net, asn_info.clone());
+            let cache_write = cache.write().await;
+            cache_write.insert(net, asn_info.clone());
         }
 
         return Ok(asn_info);
     }
 
     // Check cache for non-special IPs
-    if let Some(cached) = ASN_CACHE.get(&ipv4_addr) {
-        return Ok(cached);
+    {
+        let cache_read = cache.read().await;
+        if let Some(cached) = cache_read.get(&ipv4_addr) {
+            return Ok(cached);
+        }
     }
 
     // Use provided resolver or create a new one
@@ -135,7 +142,10 @@ pub async fn lookup_asn(
                     .join("");
                 let as_parts: Vec<&str> = as_txt.split('|').map(str::trim).collect();
                 if as_parts.len() >= 5 {
+                    // Format is: ASN | CC | Registry | Allocated | AS Name
                     as_parts[4].to_string()
+                } else if as_parts.len() >= 2 {
+                    as_parts[1].to_string()
                 } else {
                     String::new()
                 }
@@ -155,7 +165,8 @@ pub async fn lookup_asn(
     };
 
     // Cache the result
-    ASN_CACHE.insert(net, asn_info.clone());
+    let cache_write = cache.write().await;
+    cache_write.insert(net, asn_info.clone());
 
     Ok(asn_info)
 }
@@ -175,12 +186,12 @@ pub fn create_default_resolver() -> Arc<TokioResolver> {
 mod tests {
     use super::*;
     use crate::dns::create_default_resolver;
-    use serial_test::serial;
 
     #[tokio::test]
     async fn test_lookup_private_ip() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
-        let result = lookup_asn(ip, None).await;
+        let result = lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result.is_ok());
         let asn_info = result.unwrap();
         assert_eq!(asn_info.asn, 0);
@@ -189,8 +200,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_lookup_cgnat_ip() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         let ip: Ipv4Addr = "100.64.0.1".parse().unwrap();
-        let result = lookup_asn(ip, None).await;
+        let result = lookup_asn_with_cache(ip, &cache, None).await;
         match &result {
             Ok(asn_info) => {
                 assert_eq!(asn_info.asn, 0);
@@ -202,8 +214,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_lookup_loopback() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         let ip: Ipv4Addr = "127.0.0.1".parse().unwrap();
-        let result = lookup_asn(ip, None).await;
+        let result = lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result.is_ok());
         let asn_info = result.unwrap();
         assert_eq!(asn_info.asn, 0);
@@ -211,25 +224,25 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_cache_usage() {
-        // Clear cache
-        ASN_CACHE.clear();
+        // Create isolated cache for test
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
 
         let ip: Ipv4Addr = "10.0.0.1".parse().unwrap();
 
         // First lookup - should populate cache
-        let result1 = lookup_asn(ip, None).await;
+        let result1 = lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result1.is_ok());
 
         // Second lookup - should use cache
-        let result2 = lookup_asn(ip, None).await;
+        let result2 = lookup_asn_with_cache(ip, &cache, None).await;
         assert!(result2.is_ok());
         assert_eq!(result1.unwrap().name, result2.unwrap().name);
     }
 
     #[tokio::test]
     async fn test_special_ips() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         // Test various special IP addresses
         let test_cases = vec![
             ("0.0.0.0", "Special Use"),         // Unspecified
@@ -240,7 +253,7 @@ mod tests {
 
         for (ip_str, expected_name) in test_cases {
             let ip: Ipv4Addr = ip_str.parse().unwrap();
-            let result = lookup_asn(ip, None).await;
+            let result = lookup_asn_with_cache(ip, &cache, None).await;
             assert!(result.is_ok(), "Failed for IP: {}", ip_str);
             let asn_info = result.unwrap();
             assert_eq!(asn_info.asn, 0);
@@ -254,6 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_lookup_public_ip() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         // Test with known public IPs and their expected ASNs
         let test_cases = vec![
             ("8.8.8.8", "15169", "GOOGLE"),                // Google DNS
@@ -263,7 +277,7 @@ mod tests {
 
         for (ip_str, expected_asn, expected_name_prefix) in test_cases {
             let ip: Ipv4Addr = ip_str.parse().unwrap();
-            let result = lookup_asn(ip, None).await;
+            let result = lookup_asn_with_cache(ip, &cache, None).await;
 
             assert!(
                 result.is_ok(),
@@ -299,37 +313,37 @@ mod tests {
             );
 
             eprintln!(
-                "✓ IP {} -> ASN: {}, Name: {}",
-                ip_str, asn_info.asn, asn_info.name
+                "✓ IP {} -> ASN: {}, Name: '{}', Country: '{}'",
+                ip_str, asn_info.asn, asn_info.name, asn_info.country_code
             );
         }
     }
 
     #[tokio::test]
     async fn test_custom_resolver() {
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
         let resolver = Arc::new(create_default_resolver());
         let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
-        let result = lookup_asn(ip, Some(resolver)).await;
+        let result = lookup_asn_with_cache(ip, &cache, Some(resolver)).await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_cache_multiple_ips_same_prefix() {
-        // Clear cache
-        ASN_CACHE.clear();
+        // Create isolated cache for test
+        let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
 
         // Two IPs in the same private network
         let ip1: Ipv4Addr = "192.168.1.1".parse().unwrap();
         let ip2: Ipv4Addr = "192.168.1.2".parse().unwrap();
 
         // First lookup
-        let result1 = lookup_asn(ip1, None).await;
+        let result1 = lookup_asn_with_cache(ip1, &cache, None).await;
         assert!(result1.is_ok());
 
         // Second lookup - different IP but should still benefit from cache
         // if the cache is using prefix-based lookups
-        let result2 = lookup_asn(ip2, None).await;
+        let result2 = lookup_asn_with_cache(ip2, &cache, None).await;
         assert!(result2.is_ok());
 
         // Both should be private network
@@ -358,7 +372,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial]
     async fn test_concurrent_lookups() {
         use tokio::task::JoinSet;
 
@@ -372,7 +385,8 @@ mod tests {
         let mut tasks = JoinSet::new();
 
         for ip in ips {
-            tasks.spawn(async move { lookup_asn(ip, None).await });
+            let cache = Arc::new(RwLock::new(crate::asn::cache::AsnCache::new()));
+            tasks.spawn(async move { lookup_asn_with_cache(ip, &cache, None).await });
         }
 
         let mut results = Vec::new();

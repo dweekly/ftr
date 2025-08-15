@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2025-08-14
+
+### Added
+- **Service-Oriented API** - New clean, intuitive API design focused on what services do
+  - `Ftr` struct as the main library handle with service methods
+  - Direct service access: `ftr.services.asn`, `ftr.services.rdns`, `ftr.services.stun`
+  - Convenience methods: `ftr.lookup_asn()`, `ftr.lookup_rdns()`, `ftr.get_public_ip()`
+  - Service container pattern with `Services` struct for clean dependency injection
+  - No more `Arc<RwLock<>>` wrapping - services handle their own thread safety
+- **IPv6 Future-Proofing** - APIs now accept `IpAddr` instead of `Ipv4Addr`
+  - All service methods work with both IPv4 and IPv6 addresses
+  - Graceful handling of IPv6 (returns appropriate errors until fully supported)
+- **Enhanced Service Architecture**
+  - `AsnLookup`, `RdnsLookup`, and `StunClient` service types
+  - Each service manages its own cache internally
+  - Cache statistics and management methods per service
+  - `with_cache()` constructors for pre-populated caches
+- **Developer Experience Improvements**
+  - Comprehensive parallel test suite with 200+ tests
+  - New service API example demonstrating best practices
+  - Clear migration documentation with before/after examples
+  - Improved error messages and documentation
+
+### Changed
+- **BREAKING**: Complete API redesign from cache-centric to service-oriented
+  - `trace()` and `trace_with_config()` are now instance methods on `Ftr`
+  - All services accessed through `Ftr` instance or `Services` container
+  - Caches are now internal implementation details of services
+  - TimingConfig flows through TracerouteConfig (no global overrides)
+- **BREAKING**: Signature changes for future IPv6 support
+  - ASN/DNS lookup methods now take `IpAddr` instead of `Ipv4Addr`
+  - Public IP detection returns `IpAddr` instead of `Ipv4Addr`
+- **Internal Architecture**
+  - Services are `Arc<Service>` instead of `Arc<RwLock<Service>>` (simpler, faster)
+  - Each Ftr instance maintains completely isolated services and caches
+  - Full cache isolation between instances for true parallelism
+
+### Removed
+- **BREAKING**: All deprecated APIs and global state
+  - Global `trace()` and `trace_with_config()` functions
+  - Global static caches (`ASN_CACHE`, `RDNS_CACHE`, `STUN_CACHE`)
+  - Direct cache access functions (`lookup_asn_with_cache`, `reverse_dns_lookup_with_cache`)
+  - Backward compatibility type aliases (`AsnService`, `RdnsService`)
+  - Global `OVERRIDE_CONFIG` and timing override functions
+  - All `#[serial]` test attributes - tests now run fully parallel
+- **Dependencies**
+  - `once_cell` - no longer needed without global state
+  - `serial_test` - all tests can run in parallel now
+
+### Migration Guide
+
+#### Basic Usage
+```rust
+// Old (v0.4.x)
+let result = ftr::trace("google.com").await?;
+
+// New (v0.5.0)
+let ftr = Ftr::new();
+let result = ftr.trace("google.com").await?;
+```
+
+#### Service Access
+```rust
+// New service-oriented API
+let ftr = Ftr::new();
+
+// Direct service methods (convenience)
+let asn_info = ftr.lookup_asn(ip).await?;
+let hostname = ftr.lookup_rdns(ip).await?;
+let public_ip = ftr.get_public_ip().await?;
+
+// Or access services directly (no Arc<RwLock> needed!)
+let asn_info = ftr.services.asn.lookup(ip).await?;
+let hostname = ftr.services.rdns.lookup(ip).await?;
+```
+
+#### Multiple Instances
+```rust
+// Each instance has independent caches
+let ftr1 = Ftr::new();
+let ftr2 = Ftr::new();
+// ftr1 and ftr2 have completely independent services and caches
+```
+
+#### Custom Configuration
+```rust
+// With custom timing
+let config = TracerouteConfigBuilder::new()
+    .target("example.com")
+    .timing(TimingConfig::fast())  // Timing now part of config
+    .build()?;
+let result = ftr.trace_with_config(config).await?;
+
+// With pre-populated caches
+let asn_cache = AsnCache::new();
+// ... populate cache ...
+let ftr = Ftr::with_caches(Some(asn_cache), None, None);
+```
+
+### Performance Improvements
+- Simplified locking model (removed unnecessary `Arc<RwLock>` layer)
+- Tests run at 767% CPU utilization (true parallelism)
+- No lock contention between instances
+- Faster test execution (36.8s for 200+ tests)
+
 ## [0.4.0] - 2025-08-13
 
 ### Changed

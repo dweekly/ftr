@@ -5,6 +5,7 @@ This file tracks planned work for the ftr project.
 ## Architectural Improvements
 
 - [ ] **Refactor to Eliminate Global Caches (Handle Pattern)**: Implement the `Ftr` struct to own all caches and resources, removing global static variables. This will improve testability, flexibility, and code clarity. See `docs/HANDLE_PATTERN_REFACTOR.md` for the detailed plan.
+- [ ] **Remove "async" naming throughout codebase**: Since v0.4.0 removed all sync code, rename modules and types to remove redundant "async" qualifiers (e.g., `async_api.rs` → `api.rs`, `AsyncTraceroute` → `Traceroute`, `FullyParallelAsyncEngine` → `FullyParallelEngine`, etc.)
 
 ## High Priority
 

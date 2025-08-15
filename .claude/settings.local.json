@@ -13,7 +13,11 @@
       "Bash(ssh:*)",
       "Bash(timeout 10s cargo test --test caching_verification_test -- --nocapture)",
       "Bash(echo \"Exit code: $?\")",
-      "Bash(gtimeout 10s cargo test --test caching_verification_test -- --nocapture)"
+      "Bash(gtimeout 10s cargo test --test caching_verification_test -- --nocapture)",
+      "Bash(gh release view:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }

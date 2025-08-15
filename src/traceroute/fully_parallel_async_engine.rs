@@ -8,7 +8,7 @@
 
 use crate::enrichment::AsyncEnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::public_ip::{detect_isp_from_ip, detect_isp_with_default_resolver};
+use crate::services::Services;
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::trace_time;
@@ -36,10 +36,31 @@ pub struct FullyParallelAsyncEngine {
     target: IpAddr,
     enrichment_service: Arc<AsyncEnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
+    services: Option<Arc<Services>>,
 }
 
 impl FullyParallelAsyncEngine {
-    /// Create a new fully parallel async traceroute engine
+    /// Create a new fully parallel async traceroute engine with injected services
+    pub async fn new_with_services(
+        socket: Box<dyn AsyncProbeSocket>,
+        config: crate::TracerouteConfig,
+        target: IpAddr,
+        services: Arc<Services>,
+    ) -> Result<Self> {
+        // Create enrichment service upfront
+        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+
+        Ok(Self {
+            socket: Arc::new(socket),
+            config,
+            target,
+            enrichment_service,
+            enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
+            services: Some(services),
+        })
+    }
+
+    /// Create a new fully parallel async traceroute engine (uses global caches)
     pub async fn new(
         socket: Box<dyn AsyncProbeSocket>,
         config: crate::TracerouteConfig,
@@ -54,6 +75,7 @@ impl FullyParallelAsyncEngine {
             target,
             enrichment_service,
             enrichment_cache: Arc::new(Mutex::new(HashMap::new())),
+            services: None,
         })
     }
 
@@ -76,16 +98,26 @@ impl FullyParallelAsyncEngine {
                     public_ip
                 );
                 let verbose = self.config.verbose;
-                Some(tokio::spawn(async move {
-                    let isp_start = Instant::now();
-                    let result = detect_isp_from_ip(public_ip, None).await;
-                    trace_time!(
-                        verbose,
-                        "ISP detection from provided IP completed in {:?}",
-                        isp_start.elapsed()
-                    );
-                    result
-                }))
+                if let Some(ref services) = self.services {
+                    // Use injected services
+                    let services = services.clone();
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result = crate::public_ip::detect_isp_from_ip_with_services(
+                            public_ip, &services,
+                        )
+                        .await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection from provided IP completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                } else {
+                    // Cannot detect ISP without services
+                    None
+                }
             } else {
                 // Use STUN detection
                 trace_time!(
@@ -93,16 +125,24 @@ impl FullyParallelAsyncEngine {
                     "Starting ISP detection (STUN) in parallel"
                 );
                 let verbose = self.config.verbose;
-                Some(tokio::spawn(async move {
-                    let isp_start = Instant::now();
-                    let result = detect_isp_with_default_resolver().await;
-                    trace_time!(
-                        verbose,
-                        "ISP detection completed in {:?}",
-                        isp_start.elapsed()
-                    );
-                    result
-                }))
+                if let Some(ref services) = self.services {
+                    // Use injected services
+                    let services = services.clone();
+                    Some(tokio::spawn(async move {
+                        let isp_start = Instant::now();
+                        let result =
+                            crate::public_ip::detect_isp_stun_with_services(&services).await;
+                        trace_time!(
+                            verbose,
+                            "ISP detection completed in {:?}",
+                            isp_start.elapsed()
+                        );
+                        result
+                    }))
+                } else {
+                    // Cannot detect ISP without services
+                    None
+                }
             }
         } else {
             None

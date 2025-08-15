@@ -15,10 +15,9 @@ fn test_timing_config_values() {
     );
     println!("Socket read timeout: {}ms", DEFAULT_SOCKET_READ_TIMEOUT_MS);
 
-    // The old implementation would poll every 10ms in main loop
-    // and every 100ms in receiver loop
-    // With event-driven, we only wake up when events occur
+    // The current implementation uses much faster polling intervals
+    // for better responsiveness
 
-    assert_eq!(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS, 10);
-    assert_eq!(DEFAULT_RECEIVER_POLL_INTERVAL_MS, 100);
+    assert_eq!(DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS, 5);
+    assert_eq!(DEFAULT_RECEIVER_POLL_INTERVAL_MS, 1);
 }

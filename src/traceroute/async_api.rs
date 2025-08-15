@@ -3,6 +3,7 @@
 //! This module provides the async API for performing traceroute operations
 //! with immediate response processing using Tokio.
 
+use crate::services::Services;
 use crate::socket::async_factory::create_async_probe_socket_with_options;
 use crate::traceroute::fully_parallel_async_engine::FullyParallelAsyncEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
@@ -17,10 +18,64 @@ use std::net::IpAddr;
 pub struct AsyncTraceroute {
     config: TracerouteConfig,
     target_ip: IpAddr,
+    services: Option<Services>,
 }
 
 impl AsyncTraceroute {
-    /// Create a new async traceroute from configuration
+    /// Create a new async traceroute from configuration with injected services
+    pub async fn new_with_services(
+        mut config: TracerouteConfig,
+        services: Services,
+    ) -> Result<Self, TracerouteError> {
+        // Check if target is an IP address literal
+        if let Ok(ip) = config.target.parse::<IpAddr>() {
+            if ip.is_ipv6() {
+                return Err(TracerouteError::Ipv6NotSupported);
+            }
+            config.target_ip = Some(ip);
+        }
+
+        // Resolve target if needed
+        let target_ip = if let Some(ip) = config.target_ip {
+            ip
+        } else {
+            // Resolve hostname
+            let resolver = TokioResolver::builder_with_config(
+                ResolverConfig::cloudflare(),
+                TokioConnectionProvider::default(),
+            )
+            .build();
+
+            let response = resolver
+                .lookup_ip(&config.target)
+                .await
+                .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
+
+            // Check if we got any IPv6 addresses but no IPv4
+            let has_ipv6 = response.iter().any(|ip| ip.is_ipv6());
+            let has_ipv4 = response.iter().any(|ip| ip.is_ipv4());
+
+            if has_ipv6 && !has_ipv4 {
+                return Err(TracerouteError::Ipv6NotSupported);
+            }
+
+            // Get first IPv4 address
+            response
+                .iter()
+                .find(IpAddr::is_ipv4)
+                .ok_or_else(|| TracerouteError::ResolutionError("No addresses found".to_string()))?
+        };
+
+        config.target_ip = Some(target_ip);
+
+        Ok(Self {
+            config,
+            target_ip,
+            services: Some(services),
+        })
+    }
+
+    /// Create a new async traceroute from configuration (uses global caches)
     pub async fn new(mut config: TracerouteConfig) -> Result<Self, TracerouteError> {
         // Check if target is an IP address literal
         if let Ok(ip) = config.target.parse::<IpAddr>() {
@@ -68,19 +123,17 @@ impl AsyncTraceroute {
 
         config.target_ip = Some(target_ip);
 
-        Ok(Self { config, target_ip })
+        Ok(Self {
+            config,
+            target_ip,
+            services: None,
+        })
     }
 
     /// Run the async traceroute
     pub async fn run(self) -> Result<TracerouteResult, TracerouteError> {
-        // Create timing config from traceroute config
-        let timing_config = crate::TimingConfig {
-            receiver_poll_interval: self.config.send_interval,
-            main_loop_poll_interval: self.config.send_interval,
-            enrichment_wait_time: self.config.overall_timeout,
-            socket_read_timeout: self.config.probe_timeout,
-            udp_retry_delay: self.config.send_interval,
-        };
+        // Use timing config from traceroute config
+        let timing_config = self.config.timing.clone();
 
         // Set verbose flag in environment for socket to pick up
         if self.config.verbose > 0 {
@@ -112,9 +165,21 @@ impl AsyncTraceroute {
         })?;
 
         // Create and run fully parallel async engine
-        let engine = FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)
+        let engine = if let Some(services) = self.services {
+            FullyParallelAsyncEngine::new_with_services(
+                socket,
+                self.config.clone(),
+                self.target_ip,
+                std::sync::Arc::new(services),
+            )
             .await
-            .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
+            .map_err(|e| TracerouteError::SocketError(e.to_string()))?
+        } else {
+            FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)
+                .await
+                .map_err(|e| TracerouteError::SocketError(e.to_string()))?
+        };
+
         let result = engine
             .run()
             .await
@@ -139,6 +204,15 @@ pub async fn trace_with_config_async(
     config: TracerouteConfig,
 ) -> Result<TracerouteResult, TracerouteError> {
     let traceroute = AsyncTraceroute::new(config).await?;
+    traceroute.run().await
+}
+
+/// Run an async traceroute with injected services (internal API for Ftr struct)
+pub(crate) async fn trace_with_services(
+    config: TracerouteConfig,
+    services: &Services,
+) -> Result<TracerouteResult, TracerouteError> {
+    let traceroute = AsyncTraceroute::new_with_services(config, services.clone()).await?;
     traceroute.run().await
 }
 

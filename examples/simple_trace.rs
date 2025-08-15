@@ -1,13 +1,16 @@
 //! Simple example of using ftr as a library
 
-use ftr::{trace, TracerouteConfigBuilder};
+use ftr::{Ftr, TracerouteConfigBuilder};
 use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create an Ftr instance
+    let ftr = Ftr::new();
+
     // Example 1: Simple trace with defaults
     println!("=== Simple trace to 1.1.1.1 ===");
-    match trace("1.1.1.1").await {
+    match ftr.trace("1.1.1.1").await {
         Ok(result) => {
             println!(
                 "Trace to {} completed in {:?}",
@@ -60,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .verbose(1)
         .build()?;
 
-    match ftr::trace_with_config(config).await {
+    match ftr.trace_with_config(config).await {
         Ok(result) => {
             println!("Trace completed!");
             println!("Protocol used: {:?}", result.protocol_used);

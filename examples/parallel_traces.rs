@@ -87,10 +87,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_duration.as_secs_f64()
     );
 
-    // Show cache statistics
-    println!("\nCache statistics:");
-    println!("  ASN cache entries: {}", ftr::asn::ASN_CACHE.len());
-    println!("  rDNS cache entries: {}", ftr::dns::RDNS_CACHE.len());
+    // Show cache note
+    println!("\nNote: Caches are now managed internally by the Ftr instance");
 
     Ok(())
 }

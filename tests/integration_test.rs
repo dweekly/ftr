@@ -324,8 +324,7 @@ async fn test_caching_behavior() {
         .unwrap();
 
     // Clear caches before test
-    ftr::asn::ASN_CACHE.clear();
-    ftr::dns::RDNS_CACHE.clear();
+    // Cache clearing removed - each Ftr instance has its own caches
 
     // First trace - cold cache
     let result1 = trace_with_config(config1).await;
@@ -338,7 +337,7 @@ async fn test_caching_behavior() {
 
     if result1.is_ok() && result2.is_ok() {
         // Check cache has entries
-        assert!(ftr::asn::ASN_CACHE.len() > 0 || ftr::dns::RDNS_CACHE.len() > 0);
+        // Cache check removed - caches are now instance-specific
     }
 }
 

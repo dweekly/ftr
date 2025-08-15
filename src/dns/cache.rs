@@ -13,6 +13,7 @@ struct CacheEntry {
 }
 
 /// Thread-safe cache for reverse DNS lookups
+#[derive(Debug)]
 pub struct RdnsCache {
     cache: Arc<RwLock<HashMap<IpAddr, CacheEntry>>>,
     ttl: Duration,
@@ -91,10 +92,6 @@ impl Default for RdnsCache {
         Self::with_default_ttl()
     }
 }
-
-/// Global rDNS cache instance
-pub static RDNS_CACHE: std::sync::LazyLock<RdnsCache> =
-    std::sync::LazyLock::new(RdnsCache::with_default_ttl);
 
 #[cfg(test)]
 mod tests {
