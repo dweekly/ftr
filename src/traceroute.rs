@@ -84,6 +84,18 @@ impl std::fmt::Display for SegmentType {
     }
 }
 
+/// Role of a hop within the end-to-end path
+///
+/// This augments `SegmentType` with a destination-oriented view without
+/// changing existing public structs, preserving backward compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PathLabel {
+    /// Within the destination's ASN
+    Destination,
+    /// Between ISP and Destination through other ASNs
+    Transit,
+}
+
 /// Checks if an IP address is within private/internal ranges.
 pub fn is_internal_ip(ip: &Ipv4Addr) -> bool {
     ip.is_private() || ip.is_loopback() || ip.is_link_local()

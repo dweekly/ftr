@@ -111,6 +111,7 @@ struct JsonHop {
     hostname: Option<String>,
     asn_info: Option<ftr::AsnInfo>,
     rtt_ms: Option<f64>,
+    path_label: Option<String>,
 }
 
 /// JSON output structure for the entire traceroute result
@@ -453,7 +454,12 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
     };
 
     // Convert hops to JSON format
-    for hop in &result.hops {
+    let labels = result.path_labels();
+    for (i, hop) in result.hops.iter().enumerate() {
+        let path_label = labels.get(i).and_then(|o| o.as_ref()).map(|l| match l {
+            ftr::PathLabel::Destination => "DESTINATION".to_string(),
+            ftr::PathLabel::Transit => "TRANSIT".to_string(),
+        });
         json_output.hops.push(JsonHop {
             ttl: hop.ttl,
             segment: Some(format!("{:?}", hop.segment)),
@@ -461,6 +467,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
             hostname: hop.hostname.clone(),
             asn_info: hop.asn_info.clone(),
             rtt_ms: hop.rtt_ms(),
+            path_label,
         });
     }
 
@@ -474,7 +481,8 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
     let enrichment_disabled = no_enrich;
 
     // Display hops
-    for hop in &result.hops {
+    let labels = result.path_labels();
+    for (idx, hop) in result.hops.iter().enumerate() {
         if hop.addr.is_none() {
             // Silent hop
             println!("{:2}", hop.ttl);
@@ -524,9 +532,17 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
                 println!("{:2} {} {}", hop.ttl, host_display, rtt_str);
             } else {
                 // Enriched mode - show segment and ASN info
+                let role_str = labels
+                    .get(idx)
+                    .and_then(|o| o.as_ref())
+                    .map(|l| match l {
+                        ftr::PathLabel::Destination => " | DESTINATION",
+                        ftr::PathLabel::Transit => " | TRANSIT",
+                    })
+                    .unwrap_or("");
                 println!(
-                    "{:2} [{}] {} {}{}",
-                    hop.ttl, hop.segment, host_display, rtt_str, asn_str
+                    "{:2} [{}{}] {} {}{}",
+                    hop.ttl, hop.segment, role_str, host_display, rtt_str, asn_str
                 );
             }
         }
