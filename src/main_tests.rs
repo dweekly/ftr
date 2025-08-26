@@ -230,7 +230,6 @@ mod tests {
                 name: "GOOGLE".to_string(),
             }),
             rtt_ms: Some(25.5),
-            path_label: None,
         };
 
         // Test serialization
@@ -245,7 +244,6 @@ mod tests {
             hostname: None,
             asn_info: None,
             rtt_ms: None,
-            path_label: None,
         };
 
         let json = serde_json::to_string(&empty_hop);

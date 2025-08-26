@@ -67,8 +67,10 @@ pub enum SegmentType {
     Lan,
     /// Internet Service Provider network
     Isp,
-    /// Beyond the user's ISP (general internet)
-    Beyond,
+    /// After ISP, across ASNs that differ from destination's ASN
+    Transit,
+    /// Within the destination's ASN
+    Destination,
     /// Unknown or unclassified segment
     Unknown,
 }
@@ -78,22 +80,11 @@ impl std::fmt::Display for SegmentType {
         match self {
             SegmentType::Lan => write!(f, "LAN   "),
             SegmentType::Isp => write!(f, "ISP   "),
-            SegmentType::Beyond => write!(f, "BEYOND"),
+            SegmentType::Transit => write!(f, "TRANSIT"),
+            SegmentType::Destination => write!(f, "DESTINATION"),
             SegmentType::Unknown => write!(f, "UNKNOWN"),
         }
     }
-}
-
-/// Role of a hop within the end-to-end path
-///
-/// This augments `SegmentType` with a destination-oriented view without
-/// changing existing public structs, preserving backward compatibility.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum PathLabel {
-    /// Within the destination's ASN
-    Destination,
-    /// Between ISP and Destination through other ASNs
-    Transit,
 }
 
 /// Checks if an IP address is within private/internal ranges.
@@ -186,7 +177,8 @@ mod tests {
     fn test_segment_type_display() {
         assert_eq!(SegmentType::Lan.to_string(), "LAN   ");
         assert_eq!(SegmentType::Isp.to_string(), "ISP   ");
-        assert_eq!(SegmentType::Beyond.to_string(), "BEYOND");
+        assert_eq!(SegmentType::Transit.to_string(), "TRANSIT");
+        assert_eq!(SegmentType::Destination.to_string(), "DESTINATION");
         assert_eq!(SegmentType::Unknown.to_string(), "UNKNOWN");
     }
 

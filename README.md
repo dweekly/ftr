@@ -390,3 +390,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Author
 
 David Weekly (dweekly)
+#### Segment Labels
+
+When enrichment is enabled (default), segments are shown as:
+- `LAN`: local/private addresses
+- `ISP`: your provider’s network (includes CGNAT range)
+- `TRANSIT`: networks after ISP with different ASNs than the destination
+- `DESTINATION`: networks in the destination’s ASN
+- `UNKNOWN`: insufficient data to classify
+
+The JSON output’s `segment` field also reflects these refined labels when available.

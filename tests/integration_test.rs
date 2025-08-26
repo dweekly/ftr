@@ -132,15 +132,17 @@ async fn test_hop_classification() {
             // Should have at least one hop
             assert!(!segments.is_empty());
 
-            // Segments should be in order: LAN -> ISP -> BEYOND
+            // Segments generally progress outward: LAN -> ISP -> TRANSIT/DESTINATION
             // (though not all may be present)
             let mut last_segment = SegmentType::Unknown;
             for segment in segments {
                 match (last_segment, segment) {
                     (SegmentType::Unknown, _) => {}
                     (SegmentType::Lan, SegmentType::Isp) => {}
-                    (SegmentType::Lan, SegmentType::Beyond) => {}
-                    (SegmentType::Isp, SegmentType::Beyond) => {}
+                    (SegmentType::Lan, SegmentType::Transit) => {}
+                    (SegmentType::Lan, SegmentType::Destination) => {}
+                    (SegmentType::Isp, SegmentType::Transit) => {}
+                    (SegmentType::Isp, SegmentType::Destination) => {}
                     (a, b) if a == b => {} // Same segment is fine
                     _ => {
                         // Unexpected transition
@@ -183,7 +185,7 @@ async fn test_result_methods() {
         },
         ftr::ClassifiedHopInfo {
             ttl: 3,
-            segment: SegmentType::Beyond,
+            segment: SegmentType::Destination,
             hostname: Some("destination.com".to_string()),
             addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
             asn_info: None,
@@ -234,8 +236,8 @@ async fn test_result_methods() {
     assert_eq!(lan_hops.len(), 1);
     let isp_hops = result.hops_in_segment(SegmentType::Isp);
     assert_eq!(isp_hops.len(), 1);
-    let beyond_hops = result.hops_in_segment(SegmentType::Beyond);
-    assert_eq!(beyond_hops.len(), 1);
+    let dest_hops = result.hops_in_segment(SegmentType::Destination);
+    assert_eq!(dest_hops.len(), 1);
 
     // Test average_rtt_ms
     let avg_rtt = result.average_rtt_ms();

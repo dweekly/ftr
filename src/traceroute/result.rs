@@ -2,7 +2,7 @@
 
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::types::{ClassifiedHopInfo, IspInfo};
-use crate::traceroute::PathLabel;
+// No additional labels; SegmentType now includes Transit/Destination
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -110,43 +110,6 @@ impl TracerouteResult {
             Some(rtts.iter().sum::<f64>() / rtts.len() as f64)
         }
     }
-
-    /// Compute path-oriented labels (TRANSIT/DESTINATION) for each hop
-    ///
-    /// - Labels only apply to hops in the `Beyond` segment.
-    /// - Hops whose ASN matches the destination hop's ASN are labeled `DESTINATION`.
-    /// - Hops after ISP but before DESTINATION with different ASNs are labeled `TRANSIT`.
-    /// - Other hops (LAN/ISP/Unknown or lacking ASN info) return `None`.
-    pub fn path_labels(&self) -> Vec<Option<PathLabel>> {
-        use crate::traceroute::SegmentType;
-
-        let dest_asn: Option<u32> = self
-            .destination_hop()
-            .and_then(|h| h.asn_info.as_ref())
-            .map(|a| a.asn)
-            .filter(|asn| *asn != 0);
-
-        // Determine if we've moved beyond ISP boundary (based on segment classification)
-        let mut beyond_started = false;
-        self.hops
-            .iter()
-            .map(|hop| {
-                if hop.segment == SegmentType::Beyond {
-                    beyond_started = true;
-                    if let (Some(asn_info), Some(dest)) = (&hop.asn_info, dest_asn) {
-                        if asn_info.asn == dest {
-                            return Some(PathLabel::Destination);
-                        } else {
-                            return Some(PathLabel::Transit);
-                        }
-                    }
-                }
-                // Not in Beyond or missing ASN info -> no label
-                let _ = beyond_started; // keep the intent explicit; state used only for clarity
-                None
-            })
-            .collect()
-    }
 }
 
 /// Progress information during a traceroute operation
@@ -243,7 +206,7 @@ mod tests {
             },
             ClassifiedHopInfo {
                 ttl: 3,
-                segment: SegmentType::Beyond,
+                segment: SegmentType::Destination,
                 hostname: Some("google.com".to_string()),
                 addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
                 asn_info: Some(AsnInfo {
@@ -300,7 +263,7 @@ mod tests {
     }
 
     #[test]
-    fn test_path_labels_destination_and_transit() {
+    fn test_segments_destination_and_transit() {
         // Build a path: LAN -> ISP -> BEYOND (AS64500) -> BEYOND (AS15169, destination)
         let hops = vec![
             ClassifiedHopInfo {
@@ -327,7 +290,7 @@ mod tests {
             },
             ClassifiedHopInfo {
                 ttl: 3,
-                segment: SegmentType::Beyond,
+                segment: SegmentType::Transit,
                 hostname: None,
                 addr: Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))),
                 asn_info: Some(AsnInfo {
@@ -341,7 +304,7 @@ mod tests {
             },
             ClassifiedHopInfo {
                 ttl: 4,
-                segment: SegmentType::Beyond,
+                segment: SegmentType::Destination,
                 hostname: Some("google.com".to_string()),
                 addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
                 asn_info: Some(AsnInfo {
@@ -371,12 +334,10 @@ mod tests {
             total_duration: Duration::from_millis(100),
         };
 
-        let labels = result.path_labels();
-        assert_eq!(labels.len(), 4);
-        assert_eq!(labels[0], None); // LAN
-        assert_eq!(labels[1], None); // ISP
-        assert_eq!(labels[2], Some(PathLabel::Transit)); // First BEYOND, different ASN
-        assert_eq!(labels[3], Some(PathLabel::Destination)); // Destination AS
+        assert_eq!(result.hops[0].segment, SegmentType::Lan);
+        assert_eq!(result.hops[1].segment, SegmentType::Isp);
+        assert_eq!(result.hops[2].segment, SegmentType::Transit);
+        assert_eq!(result.hops[3].segment, SegmentType::Destination);
     }
 
     #[test]

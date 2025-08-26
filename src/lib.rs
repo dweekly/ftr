@@ -149,9 +149,9 @@ mod tests;
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
-    trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, PathLabel, RawHopInfo,
-    SegmentType, TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder,
-    TracerouteError, TracerouteProgress, TracerouteResult,
+    trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType,
+    TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
+    TracerouteProgress, TracerouteResult,
 };
 
 // Re-export async API

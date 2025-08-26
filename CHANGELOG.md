@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2025-08-26
+
+### Added
+- Refined segment labeling and early destination ASN lookup:
+  - `SegmentType` now uses `Transit` and `Destination` instead of `Beyond` (breaking)
+  - Destination ASN is looked up early from the target IP in parallel
+- CLI (text): emits `[TRANSIT]` and `[DESTINATION]` when enrichment available
+- CLI (JSON): `segment` field now uses `TRANSIT` / `DESTINATION`
+
+### Compatibility
+- BREAKING: `SegmentType::Beyond` removed from the library API and CLI JSON
+- If enrichment is insufficient, segment may be `UNKNOWN`
+
 ## [0.5.0] - 2025-08-14
 
 ### Added

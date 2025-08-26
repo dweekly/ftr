@@ -148,6 +148,26 @@ impl FullyParallelAsyncEngine {
             None
         };
 
+        // Start destination ASN lookup early in parallel (if services and enrichment enabled)
+        let dest_asn_future = if self.config.enable_asn_lookup {
+            if let Some(ref services) = self.services {
+                let services = services.clone();
+                let target = self.target;
+                let verbose = self.config.verbose;
+                Some(tokio::spawn(async move {
+                    trace_time!(verbose, "Starting destination ASN lookup for {}", target);
+                    match services.asn.lookup(target).await {
+                        Ok(info) if info.asn != 0 => Some(info.asn),
+                        _ => None,
+                    }
+                }))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // 2. Create futures for all probes with immediate enrichment
         let mut probe_futures = FuturesUnordered::new();
         let mut sequence = 1u16;
@@ -316,7 +336,8 @@ impl FullyParallelAsyncEngine {
 
         // 4. Build result with cached enrichment data
         let elapsed = start_time.elapsed();
-        self.build_result(responses, elapsed, isp_future).await
+        self.build_result(responses, elapsed, isp_future, dest_asn_future)
+            .await
     }
 
     /// Build the final traceroute result with enriched data
@@ -329,6 +350,7 @@ impl FullyParallelAsyncEngine {
                 Result<crate::traceroute::IspInfo, crate::public_ip::PublicIpError>,
             >,
         >,
+        dest_asn_future: Option<tokio::task::JoinHandle<Option<u32>>>,
     ) -> Result<TracerouteResult> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
@@ -370,6 +392,16 @@ impl FullyParallelAsyncEngine {
 
         // Get ISP ASN for segment classification
         let isp_asn = isp_info.as_ref().map(|isp| isp.asn);
+
+        // Wait for destination ASN
+        let dest_asn = if let Some(fut) = dest_asn_future {
+            match fut.await {
+                Ok(asn_opt) => asn_opt,
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
 
         // Build classified hops with enrichment data
         let enrichment_cache = self.enrichment_cache.lock().await;
@@ -420,21 +452,42 @@ impl FullyParallelAsyncEngine {
                             } else if crate::traceroute::is_cgnat(&ipv4) {
                                 in_isp_segment = true;
                                 SegmentType::Isp
-                            } else if let Some(isp) = isp_asn {
+                            } else {
+                                // Public IP classification requires ISP and/or destination ASN
                                 if let Some(ref asn) = asn_info {
-                                    if asn.asn == isp {
-                                        in_isp_segment = true;
-                                        SegmentType::Isp
+                                    // ISP boundary check if known
+                                    if let Some(isp) = isp_asn {
+                                        if asn.asn == isp {
+                                            in_isp_segment = true;
+                                            SegmentType::Isp
+                                        } else if let Some(dest) = dest_asn {
+                                            if asn.asn == dest {
+                                                SegmentType::Destination
+                                            } else {
+                                                SegmentType::Transit
+                                            }
+                                        } else {
+                                            // ISP known but not this AS; without dest ASN, mark as TRANSIT
+                                            SegmentType::Transit
+                                        }
+                                    } else if let Some(dest) = dest_asn {
+                                        if asn.asn == dest {
+                                            SegmentType::Destination
+                                        } else if in_isp_segment {
+                                            SegmentType::Transit
+                                        } else {
+                                            SegmentType::Unknown
+                                        }
+                                    } else if in_isp_segment {
+                                        SegmentType::Transit
                                     } else {
-                                        SegmentType::Beyond
+                                        SegmentType::Unknown
                                     }
                                 } else if in_isp_segment {
                                     SegmentType::Isp
                                 } else {
                                     SegmentType::Unknown
                                 }
-                            } else {
-                                SegmentType::Unknown
                             }
                         } else {
                             SegmentType::Unknown

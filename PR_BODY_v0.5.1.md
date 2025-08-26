@@ -1,19 +1,19 @@
-## feat: v0.5.1 – Path Role Labels (TRANSIT/DESTINATION)
+## feat: v0.5.1 – Replace BEYOND with TRANSIT/DESTINATION
 
 ### Summary
 
-Adds path role labeling to both the CLI and library to distinguish between hops within the destination ASN (DESTINATION) and hops after ISP but before destination across other ASNs (TRANSIT).
+Replaces the BEYOND segment in outputs with TRANSIT and DESTINATION. Library gains helpers to compute these refined segments based on destination ASN.
 
 ### Changes
 
 - Library
-  - New `ftr::PathLabel` enum: `Destination`, `Transit`.
-  - New `TracerouteResult::path_labels() -> Vec<Option<PathLabel>>` for per-hop labels.
-  - Backward-compatible: no breaking changes to existing types.
+  - New `ftr::EffectiveSegment` enum and `TracerouteResult::effective_segments()` for refined segments (LAN, ISP, TRANSIT, DESTINATION, UNKNOWN).
+  - `TracerouteResult::path_labels()` also available for finer control.
+  - Backward-compatible: existing `SegmentType` unchanged.
 
 - CLI
-  - Text: Displays roles inline with the segment (e.g., `[BEYOND | TRANSIT]`).
-  - JSON: Adds optional `path_label` per hop (`"TRANSIT" | "DESTINATION" | null`).
+  - Text: Segment display shows TRANSIT or DESTINATION instead of BEYOND when enrichment allows determination.
+  - JSON: `segment` field now emits `TRANSIT`/`DESTINATION` instead of `BEYOND`.
 
 ### Rationale
 
@@ -21,20 +21,19 @@ Makes it easier to identify which parts of the route traverse transit providers 
 
 ### Compatibility
 
-- Library API is additive; 0.5.0 callers remain compatible.
-- CLI text adds contextual info; JSON adds a new optional field only.
+- Library API is additive; 0.5.0 callers remain compatible (no enum breaking changes).
+- CLI text/JSON replace BEYOND with refined labels when possible; UNKNOWN used when insufficient enrichment.
 
 ### Tests/Quality
 
-- Added unit test for role labeling logic.
-- Updated CLI JSON tests to include `path_label`.
+- Added unit test for role labeling logic and effective segments.
 - `cargo fmt` and `cargo clippy -- -D warnings` clean.
 
 ### Screenshots/Examples
 
 ```
- 9 [BEYOND | TRANSIT] 203.0.113.1  12.345 ms [AS64500 - TRANSIT-NET, US]
-10 [BEYOND | DESTINATION] 8.8.8.8  22.456 ms [AS15169 - GOOGLE, US]
+ 9 [TRANSIT] 203.0.113.1  12.345 ms [AS64500 - TRANSIT-NET, US]
+10 [DESTINATION] 8.8.8.8  22.456 ms [AS15169 - GOOGLE, US]
 ```
 
 ### Checklist
@@ -43,4 +42,3 @@ Makes it easier to identify which parts of the route traverse transit providers 
 - [x] Tests updated and passing
 - [x] Backward compatibility verified
 - [x] Release notes added (`RELEASE_NOTES_v0.5.1.md`)
-
