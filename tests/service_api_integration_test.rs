@@ -22,9 +22,23 @@ async fn test_ftr_convenience_methods() {
 
     assert!(result.is_ok(), "ASN lookup failed: {:?}", result.err());
     let asn_info = result.unwrap();
+    
+    // Print actual values for debugging CI issues
+    eprintln!("DEBUG: ASN lookup for 8.8.8.8 returned:");
+    eprintln!("  ASN: {}", asn_info.asn);
+    eprintln!("  Name: '{}'", asn_info.name);
+    eprintln!("  Prefix: '{}'", asn_info.prefix);
+    eprintln!("  Country: '{}'", asn_info.country_code);
+    eprintln!("  Registry: '{}'", asn_info.registry);
+    
     assert_eq!(asn_info.asn, 15169);
-    // ASN name might vary between DNS services - just check it's not empty
-    assert!(!asn_info.name.is_empty(), "ASN name should not be empty");
+    // Check for Google in various formats (case insensitive)
+    let name_upper = asn_info.name.to_uppercase();
+    assert!(
+        name_upper.contains("GOOGLE") || name_upper.contains("GOOGL"),
+        "Expected Google ASN name to contain 'GOOGLE', got: '{}' (uppercase: '{}')", 
+        asn_info.name, name_upper
+    );
 
     // Test reverse DNS lookup
     let dns_ip: IpAddr = "8.8.8.8".parse().unwrap();
