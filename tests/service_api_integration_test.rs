@@ -35,9 +35,8 @@ async fn test_ftr_convenience_methods() {
 
     // More flexible check for Google's ASN - handle various possible formats
     let name_upper = asn_info.name.to_uppercase();
-    let is_google_asn = name_upper.contains("GOOGLE")
-        || name_upper.contains("GOOGL")
-        || asn_info.asn == 15169;  // Accept AS15169 even if name is empty/missing
+    let is_google_asn =
+        name_upper.contains("GOOGLE") || name_upper.contains("GOOGL") || asn_info.asn == 15169; // Accept AS15169 even if name is empty/missing
 
     assert!(
         is_google_asn,
