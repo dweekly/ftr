@@ -583,17 +583,18 @@ impl FullyParallelAsyncEngine {
 
         for i in 1..hops.len() - 1 {
             // Only modify Unknown or Transit segments that have addresses
-            if hops[i].addr.is_some() &&
-               (hops[i].segment == SegmentType::Unknown || hops[i].segment == SegmentType::Transit) {
-                
+            if hops[i].addr.is_some()
+                && (hops[i].segment == SegmentType::Unknown
+                    || hops[i].segment == SegmentType::Transit)
+            {
                 // Look for surrounding hops of the same type
                 let mut check_segment = |segment_type: SegmentType| {
                     // Find previous hop with this segment type
                     let has_before = (0..i).rev().any(|j| hops[j].segment == segment_type);
-                    
-                    // Find next hop with this segment type  
+
+                    // Find next hop with this segment type
                     let has_after = (i + 1..hops.len()).any(|j| hops[j].segment == segment_type);
-                    
+
                     if has_before && has_after {
                         hops[i].segment = segment_type;
                         true
@@ -601,7 +602,7 @@ impl FullyParallelAsyncEngine {
                         false
                     }
                 };
-                
+
                 // Check ISP first, then Destination
                 // ISP takes precedence as it's typically earlier in the path
                 if check_segment(SegmentType::Isp) {

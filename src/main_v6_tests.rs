@@ -1,18 +1,21 @@
 /// Tests for v0.6.0 CLI features
-/// 
+///
 /// These tests verify:
 /// - JSON output formatting with 1 decimal place RTT precision
 /// - Destination ASN field in JSON output
 /// - TRANSIT and DESTINATION segment serialization
 /// - Silent hop handling in JSON
-/// 
+///
 /// These complement the integration tests by testing the CLI-specific
 /// formatting and serialization logic.
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)] // These are used in test assertions
     use crate::{JsonHop, JsonIsp, JsonOutput};
-    use ftr::{AsnInfo, ClassifiedHopInfo, IspInfo, ProbeProtocol, SegmentType, SocketMode, TracerouteResult};
+    use ftr::{
+        AsnInfo, ClassifiedHopInfo, IspInfo, ProbeProtocol, SegmentType, SocketMode,
+        TracerouteResult,
+    };
     use serde_json;
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
@@ -30,11 +33,14 @@ mod tests {
             (0.05, 0.1),
             (0.04, 0.0),
         ];
-        
+
         for (input, expected) in test_cases {
             let rounded = (input * 10.0).round() / 10.0;
-            assert_eq!(rounded, expected, 
-                "RTT {} should round to {} with 1 decimal place", input, expected);
+            assert_eq!(
+                rounded, expected,
+                "RTT {} should round to {} with 1 decimal place",
+                input, expected
+            );
         }
     }
 
@@ -63,7 +69,7 @@ mod tests {
             destination_reached: true,
             total_duration: Duration::from_millis(100),
         };
-        
+
         // Create the JSON structure that matches our CLI output
         let json_output = serde_json::json!({
             "version": "0.6.0",
@@ -72,10 +78,12 @@ mod tests {
             "destination_asn": result.destination_asn.as_ref().map(|a| a.asn),
             "hops": []
         });
-        
+
         let json_str = serde_json::to_string(&json_output).unwrap();
-        assert!(json_str.contains("\"destination_asn\":15169"),
-            "JSON should contain destination_asn field with value 15169");
+        assert!(
+            json_str.contains("\"destination_asn\":15169"),
+            "JSON should contain destination_asn field with value 15169"
+        );
     }
 
     #[test]
@@ -86,10 +94,10 @@ mod tests {
             segment: SegmentType::Transit,
             hostname: Some("pat1.sjc.yahoo.com".to_string()),
             addr: Some(IpAddr::V4(Ipv4Addr::new(206, 223, 116, 16))),
-            asn_info: None, // No ASN info for IXP
+            asn_info: None,                          // No ASN info for IXP
             rtt: Some(Duration::from_micros(10972)), // 10.972 ms
         };
-        
+
         // Convert segment to string as done in main.rs
         let segment_str = match hop.segment {
             SegmentType::Lan => "LAN",
@@ -98,14 +106,15 @@ mod tests {
             SegmentType::Destination => "DESTINATION",
             SegmentType::Unknown => "UNKNOWN",
         };
-        
-        assert_eq!(segment_str, "TRANSIT", 
-            "Transit segment should serialize as 'TRANSIT'");
-        
+
+        assert_eq!(
+            segment_str, "TRANSIT",
+            "Transit segment should serialize as 'TRANSIT'"
+        );
+
         // Test RTT precision
         let rtt_ms = hop.rtt_ms().map(|ms| (ms * 10.0).round() / 10.0);
-        assert_eq!(rtt_ms, Some(11.0), 
-            "RTT 10.972ms should round to 11.0");
+        assert_eq!(rtt_ms, Some(11.0), "RTT 10.972ms should round to 11.0");
     }
 
     #[test]
@@ -125,7 +134,7 @@ mod tests {
             }),
             rtt: Some(Duration::from_micros(5361)), // 5.361 ms
         };
-        
+
         // Convert segment to string
         let segment_str = match hop.segment {
             SegmentType::Lan => "LAN",
@@ -134,14 +143,15 @@ mod tests {
             SegmentType::Destination => "DESTINATION",
             SegmentType::Unknown => "UNKNOWN",
         };
-        
-        assert_eq!(segment_str, "DESTINATION",
-            "Destination segment should serialize as 'DESTINATION'");
-        
+
+        assert_eq!(
+            segment_str, "DESTINATION",
+            "Destination segment should serialize as 'DESTINATION'"
+        );
+
         // Test RTT precision
         let rtt_ms = hop.rtt_ms().map(|ms| (ms * 10.0).round() / 10.0);
-        assert_eq!(rtt_ms, Some(5.4),
-            "RTT 5.361ms should round to 5.4");
+        assert_eq!(rtt_ms, Some(5.4), "RTT 5.361ms should round to 5.4");
     }
 
     #[test]
@@ -165,7 +175,7 @@ mod tests {
             asn_info: None,
             rtt: None,
         };
-        
+
         // In JSON, segment should be null for Unknown silent hops
         let has_address = hop.addr.is_some();
         let segment_json = if !has_address && hop.segment == SegmentType::Unknown {
@@ -173,10 +183,13 @@ mod tests {
         } else {
             serde_json::Value::String("UNKNOWN".to_string())
         };
-        
-        assert_eq!(segment_json, serde_json::Value::Null,
-            "Silent hop with Unknown segment should have null segment in JSON");
-        
+
+        assert_eq!(
+            segment_json,
+            serde_json::Value::Null,
+            "Silent hop with Unknown segment should have null segment in JSON"
+        );
+
         // RTT should also be None
         assert_eq!(hop.rtt_ms(), None, "Silent hop should have no RTT");
     }
@@ -195,12 +208,15 @@ mod tests {
             destination_reached: false,
             total_duration: Duration::from_millis(3000),
         };
-        
+
         let json_output = serde_json::json!({
             "destination_asn": result.destination_asn.as_ref().map(|a| a.asn),
         });
-        
-        assert_eq!(json_output["destination_asn"], serde_json::Value::Null,
-            "destination_asn should be null when lookup fails");
+
+        assert_eq!(
+            json_output["destination_asn"],
+            serde_json::Value::Null,
+            "destination_asn should be null when lookup fails"
+        );
     }
 }

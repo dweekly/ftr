@@ -501,7 +501,7 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
             last_responsive_ttl = hop.ttl;
         }
     }
-    
+
     for hop in result.hops.iter() {
         if hop.addr.is_none() {
             // Silent hop - only show if it's before the last responsive hop
@@ -553,10 +553,16 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
             }
         }
     }
-    
+
     // Show message if we didn't reach destination and have silent hops at the end
-    if !result.destination_reached && last_responsive_ttl > 0 && last_responsive_ttl < result.max_ttl().unwrap_or(30) {
-        println!("\n[No further hops responded; max TTL was {}]", result.max_ttl().unwrap_or(30));
+    if !result.destination_reached
+        && last_responsive_ttl > 0
+        && last_responsive_ttl < result.max_ttl().unwrap_or(30)
+    {
+        println!(
+            "\n[No further hops responded; max TTL was {}]",
+            result.max_ttl().unwrap_or(30)
+        );
     }
 
     // Display ISP info if available
@@ -572,13 +578,13 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
         }
         println!("Detected ISP: AS{} ({})", isp_info.asn, isp_info.name);
     }
-    
+
     // Display destination ASN if available
     if let Some(ref dest_asn) = result.destination_asn {
-        println!("Destination ASN: AS{} ({}, {})", 
-                 dest_asn.asn, 
-                 dest_asn.name, 
-                 dest_asn.country_code);
+        println!(
+            "Destination ASN: AS{} ({}, {})",
+            dest_asn.asn, dest_asn.name, dest_asn.country_code
+        );
     }
 }
 

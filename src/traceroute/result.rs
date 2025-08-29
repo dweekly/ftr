@@ -40,7 +40,7 @@ pub struct TracerouteResult {
     /// ISP information if detected from public IP lookup
     pub isp_info: Option<IspInfo>,
     /// Destination ASN information if detected
-    /// 
+    ///
     /// This is looked up early from the target IP address to enable proper
     /// classification of DESTINATION segments. Will be None if ASN lookup
     /// is disabled or fails.
