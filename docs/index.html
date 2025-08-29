@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ftr - Fast TraceRoute</title>
+    <meta name="description" content="A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection">
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+</head>
+<body>
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="container">
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    <span class="logo">ftr</span>
+                    <span class="tagline">Fast TraceRoute</span>
+                </h1>
+                <p class="hero-description">
+                    A high-performance, parallel ICMP traceroute with automatic ASN lookup, 
+                    reverse DNS, and intelligent network segment classification.
+                </p>
+                <div class="hero-stats">
+                    <a href="https://github.com/dweekly/ftr" class="stat">
+                        <span class="stat-number" id="github-stars">10</span>
+                        <span class="stat-label">GitHub Stars</span>
+                    </a>
+                    <a href="https://crates.io/crates/ftr" class="stat">
+                        <span class="stat-number">v0.6.0</span>
+                        <span class="stat-label">Latest Release</span>
+                    </a>
+                </div>
+                <div class="hero-actions">
+                    <a href="#install" class="btn btn-primary">Get Started</a>
+                    <a href="https://github.com/dweekly/ftr" class="btn btn-secondary">View on GitHub</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Demo Section -->
+    <section class="demo">
+        <div class="container">
+            <h2>See It in Action</h2>
+            <div class="terminal">
+                <div class="terminal-header">
+                    <div class="terminal-controls">
+                        <span class="terminal-button red"></span>
+                        <span class="terminal-button yellow"></span>
+                        <span class="terminal-button green"></span>
+                    </div>
+                    <span class="terminal-title">ftr demo</span>
+                </div>
+                <div class="terminal-body">
+                    <pre><code><span class="prompt">$</span> ftr google.com
+ftr to google.com (142.251.46.174), 30 max hops, 1000ms probe timeout, 3000ms overall timeout
+
+Performing ASN lookups, reverse DNS lookups and classifying segments...
+<span class="hop-lan"> 1 [LAN   ]</span> unifi.localdomain (192.168.1.1) <span class="org">[Private Network]</span>    <span class="time">2.854 ms</span>
+<span class="hop-isp"> 2 [ISP   ]</span> lo0.bras2.rdcyca01.sonic.net (157.131.132.109) <span class="org">[AS46375 - AS-SONICTELECOM, US]</span>    <span class="time">3.861 ms</span>
+<span class="hop-isp"> 3 [ISP   ]</span> 135-180-179-42.dsl.dynamic.sonic.net (135.180.179.42) <span class="org">[AS46375 - AS-SONICTELECOM, US]</span>    <span class="time">6.342 ms</span>
+<span class="hop-transit"> 4 [TRANSIT]</span> be3402.ccr31.sjc04.atlas.cogentco.com (154.54.80.241) <span class="org">[AS174 - COGENT-174, US]</span>    <span class="time">3.904 ms</span>
+<span class="hop-dest"> 5 [DESTINATION]</span> sfo07s16-in-f14.1e100.net (142.251.46.174) <span class="org">[AS15169 - GOOGLE, US]</span>    <span class="time">3.275 ms</span>
+<span class="isp-info">Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)</span></code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features">
+        <div class="container">
+            <h2>Why Choose ftr?</h2>
+            <div class="features-grid">
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>10x Faster</h3>
+                    <p>Parallel probing reduces typical trace times from 30 seconds to 3 seconds</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🌐</div>
+                    <h3>ASN Enrichment</h3>
+                    <p>Automatic AS number and organization lookup with intelligent caching</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🔍</div>
+                    <h3>Network Classification</h3>
+                    <p>Identifies LAN, ISP, Transit, and Destination segments automatically</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🛠️</div>
+                    <h3>Library & CLI</h3>
+                    <p>Full-featured async Rust library with command-line interface</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🖥️</div>
+                    <h3>Cross-Platform</h3>
+                    <p>Works on Linux, macOS, Windows, FreeBSD, and OpenBSD</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📊</div>
+                    <h3>JSON Output</h3>
+                    <p>Structured output for programmatic use and integration</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section class="install" id="install">
+        <div class="container">
+            <h2>Installation</h2>
+            <div class="install-grid">
+                <div class="install-option">
+                    <h3>macOS (Homebrew)</h3>
+                    <div class="code-block">
+                        <button class="copy-btn" data-copy="brew tap dweekly/ftr && brew install ftr">Copy</button>
+                        <pre><code>brew tap dweekly/ftr && brew install ftr</code></pre>
+                    </div>
+                </div>
+                <div class="install-option">
+                    <h3>Linux (APT)</h3>
+                    <div class="code-block">
+                        <button class="copy-btn" data-copy="curl -sSL https://apt.networkweather.com/install.sh | sudo bash && sudo apt install ftr">Copy</button>
+                        <pre><code>curl -sSL https://apt.networkweather.com/install.sh | sudo bash
+sudo apt install ftr</code></pre>
+                    </div>
+                </div>
+                <div class="install-option">
+                    <h3>Rust/Cargo</h3>
+                    <div class="code-block">
+                        <button class="copy-btn" data-copy="cargo install ftr">Copy</button>
+                        <pre><code>cargo install ftr</code></pre>
+                    </div>
+                </div>
+                <div class="install-option">
+                    <h3>From Source</h3>
+                    <div class="code-block">
+                        <button class="copy-btn" data-copy="git clone https://github.com/dweekly/ftr && cd ftr && cargo build --release">Copy</button>
+                        <pre><code>git clone https://github.com/dweekly/ftr
+cd ftr
+cargo build --release</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Performance Section -->
+    <section class="performance">
+        <div class="container">
+            <h2>Performance Comparison</h2>
+            <div class="perf-comparison">
+                <div class="perf-chart">
+                    <div class="perf-bar">
+                        <div class="perf-label">Traditional traceroute</div>
+                        <div class="perf-visual">
+                            <div class="perf-fill traditional" style="width: 100%;">30s</div>
+                        </div>
+                    </div>
+                    <div class="perf-bar">
+                        <div class="perf-label">ftr (parallel)</div>
+                        <div class="perf-visual">
+                            <div class="perf-fill ftr" style="width: 10%;">3s</div>
+                        </div>
+                    </div>
+                </div>
+                <p class="perf-note">
+                    Typical 30-hop trace comparison. Results may vary based on network conditions.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation Section -->
+    <section class="docs">
+        <div class="container">
+            <h2>Documentation & Examples</h2>
+            <div class="docs-grid">
+                <a href="https://docs.rs/ftr" class="doc-card">
+                    <h3>📚 API Documentation</h3>
+                    <p>Complete Rust library documentation on docs.rs</p>
+                </a>
+                <a href="https://github.com/dweekly/ftr/blob/main/README.md" class="doc-card">
+                    <h3>📖 User Guide</h3>
+                    <p>Installation, usage, and platform-specific notes</p>
+                </a>
+                <a href="https://github.com/dweekly/ftr/tree/main/examples" class="doc-card">
+                    <h3>💡 Code Examples</h3>
+                    <p>Rust library usage examples and integrations</p>
+                </a>
+                <a href="https://github.com/dweekly/ftr/blob/main/docs/LIBRARY_USAGE.md" class="doc-card">
+                    <h3>🔧 Library Usage</h3>
+                    <p>Comprehensive guide for using ftr as a Rust library</p>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <p>&copy; 2025 David Weekly. Licensed under <a href="https://github.com/dweekly/ftr/blob/main/LICENSE">MIT License</a>.</p>
+                <div class="footer-links">
+                    <a href="https://github.com/dweekly/ftr">GitHub</a>
+                    <a href="https://crates.io/crates/ftr">Crates.io</a>
+                    <a href="https://github.com/dweekly/ftr/issues">Issues</a>
+                    <a href="https://github.com/dweekly/ftr/releases">Releases</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="assets/js/main.js"></script>
+</body>
+</html>

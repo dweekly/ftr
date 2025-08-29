@@ -1,0 +1,71 @@
+# Site settings
+title: "ftr - Fast TraceRoute"
+description: "A fast, parallel ICMP traceroute with ASN lookup, reverse DNS, and ISP detection"
+url: "https://dweekly.github.io/ftr"
+baseurl: ""
+
+# Build settings
+markdown: kramdown
+highlighter: rouge
+sass:
+  sass_dir: assets/css
+  style: compressed
+
+# Collections
+collections:
+  pages:
+    output: true
+    permalink: /:name/
+
+# Plugins
+plugins:
+  - jekyll-sitemap
+  - jekyll-feed
+
+# Exclude from processing
+exclude:
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+
+# Include files
+include:
+  - assets
+
+# SEO and meta tags
+author: "David Weekly"
+twitter:
+  username: dweekly
+github:
+  repository_url: "https://github.com/dweekly/ftr"
+
+# Google Analytics (optional - add your tracking ID)
+# google_analytics: UA-XXXXXXXXX-X
+
+# Social links
+social_links:
+  - url: "https://github.com/dweekly/ftr"
+    title: "GitHub"
+  - url: "https://crates.io/crates/ftr"
+    title: "Crates.io"
+
+# Project info
+project:
+  name: "ftr"
+  version: "0.6.0"
+  license: "MIT"
+  language: "Rust"
+  platforms:
+    - "Linux"
+    - "macOS" 
+    - "Windows"
+    - "FreeBSD"
+    - "OpenBSD"
+
+# Theme (if using a Jekyll theme)
+# theme: minima
+
+# GitHub Pages specific settings
+github: [metadata]
