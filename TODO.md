@@ -9,13 +9,25 @@ This file tracks planned work for the ftr project.
 
 ## High Priority
 
-- [ ] Enhanced path segment labeling
-  - Add "TARGET" segment for hops in the same ASN as the destination
-  - Consider renaming "BEYOND" to something more descriptive (e.g., "TRANSIT", "INTERNET", "BACKBONE")
-  - Example: LAN → ISP → TRANSIT → TARGET (for hops within Google's network when tracing to 8.8.8.8)
+- [x] Enhanced path segment labeling (completed in v0.6.0)
+  - Added TRANSIT and DESTINATION segments replacing BEYOND
+  - Public IPs without ASN info now classified as TRANSIT (IXPs, peering points)
+  - Destination ASN looked up early and displayed in output
 
 ## Medium Priority
 
+- [ ] **IXP/Peering Point Detection (v0.7.0 candidate)**
+  - Systematically identify Internet Exchange Points in traceroute paths
+  - Integrate PeeringDB API for IXP prefix and membership data
+  - Analyze reverse DNS patterns (e.g., "equinix-sj", "ams-ix")
+  - Add new SegmentType::Ixp for exchange points
+  - See `docs/IXP_DETECTION_PROPOSAL.md` for detailed implementation plan
+- [ ] **WHOIS fallback for network ownership (v0.6.1 candidate)**
+  - When ASN lookup fails, use WHOIS to identify network owner
+  - Aggressive caching by CIDR blocks (30+ day TTL, ownership rarely changes)
+  - Helps identify IXPs (Equinix, AMS-IX, etc.) and peering points
+  - Example: 206.223.116.16 has no ASN but WHOIS shows Equinix ownership
+  - See `docs/WHOIS_ENHANCEMENT_PROPOSAL.md` for detailed design
 - [ ] Add platform and timestamp to JSON output
   - Add `platform` field (e.g., "freebsd", "openbsd", "macos", "linux", "windows")
   - Add `timestamp` field with ISO 8601 format of when traceroute started

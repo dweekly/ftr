@@ -78,11 +78,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Count hops by segment
             let lan_count = result.hops_in_segment(ftr::SegmentType::Lan).len();
             let isp_count = result.hops_in_segment(ftr::SegmentType::Isp).len();
-            let beyond_count = result.hops_in_segment(ftr::SegmentType::Beyond).len();
+            let transit_count = result.hops_in_segment(ftr::SegmentType::Transit).len();
+            let dest_count = result.hops_in_segment(ftr::SegmentType::Destination).len();
 
             println!(
-                "Hops by segment: {} LAN, {} ISP, {} BEYOND",
-                lan_count, isp_count, beyond_count
+                "Hops by segment: {} LAN, {} ISP, {} TRANSIT, {} DESTINATION",
+                lan_count, isp_count, transit_count, dest_count
             );
         }
         Err(e) => {

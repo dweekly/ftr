@@ -2,6 +2,8 @@
 
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::types::{ClassifiedHopInfo, IspInfo};
+use crate::traceroute::AsnInfo;
+// No additional labels; SegmentType now includes Transit/Destination
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 
@@ -35,8 +37,14 @@ pub struct TracerouteResult {
     pub target_ip: IpAddr,
     /// All hops discovered during the traceroute
     pub hops: Vec<ClassifiedHopInfo>,
-    /// ISP information if detected
+    /// ISP information if detected from public IP lookup
     pub isp_info: Option<IspInfo>,
+    /// Destination ASN information if detected
+    ///
+    /// This is looked up early from the target IP address to enable proper
+    /// classification of DESTINATION segments. Will be None if ASN lookup
+    /// is disabled or fails.
+    pub destination_asn: Option<AsnInfo>,
     /// Protocol actually used for probing (may differ from requested)
     pub protocol_used: ProbeProtocol,
     /// Socket mode actually used
@@ -205,7 +213,7 @@ mod tests {
             },
             ClassifiedHopInfo {
                 ttl: 3,
-                segment: SegmentType::Beyond,
+                segment: SegmentType::Destination,
                 hostname: Some("google.com".to_string()),
                 addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
                 asn_info: Some(AsnInfo {
@@ -229,6 +237,13 @@ mod tests {
                 name: "Example ISP".to_string(),
                 hostname: Some("customer.example-isp.com".to_string()),
             }),
+            destination_asn: Some(AsnInfo {
+                asn: 15169,
+                prefix: "8.8.8.0/24".to_string(),
+                country_code: "US".to_string(),
+                registry: "ARIN".to_string(),
+                name: "GOOGLE".to_string(),
+            }), // Google's ASN
             protocol_used: ProbeProtocol::Icmp,
             socket_mode_used: SocketMode::Raw,
             destination_reached: true,
@@ -259,6 +274,91 @@ mod tests {
         let avg_rtt = result.average_rtt_ms();
         assert!(avg_rtt.is_some());
         assert_eq!(avg_rtt.unwrap(), 15.0); // (5 + 15 + 25) / 3
+    }
+
+    #[test]
+    fn test_segments_destination_and_transit() {
+        // Build a path: LAN -> ISP -> BEYOND (AS64500) -> BEYOND (AS15169, destination)
+        let hops = vec![
+            ClassifiedHopInfo {
+                ttl: 1,
+                segment: SegmentType::Lan,
+                hostname: None,
+                addr: Some(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))),
+                asn_info: None,
+                rtt: Some(Duration::from_millis(1)),
+            },
+            ClassifiedHopInfo {
+                ttl: 2,
+                segment: SegmentType::Isp,
+                hostname: None,
+                addr: Some(IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))),
+                asn_info: Some(AsnInfo {
+                    asn: 12345,
+                    prefix: "100.64.0.0/10".to_string(),
+                    country_code: "US".to_string(),
+                    registry: "ARIN".to_string(),
+                    name: "Example ISP".to_string(),
+                }),
+                rtt: Some(Duration::from_millis(5)),
+            },
+            ClassifiedHopInfo {
+                ttl: 3,
+                segment: SegmentType::Transit,
+                hostname: None,
+                addr: Some(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 1))),
+                asn_info: Some(AsnInfo {
+                    asn: 64500,
+                    prefix: "203.0.113.0/24".to_string(),
+                    country_code: "US".to_string(),
+                    registry: "ARIN".to_string(),
+                    name: "TRANSIT-NET".to_string(),
+                }),
+                rtt: Some(Duration::from_millis(10)),
+            },
+            ClassifiedHopInfo {
+                ttl: 4,
+                segment: SegmentType::Destination,
+                hostname: Some("google.com".to_string()),
+                addr: Some(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))),
+                asn_info: Some(AsnInfo {
+                    asn: 15169,
+                    prefix: "8.8.8.0/24".to_string(),
+                    country_code: "US".to_string(),
+                    registry: "ARIN".to_string(),
+                    name: "GOOGLE".to_string(),
+                }),
+                rtt: Some(Duration::from_millis(15)),
+            },
+        ];
+
+        let result = TracerouteResult {
+            target: "8.8.8.8".to_string(),
+            target_ip: IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            hops,
+            isp_info: Some(IspInfo {
+                public_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
+                asn: 12345,
+                name: "Example ISP".to_string(),
+                hostname: None,
+            }),
+            destination_asn: Some(AsnInfo {
+                asn: 15169,
+                prefix: "8.8.8.0/24".to_string(),
+                country_code: "US".to_string(),
+                registry: "ARIN".to_string(),
+                name: "GOOGLE".to_string(),
+            }), // Google's ASN
+            protocol_used: ProbeProtocol::Icmp,
+            socket_mode_used: SocketMode::Raw,
+            destination_reached: true,
+            total_duration: Duration::from_millis(100),
+        };
+
+        assert_eq!(result.hops[0].segment, SegmentType::Lan);
+        assert_eq!(result.hops[1].segment, SegmentType::Isp);
+        assert_eq!(result.hops[2].segment, SegmentType::Transit);
+        assert_eq!(result.hops[3].segment, SegmentType::Destination);
     }
 
     #[test]

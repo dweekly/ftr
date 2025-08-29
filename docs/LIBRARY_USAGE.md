@@ -1,6 +1,16 @@
-# Using ftr as a Library (v0.5.0)
+# Using ftr as a Library (v0.6.0)
 
-This guide covers how to use ftr v0.5.0 as a Rust library in your own applications.
+This guide covers how to use ftr v0.6.0 as a Rust library in your own applications.
+
+## Breaking Changes in v0.6.0
+
+Version 0.6.0 refines network segment labeling:
+
+- **CHANGED**: `SegmentType` now uses `Transit` and `Destination` instead of `Beyond`
+- **BEHAVIOR**: CLI JSON/text emit `TRANSIT`/`DESTINATION` when enrichment determines the destination ASN
+- **NOTE**: If enrichment is insufficient, segment may be `Unknown`
+
+Also includes all 0.5.0 handle-based API changes below.
 
 ## Breaking Changes in v0.5.0
 
@@ -18,7 +28,7 @@ Add ftr to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ftr = "0.5.0"
+ftr = "0.6.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -143,13 +153,14 @@ async fn analyze_trace(ftr: &Ftr, target: &str) -> Result<(), Box<dyn std::error
     println!("Target: {} ({})", result.target, result.target_ip);
     println!("Reached: {}", result.destination_reached);
     
-    // Analyze network segments
+    // Analyze network segments (v0.6.0 refined segments)
     for hop in &result.hops {
         match hop.segment {
             SegmentType::Lan => println!("LAN hop: {:?}", hop.addr),
             SegmentType::Isp => println!("ISP hop: {:?}", hop.addr),
-            SegmentType::Beyond => println!("External hop: {:?}", hop.addr),
-            _ => {}
+            SegmentType::Transit => println!("Transit hop: {:?}", hop.addr),
+            SegmentType::Destination => println!("Destination hop: {:?}", hop.addr),
+            SegmentType::Unknown => println!("Unknown hop: {:?}", hop.addr),
         }
         
         // ASN information

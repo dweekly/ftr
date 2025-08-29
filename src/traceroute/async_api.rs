@@ -132,8 +132,9 @@ impl AsyncTraceroute {
 
     /// Run the async traceroute
     pub async fn run(self) -> Result<TracerouteResult, TracerouteError> {
-        // Use timing config from traceroute config
-        let timing_config = self.config.timing.clone();
+        // Use timing config from traceroute config, but override socket_read_timeout with probe_timeout
+        let mut timing_config = self.config.timing.clone();
+        timing_config.socket_read_timeout = self.config.probe_timeout;
 
         // Set verbose flag in environment for socket to pick up
         if self.config.verbose > 0 {

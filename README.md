@@ -292,13 +292,13 @@ Performing ASN lookups, reverse DNS lookups and classifying segments...
  3 [ISP   ] 135-180-179-42.dsl.dynamic.sonic.net (135.180.179.42) [AS46375 - AS-SONICTELECOM, US]    6.342 ms
  4 [ISP   ] ae8.cr2.lsatca11.sonic.net (142.254.59.217) [AS46375 - AS-SONICTELECOM, US]   16.705 ms
  5 [ISP   ] ae2.cr1.lsatca11.sonic.net (157.131.209.161) [AS46375 - AS-SONICTELECOM, US]   12.469 ms
- 6 [BEYOND] be3402.ccr31.sjc04.atlas.cogentco.com (154.54.80.241) [AS174 - COGENT-174, US]    3.904 ms
- 7 [BEYOND] be3142.ccr41.sjc03.atlas.cogentco.com (154.54.42.89) [AS174 - COGENT-174, US]    3.989 ms
- 8 [BEYOND] tata.sjc03.atlas.cogentco.com (154.54.13.62) [AS174 - COGENT-174, US]    3.177 ms
- 9 [BEYOND] 72.14.195.206 [AS15169 - GOOGLE, US]    6.174 ms
-10 [BEYOND] 108.170.252.33 [AS15169 - GOOGLE, US]    5.316 ms
-11 [BEYOND] 142.250.49.206 [AS15169 - GOOGLE, US]    4.892 ms
-12 [BEYOND] sfo07s16-in-f14.1e100.net (142.251.46.174) [AS15169 - GOOGLE, US]    3.275 ms
+ 6 [TRANSIT] be3402.ccr31.sjc04.atlas.cogentco.com (154.54.80.241) [AS174 - COGENT-174, US]    3.904 ms
+ 7 [TRANSIT] be3142.ccr41.sjc03.atlas.cogentco.com (154.54.42.89) [AS174 - COGENT-174, US]    3.989 ms
+ 8 [TRANSIT] tata.sjc03.atlas.cogentco.com (154.54.13.62) [AS174 - COGENT-174, US]    3.177 ms
+ 9 [DESTINATION] 72.14.195.206 [AS15169 - GOOGLE, US]    6.174 ms
+10 [DESTINATION] 108.170.252.33 [AS15169 - GOOGLE, US]    5.316 ms
+11 [DESTINATION] 142.250.49.206 [AS15169 - GOOGLE, US]    4.892 ms
+12 [DESTINATION] sfo07s16-in-f14.1e100.net (142.251.46.174) [AS15169 - GOOGLE, US]    3.275 ms
 Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 ```
 
@@ -390,3 +390,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## Author
 
 David Weekly (dweekly)
+#### Segment Labels
+
+When enrichment is enabled (default), segments are shown as:
+- `LAN`: local/private addresses
+- `ISP`: your provider’s network (includes CGNAT range)
+- `TRANSIT`: networks after ISP with different ASNs than the destination
+- `DESTINATION`: networks in the destination’s ASN
+- `UNKNOWN`: insufficient data to classify
+
+The JSON output’s `segment` field also reflects these refined labels when available.
