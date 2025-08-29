@@ -169,6 +169,10 @@ pub fn parse_cidr(cidr: &str) -> Option<Ipv4Net> {
 }
 
 #[cfg(test)]
+#[path = "traceroute/segment_classification_test.rs"]
+mod segment_classification_test;
+
+#[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;

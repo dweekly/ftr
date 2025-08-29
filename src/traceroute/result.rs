@@ -2,6 +2,7 @@
 
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::types::{ClassifiedHopInfo, IspInfo};
+use crate::traceroute::AsnInfo;
 // No additional labels; SegmentType now includes Transit/Destination
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
@@ -36,8 +37,14 @@ pub struct TracerouteResult {
     pub target_ip: IpAddr,
     /// All hops discovered during the traceroute
     pub hops: Vec<ClassifiedHopInfo>,
-    /// ISP information if detected
+    /// ISP information if detected from public IP lookup
     pub isp_info: Option<IspInfo>,
+    /// Destination ASN information if detected
+    /// 
+    /// This is looked up early from the target IP address to enable proper
+    /// classification of DESTINATION segments. Will be None if ASN lookup
+    /// is disabled or fails.
+    pub destination_asn: Option<AsnInfo>,
     /// Protocol actually used for probing (may differ from requested)
     pub protocol_used: ProbeProtocol,
     /// Socket mode actually used
@@ -230,6 +237,13 @@ mod tests {
                 name: "Example ISP".to_string(),
                 hostname: Some("customer.example-isp.com".to_string()),
             }),
+            destination_asn: Some(AsnInfo {
+                asn: 15169,
+                prefix: "8.8.8.0/24".to_string(),
+                country_code: "US".to_string(),
+                registry: "ARIN".to_string(),
+                name: "GOOGLE".to_string(),
+            }), // Google's ASN
             protocol_used: ProbeProtocol::Icmp,
             socket_mode_used: SocketMode::Raw,
             destination_reached: true,
@@ -328,6 +342,13 @@ mod tests {
                 name: "Example ISP".to_string(),
                 hostname: None,
             }),
+            destination_asn: Some(AsnInfo {
+                asn: 15169,
+                prefix: "8.8.8.0/24".to_string(),
+                country_code: "US".to_string(),
+                registry: "ARIN".to_string(),
+                name: "GOOGLE".to_string(),
+            }), // Google's ASN
             protocol_used: ProbeProtocol::Icmp,
             socket_mode_used: SocketMode::Raw,
             destination_reached: true,

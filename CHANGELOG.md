@@ -7,17 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2025-08-26
+## [0.6.0] - 2025-08-29
 
 ### Added
-- Refined segment labeling and early destination ASN lookup:
+- **Enhanced Network Segment Classification**:
   - `SegmentType` now uses `Transit` and `Destination` instead of `Beyond` (breaking)
-  - Destination ASN is looked up early from the target IP in parallel
+  - TRANSIT: Networks between ISP and destination, including IXPs and peering points
+  - DESTINATION: Hops within the target's ASN
+  - Destination ASN is looked up early from the target IP for accurate classification
+- **Improved IXP/Peering Point Detection**:
+  - Public IPs without ASN info are now classified as TRANSIT (likely IXPs)
+  - Sandwich logic: Unknown/Transit hops between same-type segments inherit that type
+- **Better Output Formatting**:
+  - Full destination ASN info displayed (name and country code)
+  - "[No further hops responded; max TTL was X]" message instead of empty lines
+  - JSON RTT values rounded to 1 decimal place
 - CLI (text): emits `[TRANSIT]` and `[DESTINATION]` when enrichment available
-- CLI (JSON): `segment` field now uses `TRANSIT` / `DESTINATION`
+- CLI (JSON): `destination_asn` field now includes full ASN info (asn, name, country_code)
+
+### Fixed
+- Probe timeout parameter now properly respected (was using hardcoded 50ms/1000ms)
+- ASN names no longer display duplicate country codes
+- Country code suffix stripped from Team Cymru ASN names at data ingestion
+- Socket timeout configuration properly propagated from CLI arguments to socket implementations
+
+### Changed
+- TracerouteResult.destination_asn changed from Option<u32> to Option<AsnInfo> (breaking)
+- ASN name processing moved from presentation layer to data ingestion layer
 
 ### Compatibility
 - BREAKING: `SegmentType::Beyond` removed from the library API and CLI JSON
+- BREAKING: `TracerouteResult.destination_asn` type changed to include full ASN information
 - If enrichment is insufficient, segment may be `UNKNOWN`
 
 ## [0.5.0] - 2025-08-14

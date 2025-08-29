@@ -203,6 +203,7 @@ async fn test_result_methods() {
             name: "Example ISP".to_string(),
             hostname: None,
         }),
+        destination_asn: None,
         protocol_used: ProbeProtocol::Icmp,
         socket_mode_used: SocketMode::Raw,
         destination_reached: true,

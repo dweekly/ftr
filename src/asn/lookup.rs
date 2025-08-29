@@ -143,7 +143,12 @@ pub(crate) async fn lookup_asn_with_cache(
                 let as_parts: Vec<&str> = as_txt.split('|').map(str::trim).collect();
                 if as_parts.len() >= 5 {
                     // Format is: ASN | CC | Registry | Allocated | AS Name
-                    as_parts[4].to_string()
+                    let mut as_name = as_parts[4].to_string();
+                    // Team Cymru often includes ", CC" at the end of the name - remove it
+                    if as_name.ends_with(&format!(", {}", country_code)) {
+                        as_name.truncate(as_name.len() - country_code.len() - 2);
+                    }
+                    as_name
                 } else if as_parts.len() >= 2 {
                     as_parts[1].to_string()
                 } else {

@@ -20,6 +20,10 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+
+#[cfg(test)]
+#[path = "sandwich_test.rs"]
+mod sandwich_test;
 use tokio::time::{sleep, timeout};
 
 /// Enrichment result for an address
@@ -157,7 +161,7 @@ impl FullyParallelAsyncEngine {
                 Some(tokio::spawn(async move {
                     trace_time!(verbose, "Starting destination ASN lookup for {}", target);
                     match services.asn.lookup(target).await {
-                        Ok(info) if info.asn != 0 => Some(info.asn),
+                        Ok(info) if info.asn != 0 => Some(info),
                         _ => None,
                     }
                 }))
@@ -350,7 +354,7 @@ impl FullyParallelAsyncEngine {
                 Result<crate::traceroute::IspInfo, crate::public_ip::PublicIpError>,
             >,
         >,
-        dest_asn_future: Option<tokio::task::JoinHandle<Option<u32>>>,
+        dest_asn_future: Option<tokio::task::JoinHandle<Option<AsnInfo>>>,
     ) -> Result<TracerouteResult> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
@@ -395,10 +399,7 @@ impl FullyParallelAsyncEngine {
 
         // Wait for destination ASN
         let dest_asn = if let Some(fut) = dest_asn_future {
-            match fut.await {
-                Ok(asn_opt) => asn_opt,
-                Err(_) => None,
-            }
+            fut.await.unwrap_or_default()
         } else {
             None
         };
@@ -460,8 +461,8 @@ impl FullyParallelAsyncEngine {
                                         if asn.asn == isp {
                                             in_isp_segment = true;
                                             SegmentType::Isp
-                                        } else if let Some(dest) = dest_asn {
-                                            if asn.asn == dest {
+                                        } else if let Some(ref dest) = dest_asn {
+                                            if asn.asn == dest.asn {
                                                 SegmentType::Destination
                                             } else {
                                                 SegmentType::Transit
@@ -470,8 +471,8 @@ impl FullyParallelAsyncEngine {
                                             // ISP known but not this AS; without dest ASN, mark as TRANSIT
                                             SegmentType::Transit
                                         }
-                                    } else if let Some(dest) = dest_asn {
-                                        if asn.asn == dest {
+                                    } else if let Some(ref dest) = dest_asn {
+                                        if asn.asn == dest.asn {
                                             SegmentType::Destination
                                         } else if in_isp_segment {
                                             SegmentType::Transit
@@ -484,9 +485,11 @@ impl FullyParallelAsyncEngine {
                                         SegmentType::Unknown
                                     }
                                 } else if in_isp_segment {
-                                    SegmentType::Isp
+                                    // Public IP after ISP without ASN = likely IXP/peering point
+                                    SegmentType::Transit
                                 } else {
-                                    SegmentType::Unknown
+                                    // Public IP without ASN before ISP boundary = assume transit
+                                    SegmentType::Transit
                                 }
                             }
                         } else {
@@ -532,6 +535,9 @@ impl FullyParallelAsyncEngine {
         // Sort by TTL
         hop_infos.sort_by_key(|h| h.ttl);
 
+        // Apply sandwich logic: fill Unknown/Transit hops between same-type segments
+        Self::apply_sandwich_logic(&mut hop_infos);
+
         // Determine protocol and socket mode
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
             crate::socket::async_trait::ProbeMode::DgramIcmp => {
@@ -559,10 +565,50 @@ impl FullyParallelAsyncEngine {
             target_ip: self.target,
             hops: hop_infos,
             isp_info,
+            destination_asn: dest_asn,
             protocol_used,
             socket_mode_used,
             destination_reached,
             total_duration: elapsed,
         })
+    }
+
+    /// Apply sandwich logic: if Unknown/Transit hops are between two hops of the same segment type,
+    /// convert them to that segment type. This handles cases where probes fail or lack ASN data
+    /// but are clearly part of the same network segment.
+    pub(crate) fn apply_sandwich_logic(hops: &mut [ClassifiedHopInfo]) {
+        if hops.len() < 3 {
+            return; // Need at least 3 hops for sandwiching
+        }
+
+        for i in 1..hops.len() - 1 {
+            // Only modify Unknown or Transit segments that have addresses
+            if hops[i].addr.is_some() &&
+               (hops[i].segment == SegmentType::Unknown || hops[i].segment == SegmentType::Transit) {
+                
+                // Look for surrounding hops of the same type
+                let mut check_segment = |segment_type: SegmentType| {
+                    // Find previous hop with this segment type
+                    let has_before = (0..i).rev().any(|j| hops[j].segment == segment_type);
+                    
+                    // Find next hop with this segment type  
+                    let has_after = (i + 1..hops.len()).any(|j| hops[j].segment == segment_type);
+                    
+                    if has_before && has_after {
+                        hops[i].segment = segment_type;
+                        true
+                    } else {
+                        false
+                    }
+                };
+                
+                // Check ISP first, then Destination
+                // ISP takes precedence as it's typically earlier in the path
+                if check_segment(SegmentType::Isp) {
+                    continue;
+                }
+                check_segment(SegmentType::Destination);
+            }
+        }
     }
 }

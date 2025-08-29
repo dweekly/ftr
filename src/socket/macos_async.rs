@@ -224,10 +224,11 @@ impl MacOSAsyncIcmpSocket {
         let verbose = self.verbose;
         let destination_reached = Arc::clone(&self.destination_reached);
         let pending_count = Arc::clone(&self.pending_count);
+        let socket_timeout = self.timing_config.socket_read_timeout;
 
         tokio::spawn(async move {
             let mut buf = vec![MaybeUninit::uninit(); 1500];
-            let timeout = Duration::from_millis(1000);
+            let timeout = socket_timeout;
             let deadline = Instant::now() + timeout;
 
             loop {

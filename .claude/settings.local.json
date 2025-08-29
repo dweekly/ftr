@@ -17,7 +17,13 @@
       "Bash(gh release view:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(./target/debug/ftr:*)",
+      "WebSearch",
+      "WebFetch(domain:www.peeringdb.com)",
+      "WebFetch(domain:docs.peeringdb.com)",
+      "Bash(~/.cargo/bin/cargo test --lib)",
+      "Bash(~/.cargo/bin/cargo test:*)"
     ],
     "deny": []
   }

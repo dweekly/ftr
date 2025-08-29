@@ -121,9 +121,18 @@ struct JsonOutput {
     target_ip: String,
     public_ip: Option<String>,
     isp: Option<JsonIsp>,
+    destination_asn: Option<JsonAsn>,
     hops: Vec<JsonHop>,
     protocol: String,
     socket_mode: String,
+}
+
+/// JSON output structure for ASN information
+#[derive(Debug, serde::Serialize)]
+struct JsonAsn {
+    asn: u32,
+    name: String,
+    country_code: String,
 }
 
 /// JSON output structure for ISP information
@@ -447,6 +456,11 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
             name: i.name.clone(),
             hostname: i.hostname.clone(),
         }),
+        destination_asn: result.destination_asn.as_ref().map(|asn| JsonAsn {
+            asn: asn.asn,
+            name: asn.name.clone(),
+            country_code: asn.country_code.clone(),
+        }),
         hops: Vec::new(),
         protocol: result.protocol_used.description().to_string(),
         socket_mode: result.socket_mode_used.description().to_string(),
@@ -467,7 +481,7 @@ fn display_json_results(result: TracerouteResult) -> Result<()> {
             address: hop.addr.map(|a| a.to_string()),
             hostname: hop.hostname.clone(),
             asn_info: hop.asn_info.clone(),
-            rtt_ms: hop.rtt_ms(),
+            rtt_ms: hop.rtt_ms().map(|ms| (ms * 10.0).round() / 10.0), // Round to 1 decimal place
         });
     }
 
@@ -481,10 +495,19 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
     let enrichment_disabled = no_enrich;
 
     // Display hops
+    let mut last_responsive_ttl = 0u8;
+    for hop in result.hops.iter() {
+        if hop.addr.is_some() {
+            last_responsive_ttl = hop.ttl;
+        }
+    }
+    
     for hop in result.hops.iter() {
         if hop.addr.is_none() {
-            // Silent hop
-            println!("{:2}", hop.ttl);
+            // Silent hop - only show if it's before the last responsive hop
+            if hop.ttl <= last_responsive_ttl {
+                println!("{:2}", hop.ttl);
+            }
         } else {
             let addr_str = hop.addr.map_or("*".to_string(), |a| a.to_string());
             let rtt_str = hop
@@ -506,18 +529,10 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
             // Format ASN info
             let asn_str = if let Some(asn_info) = &hop.asn_info {
                 if asn_info.asn != 0 {
-                    // Check if name already ends with country code
-                    if asn_info
-                        .name
-                        .ends_with(&format!(", {}", asn_info.country_code))
-                    {
-                        format!(" [AS{} - {}]", asn_info.asn, asn_info.name)
-                    } else {
-                        format!(
-                            " [AS{} - {}, {}]",
-                            asn_info.asn, asn_info.name, asn_info.country_code
-                        )
-                    }
+                    format!(
+                        " [AS{} - {}, {}]",
+                        asn_info.asn, asn_info.name, asn_info.country_code
+                    )
                 } else {
                     format!(" [{}]", asn_info.name)
                 }
@@ -538,6 +553,11 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
             }
         }
     }
+    
+    // Show message if we didn't reach destination and have silent hops at the end
+    if !result.destination_reached && last_responsive_ttl > 0 && last_responsive_ttl < result.max_ttl().unwrap_or(30) {
+        println!("\n[No further hops responded; max TTL was {}]", result.max_ttl().unwrap_or(30));
+    }
 
     // Display ISP info if available
     if let Some(isp_info) = &result.isp_info {
@@ -552,8 +572,20 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
         }
         println!("Detected ISP: AS{} ({})", isp_info.asn, isp_info.name);
     }
+    
+    // Display destination ASN if available
+    if let Some(ref dest_asn) = result.destination_asn {
+        println!("Destination ASN: AS{} ({}, {})", 
+                 dest_asn.asn, 
+                 dest_asn.name, 
+                 dest_asn.country_code);
+    }
 }
 
 #[cfg(test)]
 #[path = "main_tests.rs"]
 mod main_tests;
+
+#[cfg(test)]
+#[path = "main_v6_tests.rs"]
+mod main_v6_tests;

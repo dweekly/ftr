@@ -329,6 +329,7 @@ impl AsyncTracerouteEngine {
             target_ip: self.target,
             hops: hop_infos,
             isp_info,
+            destination_asn: None, // Legacy engine doesn't look up destination ASN
             protocol_used,
             socket_mode_used,
             destination_reached,
