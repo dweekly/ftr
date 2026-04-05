@@ -26,8 +26,8 @@ pub mod api;
 pub mod config;
 pub mod engine;
 pub mod error;
-pub mod parallel_engine;
 pub mod isp_from_path;
+pub mod parallel_engine;
 pub mod result;
 pub mod types;
 

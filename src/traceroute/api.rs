@@ -7,7 +7,6 @@ use crate::services::Services;
 use crate::socket::factory::create_probe_socket_with_options;
 use crate::traceroute::parallel_engine::ParallelEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
-use anyhow::Result;
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;

@@ -5,14 +5,14 @@
 //! response notification.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::traits::{ProbeSocket, ProbeMode};
+use crate::socket::traits::{ProbeMode, ProbeSocket};
+use crate::traceroute::TracerouteError;
 use crate::TimingConfig;
-use anyhow::{anyhow, Result};
-use std::future::Future;
-use std::pin::Pin;
 use std::ffi::c_void;
+use std::future::Future;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr};
+use std::pin::Pin;
 use std::ptr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -70,10 +70,12 @@ pub struct WindowsAsyncIcmpSocket {
 
 impl WindowsAsyncIcmpSocket {
     /// Create a new Windows async ICMP socket
-    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self> {
+    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
         let icmp_handle = unsafe { IcmpCreateFile() };
         if icmp_handle.is_null() {
-            return Err(anyhow!("Failed to create ICMP handle"));
+            return Err(TracerouteError::SocketError(
+                "Failed to create ICMP handle".to_string(),
+            ));
         }
 
         Ok(Self {
@@ -91,9 +93,11 @@ impl WindowsAsyncIcmpSocket {
         sequence: u16,
         ttl: u8,
         sent_at: Instant,
-    ) -> Result<ProbeResponse> {
+    ) -> Result<ProbeResponse, TracerouteError> {
         if buffer.len() < mem::size_of::<ICMP_ECHO_REPLY>() {
-            return Err(anyhow!("Response buffer too small"));
+            return Err(TracerouteError::SocketError(
+                "Response buffer too small".to_string(),
+            ));
         }
 
         let reply = unsafe { &*(buffer.as_ptr() as *const ICMP_ECHO_REPLY) };
@@ -115,13 +119,10 @@ impl WindowsAsyncIcmpSocket {
                     // Verify this response is for our process and sequence
                     let expected_identifier = std::process::id() as u16;
                     if identifier != expected_identifier || recv_sequence != sequence {
-                        return Err(anyhow!(
+                        return Err(TracerouteError::SocketError(format!(
                             "Response mismatch: expected id={}/seq={}, got id={}/seq={}",
-                            expected_identifier,
-                            sequence,
-                            identifier,
-                            recv_sequence
-                        ));
+                            expected_identifier, sequence, identifier, recv_sequence
+                        )));
                     }
                 }
             }
@@ -190,195 +191,208 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
         &self,
         dest: IpAddr,
         probe: ProbeInfo,
-    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>> {
         Box::pin(async move {
-        let dest_addr = match dest {
-            IpAddr::V4(addr) => addr,
-            _ => return Err(anyhow!("Only IPv4 is supported")),
-        };
-
-        // Increment pending count
-        {
-            let mut count = self
-                .pending_count
-                .lock()
-                .expect("Failed to acquire pending_count lock");
-            *count += 1;
-        }
-
-        // Create event for this probe
-        let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
-        if event.is_null() {
-            let mut count = self
-                .pending_count
-                .lock()
-                .expect("Failed to acquire pending_count lock");
-            *count -= 1;
-            return Err(anyhow!("Failed to create event"));
-        }
-
-        // Prepare send buffer with identifier and sequence number
-        let identifier = std::process::id() as u16;
-        let mut send_data = Vec::with_capacity(32);
-        send_data.extend_from_slice(&identifier.to_be_bytes());
-        send_data.extend_from_slice(&probe.sequence.to_be_bytes());
-        // Pad to 32 bytes total
-        send_data.extend_from_slice(b"ftr-windows-padding");
-        send_data.resize(32, 0);
-
-        // Prepare reply buffer - Box it to ensure stable memory location
-        let reply_size = mem::size_of::<ICMP_ECHO_REPLY>() + send_data.len() + 8;
-        let reply_buffer = Box::pin(vec![0u8; reply_size]);
-        let reply_ptr = reply_buffer.as_ptr() as *mut c_void;
-
-        let sent_at = Instant::now();
-
-        // Send ICMP request in its own scope to ensure options is dropped before await
-        let send_result = {
-            // Create IP options
-            let mut options = IP_OPTION_INFORMATION {
-                Ttl: probe.ttl,
-                Tos: 0,
-                Flags: 0,
-                OptionsSize: 0,
-                OptionsData: ptr::null_mut(),
+            let dest_addr = match dest {
+                IpAddr::V4(addr) => addr,
+                _ => return Err(TracerouteError::Ipv6NotSupported),
             };
 
-            // Send ICMP request
-            let result = unsafe {
-                IcmpSendEcho2(
-                    self.icmp_handle,
-                    event,
-                    None,        // No APC routine
-                    ptr::null(), // No APC context
-                    u32::from_ne_bytes(dest_addr.octets()),
-                    send_data.as_ptr() as *const c_void,
-                    send_data.len() as u16,
-                    &mut options as *mut IP_OPTION_INFORMATION,
-                    reply_ptr,
-                    reply_size as u32,
-                    // Calculate Windows timeout with buffer to ensure our Tokio timeout fires first
-                    // This prevents race conditions between Windows and Tokio timeouts
-                    {
-                        let user_timeout_ms =
-                            self.timing_config.socket_read_timeout.as_millis() as u32;
-                        let windows_timeout =
-                            user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
-                        // Ensure minimum timeout for Windows ICMP API stability
-                        windows_timeout
-                            .max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
-                    },
-                )
-            };
+            // Increment pending count
+            {
+                let mut count = self
+                    .pending_count
+                    .lock()
+                    .expect("Failed to acquire pending_count lock");
+                *count += 1;
+            }
 
-            if result == 0 {
-                let error = unsafe { GetLastError() };
-                if error != ERROR_IO_PENDING {
-                    Err(error)
+            // Create event for this probe
+            let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
+            if event.is_null() {
+                let mut count = self
+                    .pending_count
+                    .lock()
+                    .expect("Failed to acquire pending_count lock");
+                *count -= 1;
+                return Err(TracerouteError::SocketError(
+                    "Failed to create event".to_string(),
+                ));
+            }
+
+            // Prepare send buffer with identifier and sequence number
+            let identifier = std::process::id() as u16;
+            let mut send_data = Vec::with_capacity(32);
+            send_data.extend_from_slice(&identifier.to_be_bytes());
+            send_data.extend_from_slice(&probe.sequence.to_be_bytes());
+            // Pad to 32 bytes total
+            send_data.extend_from_slice(b"ftr-windows-padding");
+            send_data.resize(32, 0);
+
+            // Prepare reply buffer - Box it to ensure stable memory location
+            let reply_size = mem::size_of::<ICMP_ECHO_REPLY>() + send_data.len() + 8;
+            let reply_buffer = Box::pin(vec![0u8; reply_size]);
+            let reply_ptr = reply_buffer.as_ptr() as *mut c_void;
+
+            let sent_at = Instant::now();
+
+            // Send ICMP request in its own scope to ensure options is dropped before await
+            let send_result = {
+                // Create IP options
+                let mut options = IP_OPTION_INFORMATION {
+                    Ttl: probe.ttl,
+                    Tos: 0,
+                    Flags: 0,
+                    OptionsSize: 0,
+                    OptionsData: ptr::null_mut(),
+                };
+
+                // Send ICMP request
+                let result = unsafe {
+                    IcmpSendEcho2(
+                        self.icmp_handle,
+                        event,
+                        None,        // No APC routine
+                        ptr::null(), // No APC context
+                        u32::from_ne_bytes(dest_addr.octets()),
+                        send_data.as_ptr() as *const c_void,
+                        send_data.len() as u16,
+                        &mut options as *mut IP_OPTION_INFORMATION,
+                        reply_ptr,
+                        reply_size as u32,
+                        // Calculate Windows timeout with buffer to ensure our Tokio timeout fires first
+                        // This prevents race conditions between Windows and Tokio timeouts
+                        {
+                            let user_timeout_ms =
+                                self.timing_config.socket_read_timeout.as_millis() as u32;
+                            let windows_timeout = user_timeout_ms
+                                + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
+                            // Ensure minimum timeout for Windows ICMP API stability
+                            windows_timeout
+                                .max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
+                        },
+                    )
+                };
+
+                if result == 0 {
+                    let error = unsafe { GetLastError() };
+                    if error != ERROR_IO_PENDING {
+                        Err(error)
+                    } else {
+                        Ok(())
+                    }
                 } else {
                     Ok(())
                 }
-            } else {
-                Ok(())
-            }
-        };
-
-        if let Err(error) = send_result {
-            unsafe { CloseHandle(event) };
-            let mut count = self
-                .pending_count
-                .lock()
-                .expect("Failed to acquire pending_count lock");
-            *count -= 1;
-            return Err(anyhow!("IcmpSendEcho2 failed: {}", error));
-        }
-
-        // Create oneshot channel for async coordination
-        let (tx, rx) = oneshot::channel();
-        let event_handle = event as usize; // Convert to usize for Send safety
-        let pending_count = Arc::clone(&self.pending_count);
-
-        // Spawn blocking task to wait for Windows event
-        // Move the reply_buffer into the task to keep it alive
-        let wait_handle = tokio::task::spawn_blocking(move || {
-            let event = event_handle as HANDLE; // Convert back to HANDLE
-            let result = unsafe {
-                WaitForSingleObject(event, 0xFFFFFFFF) // INFINITE - wait indefinitely, tokio timeout handles the actual timeout
             };
-            unsafe { CloseHandle(event) };
 
-            // Decrement pending count
-            let mut count = pending_count
-                .lock()
-                .expect("Failed to acquire pending_count lock");
-            *count = count.saturating_sub(1);
-
-            if result == WAIT_OBJECT_0 {
-                // Send the buffer back through the channel
-                tx.send(Ok(reply_buffer)).ok();
-            } else {
-                tx.send(Err(anyhow!("Event wait failed or timed out"))).ok();
+            if let Err(error) = send_result {
+                unsafe { CloseHandle(event) };
+                let mut count = self
+                    .pending_count
+                    .lock()
+                    .expect("Failed to acquire pending_count lock");
+                *count -= 1;
+                return Err(TracerouteError::SocketError(format!(
+                    "IcmpSendEcho2 failed: {}",
+                    error
+                )));
             }
-        });
 
-        // Wait for the event to be signaled with our actual timeout
-        let timeout_duration = self.timing_config.socket_read_timeout;
+            // Create oneshot channel for async coordination
+            let (tx, rx) = oneshot::channel();
+            let event_handle = event as usize; // Convert to usize for Send safety
+            let pending_count = Arc::clone(&self.pending_count);
 
-        // Debug logging for timeout analysis
-        let verbose = std::env::var("FTR_VERBOSE")
-            .ok()
-            .and_then(|v| v.parse::<u8>().ok())
-            .unwrap_or(0);
+            // Spawn blocking task to wait for Windows event
+            // Move the reply_buffer into the task to keep it alive
+            let wait_handle = tokio::task::spawn_blocking(move || {
+                let event = event_handle as HANDLE; // Convert back to HANDLE
+                let result = unsafe {
+                    WaitForSingleObject(event, 0xFFFFFFFF) // INFINITE - wait indefinitely, tokio timeout handles the actual timeout
+                };
+                unsafe { CloseHandle(event) };
 
-        if verbose >= 3 {
-            let windows_timeout_ms = {
-                let user_timeout_ms = self.timing_config.socket_read_timeout.as_millis() as u32;
-                let windows_timeout =
-                    user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
-                windows_timeout.max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
-            };
-            eprintln!(
-                "[TIMEOUT] Probe seq={} ttl={}: User timeout={}ms, Windows timeout={}ms",
-                probe.sequence,
-                probe.ttl,
-                timeout_duration.as_millis(),
-                windows_timeout_ms
-            );
-        }
+                // Decrement pending count
+                let mut count = pending_count
+                    .lock()
+                    .expect("Failed to acquire pending_count lock");
+                *count = count.saturating_sub(1);
 
-        match tokio::time::timeout(timeout_duration, rx).await {
-            Ok(Ok(Ok(reply_buffer))) => {
-                // Got a response - process it
-                self.process_response(&reply_buffer, probe.sequence, probe.ttl, sent_at)
+                if result == WAIT_OBJECT_0 {
+                    // Send the buffer back through the channel
+                    tx.send(Ok(reply_buffer)).ok();
+                } else {
+                    tx.send(Err(TracerouteError::SocketError(
+                        "Event wait failed or timed out".to_string(),
+                    )))
+                    .ok();
+                }
+            });
+
+            // Wait for the event to be signaled with our actual timeout
+            let timeout_duration = self.timing_config.socket_read_timeout;
+
+            // Debug logging for timeout analysis
+            let verbose = std::env::var("FTR_VERBOSE")
+                .ok()
+                .and_then(|v| v.parse::<u8>().ok())
+                .unwrap_or(0);
+
+            if verbose >= 3 {
+                let windows_timeout_ms = {
+                    let user_timeout_ms = self.timing_config.socket_read_timeout.as_millis() as u32;
+                    let windows_timeout =
+                        user_timeout_ms + crate::config::timing::WINDOWS_ICMP_TIMEOUT_BUFFER_MS;
+                    windows_timeout.max(crate::config::timing::WINDOWS_ICMP_MIN_TOTAL_TIMEOUT_MS)
+                };
+                eprintln!(
+                    "[TIMEOUT] Probe seq={} ttl={}: User timeout={}ms, Windows timeout={}ms",
+                    probe.sequence,
+                    probe.ttl,
+                    timeout_duration.as_millis(),
+                    windows_timeout_ms
+                );
             }
-            Ok(Ok(Err(e))) => {
-                // Event wait error
-                Err(anyhow!("Event wait error: {}", e))
-            }
-            Ok(Err(_)) => {
-                // Channel was dropped (shouldn't happen)
-                Err(anyhow!("Event wait cancelled"))
-            }
-            Err(_) => {
-                // Tokio timeout elapsed before Windows completed
-                // Since we gave Windows a longer timeout (user timeout + buffer),
-                // this ensures consistent behavior where our timeout always wins
-                //
-                // We let the Windows operation complete in the background rather
-                // than trying to cancel it, which would cause issues
-                drop(wait_handle); // Let the task complete in background
 
-                Ok(ProbeResponse {
-                    from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-                    sequence: probe.sequence,
-                    ttl: probe.ttl,
-                    rtt: timeout_duration,
-                    received_at: Instant::now(),
-                    is_destination: false,
-                    is_timeout: true,
-                })
+            match tokio::time::timeout(timeout_duration, rx).await {
+                Ok(Ok(Ok(reply_buffer))) => {
+                    // Got a response - process it
+                    self.process_response(&reply_buffer, probe.sequence, probe.ttl, sent_at)
+                }
+                Ok(Ok(Err(e))) => {
+                    // Event wait error
+                    Err(TracerouteError::SocketError(format!(
+                        "Event wait error: {}",
+                        e
+                    )))
+                }
+                Ok(Err(_)) => {
+                    // Channel was dropped (shouldn't happen)
+                    Err(TracerouteError::SocketError(
+                        "Event wait cancelled".to_string(),
+                    ))
+                }
+                Err(_) => {
+                    // Tokio timeout elapsed before Windows completed
+                    // Since we gave Windows a longer timeout (user timeout + buffer),
+                    // this ensures consistent behavior where our timeout always wins
+                    //
+                    // We let the Windows operation complete in the background rather
+                    // than trying to cancel it, which would cause issues
+                    drop(wait_handle); // Let the task complete in background
+
+                    Ok(ProbeResponse {
+                        from_addr: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                        sequence: probe.sequence,
+                        ttl: probe.ttl,
+                        rtt: timeout_duration,
+                        received_at: Instant::now(),
+                        is_destination: false,
+                        is_timeout: true,
+                    })
+                }
             }
-        }
         })
     }
 

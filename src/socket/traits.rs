@@ -4,7 +4,7 @@
 //! immediate response processing and eliminating polling delays.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use anyhow::Result;
+use crate::traceroute::TracerouteError;
 use std::future::Future;
 use std::net::IpAddr;
 use std::pin::Pin;
@@ -39,7 +39,7 @@ pub trait ProbeSocket: Send + Sync {
         &self,
         dest: IpAddr,
         probe: ProbeInfo,
-    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>>;
 
     /// Check if the destination has been reached
     ///

@@ -29,7 +29,7 @@ pub fn build_echo_request(identifier: u16, sequence: u16, payload: &[u8]) -> Vec
 
     buf[0] = ICMP_ECHO_REQUEST; // type
     buf[1] = 0; // code
-    // checksum at [2..4] — filled below
+                // checksum at [2..4] — filled below
     buf[4..6].copy_from_slice(&identifier.to_be_bytes());
     buf[6..8].copy_from_slice(&sequence.to_be_bytes());
     buf[ICMP_HEADER_SIZE..].copy_from_slice(payload);

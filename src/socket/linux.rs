@@ -2,15 +2,15 @@
 //!
 //! This module provides async UDP traceroute using IP_RECVERR for non-root operation.
 
-use super::traits::{ProbeSocket, ProbeMode};
+use super::traits::{ProbeMode, ProbeSocket};
 use crate::probe::{ProbeInfo, ProbeResponse};
-use anyhow::{Context, Result};
-use std::future::Future;
-use std::pin::Pin;
 use crate::socket::icmp;
+use crate::traceroute::TracerouteError;
+use std::future::Future;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::unix::io::AsRawFd;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -152,12 +152,12 @@ impl LinuxAsyncUdpSocket {
     }
 
     /// Create a new async UDP socket with IP_RECVERR for Linux
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, TracerouteError> {
         Self::new_with_config(crate::TimingConfig::default())
     }
 
     /// Create with timing configuration
-    pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self> {
+    pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self, TracerouteError> {
         let dest_port = 33434; // Traditional traceroute port
 
         Ok(LinuxAsyncUdpSocket {
@@ -178,157 +178,170 @@ impl ProbeSocket for LinuxAsyncUdpSocket {
         &self,
         dest: IpAddr,
         probe: ProbeInfo,
-    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>> {
         Box::pin(async move {
-        // Increment pending count
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
+            // Increment pending count
+            self.pending_count.fetch_add(1, Ordering::Relaxed);
 
-        // Create a new UDP socket for this probe
-        let socket =
-            std::net::UdpSocket::bind("0.0.0.0:0").context("Failed to create UDP socket")?;
+            // Create a new UDP socket for this probe
+            let socket = std::net::UdpSocket::bind("0.0.0.0:0").map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to create UDP socket: {e}"))
+            })?;
 
-        let fd = socket.as_raw_fd();
+            let fd = socket.as_raw_fd();
 
-        // Enable IP_RECVERR
-        unsafe {
-            let enable: i32 = 1;
-            let ret = libc::setsockopt(
-                fd,
-                libc::IPPROTO_IP,
-                libc::IP_RECVERR,
-                &enable as *const _ as *const libc::c_void,
-                std::mem::size_of::<i32>() as libc::socklen_t,
-            );
-            if ret != 0 {
-                self.pending_count.fetch_sub(1, Ordering::Relaxed);
-                return Err(anyhow::anyhow!("Failed to set IP_RECVERR"));
+            // Enable IP_RECVERR
+            unsafe {
+                let enable: i32 = 1;
+                let ret = libc::setsockopt(
+                    fd,
+                    libc::IPPROTO_IP,
+                    libc::IP_RECVERR,
+                    &enable as *const _ as *const libc::c_void,
+                    std::mem::size_of::<i32>() as libc::socklen_t,
+                );
+                if ret != 0 {
+                    self.pending_count.fetch_sub(1, Ordering::Relaxed);
+                    return Err(TracerouteError::SocketError(
+                        "Failed to set IP_RECVERR".to_string(),
+                    ));
+                }
             }
-        }
 
-        // Set TTL
-        socket
-            .set_ttl(probe.ttl as u32)
-            .context("Failed to set TTL")?;
+            // Set TTL
+            socket
+                .set_ttl(probe.ttl as u32)
+                .map_err(|e| TracerouteError::SocketError(format!("Failed to set TTL: {e}")))?;
 
-        // Set non-blocking
-        socket.set_nonblocking(true)?;
+            // Set non-blocking
+            socket.set_nonblocking(true).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to set non-blocking: {e}"))
+            })?;
 
-        // Convert to Tokio socket
-        let async_socket = UdpSocket::from_std(socket)?;
+            // Convert to Tokio socket
+            let async_socket = UdpSocket::from_std(socket).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to convert to async socket: {e}"))
+            })?;
 
-        // Connect to destination
-        let target_addr = SocketAddr::new(dest, self.dest_port);
-        async_socket.connect(target_addr).await?;
+            // Connect to destination
+            let target_addr = SocketAddr::new(dest, self.dest_port);
+            async_socket.connect(target_addr).await.map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to connect to destination: {e}"))
+            })?;
 
-        // Create payload
-        let identifier = std::process::id() as u16;
-        let mut payload = Vec::with_capacity(32);
-        payload.extend_from_slice(&identifier.to_be_bytes());
-        payload.extend_from_slice(&probe.sequence.to_be_bytes());
-        payload.extend_from_slice(b"ftr-traceroute-probe-padding");
+            // Create payload
+            let identifier = std::process::id() as u16;
+            let mut payload = Vec::with_capacity(32);
+            payload.extend_from_slice(&identifier.to_be_bytes());
+            payload.extend_from_slice(&probe.sequence.to_be_bytes());
+            payload.extend_from_slice(b"ftr-traceroute-probe-padding");
 
-        // Record send time
-        let sent_at = Instant::now();
+            // Record send time
+            let sent_at = Instant::now();
 
-        // Send probe
-        let bytes_sent = async_socket.send(&payload).await?;
+            // Send probe
+            let bytes_sent = async_socket.send(&payload).await.map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to send UDP probe: {e}"))
+            })?;
 
-        // Debug logging in CI
-        if std::env::var("CI").is_ok() {
-            eprintln!(
-                "[DEBUG] UDP probe sent: {} bytes to {}, TTL={}, seq={}",
-                bytes_sent, target_addr, probe.ttl, probe.sequence
-            );
-        }
+            // Debug logging in CI
+            if std::env::var("CI").is_ok() {
+                eprintln!(
+                    "[DEBUG] UDP probe sent: {} bytes to {}, TTL={}, seq={}",
+                    bytes_sent, target_addr, probe.ttl, probe.sequence
+                );
+            }
 
-        // Clone necessary data for the spawned task
-        let destination_reached = self.destination_reached.clone();
-        let pending_count = self.pending_count.clone();
-        let sequence = probe.sequence;
-        let ttl = probe.ttl;
+            // Clone necessary data for the spawned task
+            let destination_reached = self.destination_reached.clone();
+            let pending_count = self.pending_count.clone();
+            let sequence = probe.sequence;
+            let ttl = probe.ttl;
 
-        // Create oneshot channel for response
-        let (tx, rx) = oneshot::channel();
+            // Create oneshot channel for response
+            let (tx, rx) = oneshot::channel();
 
-        // Get the raw fd before moving the socket
-        let fd = async_socket.as_raw_fd();
+            // Get the raw fd before moving the socket
+            let fd = async_socket.as_raw_fd();
 
-        // Spawn task to read from error queue
-        tokio::spawn(async move {
-            // Keep the socket alive in this task
-            let _socket_guard = async_socket;
-            let mut retry_count = 0;
-            const MAX_RETRIES: u32 = 1000; // 1 second with 1ms delays
+            // Spawn task to read from error queue
+            tokio::spawn(async move {
+                // Keep the socket alive in this task
+                let _socket_guard = async_socket;
+                let mut retry_count = 0;
+                const MAX_RETRIES: u32 = 1000; // 1 second with 1ms delays
 
-            loop {
-                // Check for ICMP error using MSG_ERRQUEUE
-                let result = unsafe { LinuxAsyncUdpSocket::check_icmp_error(fd, sequence) };
+                loop {
+                    // Check for ICMP error using MSG_ERRQUEUE
+                    let result = unsafe { LinuxAsyncUdpSocket::check_icmp_error(fd, sequence) };
 
-                match result {
-                    IcmpCheckResult::Found(from_addr, is_destination) => {
-                        let rtt = Instant::now().duration_since(sent_at);
+                    match result {
+                        IcmpCheckResult::Found(from_addr, is_destination) => {
+                            let rtt = Instant::now().duration_since(sent_at);
 
-                        // Update destination reached
-                        if is_destination {
-                            destination_reached.store(true, Ordering::Relaxed);
+                            // Update destination reached
+                            if is_destination {
+                                destination_reached.store(true, Ordering::Relaxed);
+                            }
+
+                            // Decrement pending count
+                            pending_count.fetch_sub(1, Ordering::Relaxed);
+
+                            let response = ProbeResponse {
+                                from_addr,
+                                sequence,
+                                ttl,
+                                rtt,
+                                received_at: Instant::now(),
+                                is_destination,
+                                is_timeout: false,
+                            };
+
+                            let _ = tx.send(response);
+                            break;
                         }
+                        IcmpCheckResult::Error => {
+                            // Actual error
+                            pending_count.fetch_sub(1, Ordering::Relaxed);
+                            break;
+                        }
+                        IcmpCheckResult::NoData => {
+                            // No data yet, continue polling
+                        }
+                    }
 
-                        // Decrement pending count
+                    retry_count += 1;
+                    if retry_count >= MAX_RETRIES {
+                        // Timeout
                         pending_count.fetch_sub(1, Ordering::Relaxed);
-
-                        let response = ProbeResponse {
-                            from_addr,
+                        let _ = tx.send(ProbeResponse {
+                            from_addr: dest,
                             sequence,
                             ttl,
-                            rtt,
+                            rtt: Duration::from_secs(1),
                             received_at: Instant::now(),
-                            is_destination,
-                            is_timeout: false,
-                        };
-
-                        let _ = tx.send(response);
+                            is_destination: false,
+                            is_timeout: true,
+                        });
                         break;
                     }
-                    IcmpCheckResult::Error => {
-                        // Actual error
-                        pending_count.fetch_sub(1, Ordering::Relaxed);
-                        break;
-                    }
-                    IcmpCheckResult::NoData => {
-                        // No data yet, continue polling
-                    }
+
+                    // Brief yield before retrying
+                    tokio::time::sleep(Duration::from_millis(1)).await;
                 }
+            });
 
-                retry_count += 1;
-                if retry_count >= MAX_RETRIES {
-                    // Timeout
-                    pending_count.fetch_sub(1, Ordering::Relaxed);
-                    let _ = tx.send(ProbeResponse {
-                        from_addr: dest,
-                        sequence,
-                        ttl,
-                        rtt: Duration::from_secs(1),
-                        received_at: Instant::now(),
-                        is_destination: false,
-                        is_timeout: true,
-                    });
-                    break;
+            // Wait for response
+            match rx.await {
+                Ok(response) => Ok(response),
+                Err(_) => {
+                    // Channel closed without response
+                    self.pending_count.fetch_sub(1, Ordering::Relaxed);
+                    Err(TracerouteError::SocketError(
+                        "Failed to receive response".to_string(),
+                    ))
                 }
-
-                // Brief yield before retrying
-                tokio::time::sleep(Duration::from_millis(1)).await;
             }
-        });
-
-        // Wait for response
-        match rx.await {
-            Ok(response) => Ok(response),
-            Err(_) => {
-                // Channel closed without response
-                self.pending_count.fetch_sub(1, Ordering::Relaxed);
-                Err(anyhow::anyhow!("Failed to receive response"))
-            }
-        }
         })
     }
 
@@ -351,12 +364,12 @@ pub struct LinuxAsyncIcmpSocket {
 
 impl LinuxAsyncIcmpSocket {
     /// Create a new async ICMP socket for Linux
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, TracerouteError> {
         Self::new_with_config(crate::TimingConfig::default())
     }
 
     /// Create with timing configuration
-    pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self> {
+    pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self, TracerouteError> {
         let icmp_identifier = std::process::id() as u16;
 
         Ok(LinuxAsyncIcmpSocket {
@@ -405,8 +418,10 @@ impl LinuxAsyncIcmpSocket {
                         if inner_icmp_data.len() >= 8 {
                             let inner_type = inner_icmp_data[0];
                             if inner_type == icmp::ICMP_ECHO_REQUEST {
-                                let identifier = u16::from_be_bytes([inner_icmp_data[4], inner_icmp_data[5]]);
-                                let seq = u16::from_be_bytes([inner_icmp_data[6], inner_icmp_data[7]]);
+                                let identifier =
+                                    u16::from_be_bytes([inner_icmp_data[4], inner_icmp_data[5]]);
+                                let seq =
+                                    u16::from_be_bytes([inner_icmp_data[6], inner_icmp_data[7]]);
 
                                 if identifier == self.icmp_identifier && seq == sequence {
                                     return Some((from_addr, false));
@@ -432,145 +447,151 @@ impl ProbeSocket for LinuxAsyncIcmpSocket {
         &self,
         dest: IpAddr,
         probe: ProbeInfo,
-    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>> {
         Box::pin(async move {
-        use socket2::{Domain, Protocol, Socket as Socket2, Type};
-        use std::os::unix::io::AsRawFd;
+            use socket2::{Domain, Protocol, Socket as Socket2, Type};
+            use std::os::unix::io::AsRawFd;
 
-        // Increment pending count
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
+            // Increment pending count
+            self.pending_count.fetch_add(1, Ordering::Relaxed);
 
-        // Create raw ICMP socket
-        let socket = Socket2::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4))
-            .context("Failed to create raw ICMP socket")?;
+            // Create raw ICMP socket
+            let socket =
+                Socket2::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)).map_err(|e| {
+                    TracerouteError::SocketError(format!("Failed to create raw ICMP socket: {e}"))
+                })?;
 
-        // Set TTL
-        socket
-            .set_ttl_v4(probe.ttl as u32)
-            .context("Failed to set TTL")?;
+            // Set TTL
+            socket
+                .set_ttl_v4(probe.ttl as u32)
+                .map_err(|e| TracerouteError::SocketError(format!("Failed to set TTL: {e}")))?;
 
-        // Set non-blocking
-        socket.set_nonblocking(true)?;
+            // Set non-blocking
+            socket.set_nonblocking(true).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to set non-blocking: {e}"))
+            })?;
 
-        // Convert to Tokio socket (we'll use it through raw fd)
-        let _fd = socket.as_raw_fd();
+            // Convert to Tokio socket (we'll use it through raw fd)
+            let _fd = socket.as_raw_fd();
 
-        // Create ICMP echo request packet
-        let packet = self.create_echo_request(probe.sequence);
+            // Create ICMP echo request packet
+            let packet = self.create_echo_request(probe.sequence);
 
-        // Send packet
-        let dest_addr: SocketAddr = SocketAddr::new(dest, 0);
-        let sent_at = Instant::now();
-        socket
-            .send_to(&packet, &dest_addr.into())
-            .context("Failed to send ICMP packet")?;
+            // Send packet
+            let dest_addr: SocketAddr = SocketAddr::new(dest, 0);
+            let sent_at = Instant::now();
+            socket.send_to(&packet, &dest_addr.into()).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to send ICMP packet: {e}"))
+            })?;
 
-        // Clone necessary data for the spawned task
-        let destination_reached = self.destination_reached.clone();
-        let pending_count = self.pending_count.clone();
-        let sequence = probe.sequence;
-        let ttl = probe.ttl;
-        let icmp_identifier = self.icmp_identifier;
+            // Clone necessary data for the spawned task
+            let destination_reached = self.destination_reached.clone();
+            let pending_count = self.pending_count.clone();
+            let sequence = probe.sequence;
+            let ttl = probe.ttl;
+            let icmp_identifier = self.icmp_identifier;
 
-        // Create oneshot channel for response
-        let (tx, rx) = oneshot::channel();
+            // Create oneshot channel for response
+            let (tx, rx) = oneshot::channel();
 
-        // Spawn task to read responses
-        let socket = Arc::new(socket);
-        let socket_clone = socket.clone();
-        tokio::spawn(async move {
-            let mut retry_count = 0;
-            const MAX_RETRIES: u32 = 1000; // 1 second with 1ms delays
+            // Spawn task to read responses
+            let socket = Arc::new(socket);
+            let socket_clone = socket.clone();
+            tokio::spawn(async move {
+                let mut retry_count = 0;
+                const MAX_RETRIES: u32 = 1000; // 1 second with 1ms delays
 
-            loop {
-                // Try to receive response
-                let mut buf = [std::mem::MaybeUninit::uninit(); 1500];
-                match socket_clone.recv_from(&mut buf) {
-                    Ok((size, addr)) => {
-                        if let Some(from_addr) = addr.as_socket_ipv4() {
-                            let from_ip = IpAddr::V4(*from_addr.ip());
+                loop {
+                    // Try to receive response
+                    let mut buf = [std::mem::MaybeUninit::uninit(); 1500];
+                    match socket_clone.recv_from(&mut buf) {
+                        Ok((size, addr)) => {
+                            if let Some(from_addr) = addr.as_socket_ipv4() {
+                                let from_ip = IpAddr::V4(*from_addr.ip());
 
-                            // Convert MaybeUninit buffer to initialized slice
-                            let initialized_buf = unsafe {
-                                std::slice::from_raw_parts(buf.as_ptr() as *const u8, size)
-                            };
-
-                            // Parse ICMP response
-                            let parser = LinuxAsyncIcmpSocket {
-                                mode: ProbeMode::RawIcmp,
-                                icmp_identifier,
-                                destination_reached: Arc::new(AtomicBool::new(false)),
-                                pending_count: Arc::new(AtomicUsize::new(0)),
-                            };
-
-                            if let Some((resp_addr, is_destination)) =
-                                parser.parse_icmp_response(initialized_buf, from_ip, sequence)
-                            {
-                                let rtt = Instant::now().duration_since(sent_at);
-
-                                // Update destination reached
-                                if is_destination {
-                                    destination_reached.store(true, Ordering::Relaxed);
-                                }
-
-                                // Decrement pending count
-                                pending_count.fetch_sub(1, Ordering::Relaxed);
-
-                                let response = ProbeResponse {
-                                    from_addr: resp_addr,
-                                    sequence,
-                                    ttl,
-                                    rtt,
-                                    received_at: Instant::now(),
-                                    is_destination,
-                                    is_timeout: false,
+                                // Convert MaybeUninit buffer to initialized slice
+                                let initialized_buf = unsafe {
+                                    std::slice::from_raw_parts(buf.as_ptr() as *const u8, size)
                                 };
 
-                                let _ = tx.send(response);
-                                break;
+                                // Parse ICMP response
+                                let parser = LinuxAsyncIcmpSocket {
+                                    mode: ProbeMode::RawIcmp,
+                                    icmp_identifier,
+                                    destination_reached: Arc::new(AtomicBool::new(false)),
+                                    pending_count: Arc::new(AtomicUsize::new(0)),
+                                };
+
+                                if let Some((resp_addr, is_destination)) =
+                                    parser.parse_icmp_response(initialized_buf, from_ip, sequence)
+                                {
+                                    let rtt = Instant::now().duration_since(sent_at);
+
+                                    // Update destination reached
+                                    if is_destination {
+                                        destination_reached.store(true, Ordering::Relaxed);
+                                    }
+
+                                    // Decrement pending count
+                                    pending_count.fetch_sub(1, Ordering::Relaxed);
+
+                                    let response = ProbeResponse {
+                                        from_addr: resp_addr,
+                                        sequence,
+                                        ttl,
+                                        rtt,
+                                        received_at: Instant::now(),
+                                        is_destination,
+                                        is_timeout: false,
+                                    };
+
+                                    let _ = tx.send(response);
+                                    break;
+                                }
                             }
                         }
+                        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            // No data yet, continue
+                        }
+                        Err(_) => {
+                            // Other error
+                            pending_count.fetch_sub(1, Ordering::Relaxed);
+                            break;
+                        }
                     }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        // No data yet, continue
-                    }
-                    Err(_) => {
-                        // Other error
+
+                    retry_count += 1;
+                    if retry_count >= MAX_RETRIES {
+                        // Timeout
                         pending_count.fetch_sub(1, Ordering::Relaxed);
+                        let _ = tx.send(ProbeResponse {
+                            from_addr: dest,
+                            sequence,
+                            ttl,
+                            rtt: Duration::from_secs(1),
+                            received_at: Instant::now(),
+                            is_destination: false,
+                            is_timeout: true,
+                        });
                         break;
                     }
+
+                    // Brief yield before retrying
+                    tokio::time::sleep(Duration::from_millis(1)).await;
                 }
+            });
 
-                retry_count += 1;
-                if retry_count >= MAX_RETRIES {
-                    // Timeout
-                    pending_count.fetch_sub(1, Ordering::Relaxed);
-                    let _ = tx.send(ProbeResponse {
-                        from_addr: dest,
-                        sequence,
-                        ttl,
-                        rtt: Duration::from_secs(1),
-                        received_at: Instant::now(),
-                        is_destination: false,
-                        is_timeout: true,
-                    });
-                    break;
+            // Wait for response
+            match rx.await {
+                Ok(response) => Ok(response),
+                Err(_) => {
+                    // Channel closed without response
+                    self.pending_count.fetch_sub(1, Ordering::Relaxed);
+                    Err(TracerouteError::SocketError(
+                        "Failed to receive response".to_string(),
+                    ))
                 }
-
-                // Brief yield before retrying
-                tokio::time::sleep(Duration::from_millis(1)).await;
             }
-        });
-
-        // Wait for response
-        match rx.await {
-            Ok(response) => Ok(response),
-            Err(_) => {
-                // Channel closed without response
-                self.pending_count.fetch_sub(1, Ordering::Relaxed);
-                Err(anyhow::anyhow!("Failed to receive response"))
-            }
-        }
         })
     }
 

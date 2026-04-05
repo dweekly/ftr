@@ -11,14 +11,14 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::services::Services;
 use crate::socket::traits::ProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
+use crate::traceroute::TracerouteError;
 use crate::traceroute::{AsnInfo, ClassifiedHopInfo, SegmentType, TracerouteResult};
-use anyhow::Result;
-use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
 #[cfg(test)]
 #[path = "sandwich_test.rs"]
@@ -49,9 +49,13 @@ impl ParallelEngine {
         config: crate::TracerouteConfig,
         target: IpAddr,
         services: Arc<Services>,
-    ) -> Result<Self> {
+    ) -> Result<Self, TracerouteError> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(EnrichmentService::new().await?);
+        let enrichment_service = Arc::new(
+            EnrichmentService::new()
+                .await
+                .map_err(|e| TracerouteError::Other(e.to_string()))?,
+        );
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -68,9 +72,13 @@ impl ParallelEngine {
         socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
-    ) -> Result<Self> {
+    ) -> Result<Self, TracerouteError> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(EnrichmentService::new().await?);
+        let enrichment_service = Arc::new(
+            EnrichmentService::new()
+                .await
+                .map_err(|e| TracerouteError::Other(e.to_string()))?,
+        );
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -83,7 +91,7 @@ impl ParallelEngine {
     }
 
     /// Run the fully parallel async traceroute
-    pub async fn run(&self) -> Result<TracerouteResult> {
+    pub async fn run(&self) -> Result<TracerouteResult, TracerouteError> {
         let start_time = Instant::now();
         trace_time!(
             self.config.verbose,
@@ -354,7 +362,7 @@ impl ParallelEngine {
             >,
         >,
         dest_asn_future: Option<tokio::task::JoinHandle<Option<AsnInfo>>>,
-    ) -> Result<TracerouteResult> {
+    ) -> Result<TracerouteResult, TracerouteError> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
         // Group responses by TTL
@@ -539,18 +547,12 @@ impl ParallelEngine {
 
         // Determine protocol and socket mode
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::traits::ProbeMode::DgramIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Dgram)
-            }
-            crate::socket::traits::ProbeMode::WindowsIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
+            crate::socket::traits::ProbeMode::DgramIcmp => (ProbeProtocol::Icmp, SocketMode::Dgram),
+            crate::socket::traits::ProbeMode::WindowsIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
             crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
             }
-            crate::socket::traits::ProbeMode::RawIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
+            crate::socket::traits::ProbeMode::RawIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
         };
 
         trace_time!(

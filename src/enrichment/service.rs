@@ -4,12 +4,12 @@
 
 use crate::services::Services;
 use crate::traceroute::AsnInfo;
-use anyhow::Result;
-use tokio::task::JoinSet;
+use crate::traceroute::TracerouteError;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinSet;
 
 /// Enrichment result for an IP address
 #[derive(Debug, Clone)]
@@ -32,7 +32,7 @@ pub struct EnrichmentService {
 
 impl EnrichmentService {
     /// Create a new async enrichment service
-    pub async fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self, TracerouteError> {
         let services = Arc::new(Services::new());
         let (enrichment_tx, enrichment_rx) = mpsc::unbounded_channel();
 
@@ -45,10 +45,12 @@ impl EnrichmentService {
     }
 
     /// Enqueue an IP address for enrichment
-    pub async fn enqueue(&self, addr: IpAddr) -> Result<()> {
+    pub async fn enqueue(&self, addr: IpAddr) -> Result<(), TracerouteError> {
         let mut seen = self.seen_addresses.write().await;
         if seen.insert(addr) {
-            self.enrichment_tx.send(addr)?;
+            self.enrichment_tx
+                .send(addr)
+                .map_err(|e| TracerouteError::Other(e.to_string()))?;
         }
         Ok(())
     }

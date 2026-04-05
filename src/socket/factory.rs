@@ -1,44 +1,45 @@
-//! Factory for creating async probe sockets
+//! Factory for creating probe sockets
 //!
-//! This module provides factory functions for creating async probe sockets
+//! This module provides factory functions for creating probe sockets
 //! that use Tokio for immediate response notification.
 
-use super::traits::{ProbeSocket, ProbeMode};
+use super::traits::{ProbeMode, ProbeSocket};
 use super::{ProbeProtocol, SocketMode};
+use crate::traceroute::TracerouteError;
 use crate::TimingConfig;
-use anyhow::{anyhow, Result};
 use std::net::IpAddr;
 
-/// Create an async probe socket for the given target
+/// Create a probe socket for the given target
 pub async fn create_probe_socket(
     target: IpAddr,
     timing_config: TimingConfig,
-) -> Result<Box<dyn ProbeSocket>> {
+) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
     create_probe_socket_with_options(target, timing_config, None, None).await
 }
 
-/// Create an async probe socket with protocol and mode preferences
+/// Create a probe socket with protocol and mode preferences
 pub async fn create_probe_socket_with_options(
     target: IpAddr,
     timing_config: TimingConfig,
     protocol: Option<ProbeProtocol>,
     socket_mode: Option<SocketMode>,
-) -> Result<Box<dyn ProbeSocket>> {
+) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
     // Check for unsupported protocols
     if let Some(ProbeProtocol::Tcp) = protocol {
-        return Err(anyhow!("TCP traceroute is not yet implemented"));
+        return Err(TracerouteError::NotImplemented {
+            feature: "TCP traceroute".to_string(),
+        });
     }
 
     match target {
         IpAddr::V4(_) => {
             #[cfg(target_os = "windows")]
             {
-                let _ = protocol; // Unused on Windows
-                let _ = socket_mode; // Unused on Windows
+                let _ = protocol;
+                let _ = socket_mode;
                 use super::windows::WindowsAsyncIcmpSocket;
                 let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                // Print verbose mode info if requested
                 let verbose = std::env::var("FTR_VERBOSE")
                     .ok()
                     .and_then(|v| v.parse::<u8>().ok())
@@ -52,13 +53,11 @@ pub async fn create_probe_socket_with_options(
 
             #[cfg(target_os = "macos")]
             {
-                let _ = protocol; // Unused on macOS
-                let _ = socket_mode; // Unused on macOS
-                                     // Use implementation that creates per-probe sockets
+                let _ = protocol;
+                let _ = socket_mode;
                 use super::macos::MacOSAsyncIcmpSocket;
                 let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                // Print verbose mode info if requested
                 let verbose = std::env::var("FTR_VERBOSE")
                     .ok()
                     .and_then(|v| v.parse::<u8>().ok())
@@ -72,20 +71,16 @@ pub async fn create_probe_socket_with_options(
 
             #[cfg(target_os = "linux")]
             {
-                // On Linux, check if ICMP was specifically requested or Raw mode was requested
                 let use_icmp = matches!(protocol, Some(ProbeProtocol::Icmp))
                     || matches!(socket_mode, Some(SocketMode::Raw));
 
                 if use_icmp {
-                    // Check if we can create raw ICMP socket
                     use socket2::{Domain, Protocol, Socket, Type};
                     match Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)) {
                         Ok(_) => {
-                            // We have permissions for raw ICMP
                             use super::linux::LinuxAsyncIcmpSocket;
                             let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                            // Print verbose mode info if requested
                             let verbose = std::env::var("FTR_VERBOSE")
                                 .ok()
                                 .and_then(|v| v.parse::<u8>().ok())
@@ -96,18 +91,20 @@ pub async fn create_probe_socket_with_options(
 
                             Ok(Box::new(socket))
                         }
-                        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => Err(anyhow!(
-                            "ICMP mode requires root or CAP_NET_RAW capability. \
-                                    Try running with sudo or use UDP mode (--udp)"
-                        )),
-                        Err(e) => Err(anyhow!("Failed to create ICMP socket: {}", e)),
+                        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                            Err(TracerouteError::InsufficientPermissions {
+                                required: "root or CAP_NET_RAW".to_string(),
+                                suggestion: "Run with sudo or use UDP mode".to_string(),
+                            })
+                        }
+                        Err(e) => Err(TracerouteError::SocketError(format!(
+                            "Failed to create ICMP socket: {e}"
+                        ))),
                     }
                 } else {
-                    // Default to UDP or when explicitly requested
                     use super::linux::LinuxAsyncUdpSocket;
                     let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
 
-                    // Print verbose mode info if requested
                     let verbose = std::env::var("FTR_VERBOSE")
                         .ok()
                         .and_then(|v| v.parse::<u8>().ok())
@@ -127,12 +124,11 @@ pub async fn create_probe_socket_with_options(
                 target_os = "dragonfly"
             ))]
             {
-                let _ = protocol; // Unused on BSDs
-                let _ = socket_mode; // Unused on BSDs
+                let _ = protocol;
+                let _ = socket_mode;
                 use super::bsd::BsdAsyncIcmpSocket;
                 let socket = BsdAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                // Print verbose mode info if requested
                 let verbose = std::env::var("FTR_VERBOSE")
                     .ok()
                     .and_then(|v| v.parse::<u8>().ok())
@@ -154,54 +150,46 @@ pub async fn create_probe_socket_with_options(
                 target_os = "dragonfly"
             )))]
             {
-                let _ = protocol; // Unused on other platforms
-                                  // Placeholder for other platforms
-                Err(anyhow!(
-                    "Async socket implementation not yet available for this platform"
+                let _ = protocol;
+                Err(TracerouteError::SocketError(
+                    "Socket implementation not available for this platform".to_string(),
                 ))
             }
         }
-        IpAddr::V6(_) => Err(anyhow!("IPv6 is not yet supported")),
+        IpAddr::V6(_) => Err(TracerouteError::Ipv6NotSupported),
     }
 }
 
-/// Create an async probe socket with specific mode preference
+/// Create a probe socket with specific mode preference
 pub async fn create_probe_socket_with_mode(
     target: IpAddr,
     timing_config: TimingConfig,
     preferred_mode: Option<ProbeMode>,
-) -> Result<Box<dyn ProbeSocket>> {
-    // Check platform-specific mode support
+) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
     #[cfg(target_os = "windows")]
-    {
-        if let Some(mode) = preferred_mode {
-            if mode != ProbeMode::WindowsIcmp {
-                return Err(anyhow!(
-                    "Only Windows ICMP mode is currently supported for async on Windows"
-                ));
-            }
+    if let Some(mode) = preferred_mode {
+        if mode != ProbeMode::WindowsIcmp {
+            return Err(TracerouteError::SocketError(
+                "Only Windows ICMP mode is supported on Windows".to_string(),
+            ));
         }
     }
 
     #[cfg(target_os = "macos")]
-    {
-        if let Some(mode) = preferred_mode {
-            if mode != ProbeMode::DgramIcmp {
-                return Err(anyhow!(
-                    "Only DGRAM ICMP mode is currently supported for async on macOS"
-                ));
-            }
+    if let Some(mode) = preferred_mode {
+        if mode != ProbeMode::DgramIcmp {
+            return Err(TracerouteError::SocketError(
+                "Only DGRAM ICMP mode is supported on macOS".to_string(),
+            ));
         }
     }
 
     #[cfg(target_os = "linux")]
-    {
-        if let Some(mode) = preferred_mode {
-            if mode != ProbeMode::UdpWithRecverr {
-                return Err(anyhow!(
-                    "Only UDP with IP_RECVERR mode is currently supported for async on Linux"
-                ));
-            }
+    if let Some(mode) = preferred_mode {
+        if mode != ProbeMode::UdpWithRecverr {
+            return Err(TracerouteError::SocketError(
+                "Only UDP with IP_RECVERR mode is supported on Linux".to_string(),
+            ));
         }
     }
 
@@ -211,13 +199,11 @@ pub async fn create_probe_socket_with_mode(
         target_os = "netbsd",
         target_os = "dragonfly"
     ))]
-    {
-        if let Some(mode) = preferred_mode {
-            if mode != ProbeMode::RawIcmp {
-                return Err(anyhow!(
-                    "Only Raw ICMP mode is currently supported for async on BSD systems"
-                ));
-            }
+    if let Some(mode) = preferred_mode {
+        if mode != ProbeMode::RawIcmp {
+            return Err(TracerouteError::SocketError(
+                "Only Raw ICMP mode is supported on BSD systems".to_string(),
+            ));
         }
     }
 

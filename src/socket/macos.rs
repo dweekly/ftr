@@ -6,15 +6,15 @@
 //! TimeExceeded messages when used with async I/O.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::traits::{ProbeSocket, ProbeMode};
-use crate::TimingConfig;
-use anyhow::{anyhow, Context, Result};
-use std::future::Future;
-use std::pin::Pin;
 use crate::socket::icmp;
+use crate::socket::traits::{ProbeMode, ProbeSocket};
+use crate::traceroute::TracerouteError;
+use crate::TimingConfig;
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
+use std::future::Future;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -38,12 +38,12 @@ pub struct MacOSAsyncIcmpSocket {
 
 impl MacOSAsyncIcmpSocket {
     /// Create a new macOS async ICMP socket
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, TracerouteError> {
         Self::new_with_config(TimingConfig::default())
     }
 
     /// Create a new macOS async ICMP socket with timing configuration
-    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self> {
+    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
         let verbose = std::env::var("FTR_VERBOSE")
             .ok()
             .and_then(|v| v.parse::<u8>().ok())
@@ -128,8 +128,7 @@ impl MacOSAsyncIcmpSocket {
             }
             icmp::ICMP_ECHO_REPLY => {
                 if let Some((reply_id, reply_seq)) = icmp::parse_echo_reply(icmp_data) {
-                    if reply_id == self.icmp_identifier && reply_seq == expected_sequence
-                    {
+                    if reply_id == self.icmp_identifier && reply_seq == expected_sequence {
                         let is_destination = from_addr == dest;
                         return Some(ProbeResponse {
                             from_addr,
@@ -150,20 +149,28 @@ impl MacOSAsyncIcmpSocket {
     }
 
     /// Send an ICMP echo request and wait for response
-    async fn send_and_recv_probe(&self, dest: Ipv4Addr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    async fn send_and_recv_probe(
+        &self,
+        dest: Ipv4Addr,
+        probe: ProbeInfo,
+    ) -> Result<ProbeResponse, TracerouteError> {
         let send_start = probe.sent_at;
 
         // Create a new DGRAM ICMP socket for this probe
-        let socket = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4))
-            .context("Failed to create ICMP socket")?;
+        let socket =
+            Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4)).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to create ICMP socket: {e}"))
+            })?;
 
         // Set TTL
         socket
             .set_ttl_v4(probe.ttl as u32)
-            .context("Failed to set TTL")?;
+            .map_err(|e| TracerouteError::SocketError(format!("Failed to set TTL: {e}")))?;
 
         // Set non-blocking
-        socket.set_nonblocking(true)?;
+        socket.set_nonblocking(true).map_err(|e| {
+            TracerouteError::SocketError(format!("Failed to set non-blocking: {e}"))
+        })?;
 
         // Build ICMP Echo Request packet
         let payload_data = (self.icmp_identifier as u32) << 16 | (probe.sequence as u32);
@@ -172,13 +179,14 @@ impl MacOSAsyncIcmpSocket {
         let bytes_to_copy = payload_bytes.len().min(ICMP_ECHO_PAYLOAD_SIZE);
         final_payload[..bytes_to_copy].copy_from_slice(&payload_bytes[..bytes_to_copy]);
 
-        let icmp_buf = icmp::build_echo_request(self.icmp_identifier, probe.sequence, &final_payload);
+        let icmp_buf =
+            icmp::build_echo_request(self.icmp_identifier, probe.sequence, &final_payload);
 
         // Send the packet
         let dest_addr = SocketAddr::new(IpAddr::V4(dest), 0);
-        socket
-            .send_to(&icmp_buf, &dest_addr.into())
-            .context("Failed to send ICMP packet")?;
+        socket.send_to(&icmp_buf, &dest_addr.into()).map_err(|e| {
+            TracerouteError::ProbeSendError(format!("Failed to send ICMP packet: {e}"))
+        })?;
 
         trace_time!(
             self.verbose,
@@ -192,7 +200,9 @@ impl MacOSAsyncIcmpSocket {
         let (tx, rx) = oneshot::channel();
 
         // Spawn task to receive response
-        let socket_clone = socket.try_clone()?;
+        let socket_clone = socket
+            .try_clone()
+            .map_err(|e| TracerouteError::SocketError(format!("Failed to clone socket: {e}")))?;
         let icmp_identifier = self.icmp_identifier;
         let sequence = probe.sequence;
         let ttl = probe.ttl;
@@ -315,7 +325,9 @@ impl MacOSAsyncIcmpSocket {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(_)) => {
                 // Channel closed
-                Err(anyhow!("Response channel closed unexpectedly"))
+                Err(TracerouteError::SocketError(
+                    "Response channel closed unexpectedly".to_string(),
+                ))
             }
             Err(_) => {
                 // Timeout
@@ -342,11 +354,11 @@ impl ProbeSocket for MacOSAsyncIcmpSocket {
         &self,
         dest: IpAddr,
         probe: ProbeInfo,
-    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>> {
         Box::pin(async move {
             let dest_v4 = match dest {
                 IpAddr::V4(addr) => addr,
-                _ => return Err(anyhow!("Only IPv4 is supported")),
+                _ => return Err(TracerouteError::Ipv6NotSupported),
             };
 
             // Increment pending count

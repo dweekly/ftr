@@ -6,13 +6,13 @@
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::traits::ProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
+use crate::traceroute::TracerouteError;
 use crate::traceroute::{ClassifiedHopInfo, SegmentType, TracerouteResult};
-use anyhow::Result;
-use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
 /// Async traceroute engine
@@ -37,7 +37,7 @@ impl TracerouteEngine {
     }
 
     /// Run the async traceroute
-    pub async fn run(&self) -> Result<TracerouteResult> {
+    pub async fn run(&self) -> Result<TracerouteResult, TracerouteError> {
         let start_time = Instant::now();
         trace_time!(
             self.config.verbose,
@@ -201,7 +201,7 @@ impl TracerouteEngine {
         &self,
         responses: Vec<ProbeResponse>,
         elapsed: Duration,
-    ) -> Result<TracerouteResult> {
+    ) -> Result<TracerouteResult, TracerouteError> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
         // Check if destination was reached and find destination TTL
@@ -301,18 +301,12 @@ impl TracerouteEngine {
 
         // Determine protocol and socket mode used
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::traits::ProbeMode::DgramIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Dgram)
-            }
-            crate::socket::traits::ProbeMode::WindowsIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
+            crate::socket::traits::ProbeMode::DgramIcmp => (ProbeProtocol::Icmp, SocketMode::Dgram),
+            crate::socket::traits::ProbeMode::WindowsIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
             crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
             }
-            crate::socket::traits::ProbeMode::RawIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
+            crate::socket::traits::ProbeMode::RawIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
         };
 
         // Try to extract ISP info from the traceroute path itself (fast path)

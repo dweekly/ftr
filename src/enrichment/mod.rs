@@ -7,4 +7,4 @@
 pub mod service;
 
 #[cfg(feature = "async")]
-pub use service::{EnrichmentService, EnrichmentResult};
+pub use service::{EnrichmentResult, EnrichmentService};
