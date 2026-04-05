@@ -21,6 +21,9 @@ use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 
 #[cfg(test)]
+#[path = "engine_test.rs"]
+mod engine_test;
+#[cfg(test)]
 #[path = "sandwich_test.rs"]
 mod sandwich_test;
 use tokio::time::{sleep, timeout};
