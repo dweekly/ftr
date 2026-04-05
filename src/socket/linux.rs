@@ -5,6 +5,8 @@
 use super::traits::{ProbeSocket, ProbeMode};
 use crate::probe::{ProbeInfo, ProbeResponse};
 use anyhow::{Context, Result};
+use std::future::Future;
+use std::pin::Pin;
 use pnet::packet::{MutablePacket, Packet};
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -167,13 +169,17 @@ impl LinuxAsyncUdpSocket {
     }
 }
 
-#[async_trait::async_trait]
 impl ProbeSocket for LinuxAsyncUdpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+        Box::pin(async move {
         // Increment pending count
         self.pending_count.fetch_add(1, Ordering::Relaxed);
 
@@ -323,6 +329,7 @@ impl ProbeSocket for LinuxAsyncUdpSocket {
                 Err(anyhow::anyhow!("Failed to receive response"))
             }
         }
+        })
     }
 
     fn destination_reached(&self) -> bool {
@@ -481,13 +488,17 @@ impl LinuxAsyncIcmpSocket {
     }
 }
 
-#[async_trait::async_trait]
 impl ProbeSocket for LinuxAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+        Box::pin(async move {
         use socket2::{Domain, Protocol, Socket as Socket2, Type};
         use std::os::unix::io::AsRawFd;
 
@@ -625,6 +636,7 @@ impl ProbeSocket for LinuxAsyncIcmpSocket {
                 Err(anyhow::anyhow!("Failed to receive response"))
             }
         }
+        })
     }
 
     fn destination_reached(&self) -> bool {

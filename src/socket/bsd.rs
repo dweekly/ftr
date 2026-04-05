@@ -11,7 +11,8 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{Context, Result};
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 use pnet::packet::{MutablePacket, Packet};
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
 use std::net::{IpAddr, SocketAddr};
@@ -175,13 +176,17 @@ impl BsdAsyncIcmpSocket {
     }
 }
 
-#[async_trait]
 impl ProbeSocket for BsdAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+        Box::pin(async move {
         // Increment pending count
         self.pending_count.fetch_add(1, Ordering::Relaxed);
 
@@ -321,6 +326,7 @@ impl ProbeSocket for BsdAsyncIcmpSocket {
                 Err(anyhow::anyhow!("Failed to receive response"))
             }
         }
+        })
     }
 
     fn destination_reached(&self) -> bool {

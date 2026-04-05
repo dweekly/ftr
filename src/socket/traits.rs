@@ -1,12 +1,13 @@
-//! Async trait for probe sockets
+//! Trait for probe sockets
 //!
-//! This module defines the async interface for probe sockets, enabling
+//! This module defines the interface for probe sockets, enabling
 //! immediate response processing and eliminating polling delays.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
 use anyhow::Result;
-use async_trait::async_trait;
+use std::future::Future;
 use std::net::IpAddr;
+use std::pin::Pin;
 
 /// Probe mode supported by the socket
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,11 +22,10 @@ pub enum ProbeMode {
     RawIcmp,
 }
 
-/// Async trait for probe sockets
+/// Trait for probe sockets
 ///
-/// This trait defines the interface for all async probe socket implementations.
+/// This trait defines the interface for all probe socket implementations.
 /// It enables immediate response processing without polling delays.
-#[async_trait]
 pub trait ProbeSocket: Send + Sync {
     /// Get the probe mode this socket supports
     fn mode(&self) -> ProbeMode;
@@ -35,7 +35,11 @@ pub trait ProbeSocket: Send + Sync {
     /// This method sends a probe and returns a future that will resolve
     /// to the response when it arrives. This allows immediate wake-up
     /// when the response is received.
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse>;
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>>;
 
     /// Check if the destination has been reached
     ///

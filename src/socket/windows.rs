@@ -8,7 +8,8 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{anyhow, Result};
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 use std::ffi::c_void;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr};
@@ -180,13 +181,17 @@ impl WindowsAsyncIcmpSocket {
     }
 }
 
-#[async_trait]
 impl ProbeSocket for WindowsAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         ProbeMode::WindowsIcmp
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+        Box::pin(async move {
         let dest_addr = match dest {
             IpAddr::V4(addr) => addr,
             _ => return Err(anyhow!("Only IPv4 is supported")),
@@ -374,6 +379,7 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
                 })
             }
         }
+        })
     }
 
     fn destination_reached(&self) -> bool {

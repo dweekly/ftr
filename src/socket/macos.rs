@@ -9,7 +9,8 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
 use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
 use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
 use pnet::packet::ipv4::Ipv4Packet;
@@ -356,22 +357,27 @@ impl MacOSAsyncIcmpSocket {
     }
 }
 
-#[async_trait]
 impl ProbeSocket for MacOSAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         ProbeMode::DgramIcmp
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
-        let dest_v4 = match dest {
-            IpAddr::V4(addr) => addr,
-            _ => return Err(anyhow!("Only IPv4 is supported")),
-        };
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse>> + Send + '_>> {
+        Box::pin(async move {
+            let dest_v4 = match dest {
+                IpAddr::V4(addr) => addr,
+                _ => return Err(anyhow!("Only IPv4 is supported")),
+            };
 
-        // Increment pending count
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
+            // Increment pending count
+            self.pending_count.fetch_add(1, Ordering::Relaxed);
 
-        self.send_and_recv_probe(dest_v4, probe).await
+            self.send_and_recv_probe(dest_v4, probe).await
+        })
     }
 
     fn destination_reached(&self) -> bool {
