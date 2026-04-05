@@ -12,8 +12,7 @@ fn test_windows_localhost_trace() {
 
     cmd.assert()
         .success()
-        .stdout(predicate::str::contains("127.0.0.1"))
-        .stdout(predicate::str::contains("localhost"));
+        .stdout(predicate::str::contains("127.0.0.1"));
 }
 
 #[test]

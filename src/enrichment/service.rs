@@ -178,9 +178,9 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
         ];
 
-        // Add timeout to prevent hanging on network issues
+        // 30s timeout: network tests run ~10x slower under coverage instrumentation
         let results = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(30),
             service.enrich_addresses(addresses.clone()),
         )
         .await
@@ -248,9 +248,9 @@ mod tests {
         // Now wrap in Arc for background processing
         let service = Arc::new(service);
 
-        // Start background enrichment with timeout to prevent hanging
+        // 30s timeout: network tests run ~10x slower under coverage instrumentation
         let results = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
+            std::time::Duration::from_secs(30),
             service.start_background_enrichment(),
         )
         .await
