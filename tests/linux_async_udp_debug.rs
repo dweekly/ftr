@@ -51,8 +51,8 @@ mod tests {
         // Now test the actual async implementation
         eprintln!("\nTesting actual async UDP implementation:");
         use ftr::probe::ProbeInfo;
-        use ftr::socket::async_trait::AsyncProbeSocket;
-        use ftr::socket::linux_async::LinuxAsyncUdpSocket;
+        use ftr::socket::linux::LinuxAsyncUdpSocket;
+        use ftr::socket::traits::ProbeSocket;
 
         match LinuxAsyncUdpSocket::new() {
             Ok(socket) => {

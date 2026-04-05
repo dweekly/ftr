@@ -7,7 +7,6 @@
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::needless_pass_by_value)]
 
-use anyhow::Result;
 use clap::Parser;
 use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError, TracerouteResult};
 use std::net::IpAddr;
@@ -172,7 +171,7 @@ fn main() {
     }
 }
 
-async fn async_main(_process_start: Instant) -> Result<()> {
+async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     // Create Ftr instance with fresh caches
@@ -410,7 +409,7 @@ async fn async_main(_process_start: Instant) -> Result<()> {
 }
 
 /// Resolve target hostname to IP address
-async fn resolve_target(host: &str) -> Result<IpAddr> {
+async fn resolve_target(host: &str) -> Result<IpAddr, Box<dyn std::error::Error>> {
     // Try parsing as IP first
     if let Ok(ip) = host.parse::<IpAddr>() {
         return Ok(ip);
@@ -441,11 +440,11 @@ async fn resolve_target(host: &str) -> Result<IpAddr> {
         }
     }
 
-    anyhow::bail!("Error resolving host: {}", host)
+    Err(format!("Error resolving host: {}", host).into())
 }
 
 /// Display results in JSON format
-fn display_json_results(result: TracerouteResult) -> Result<()> {
+fn display_json_results(result: TracerouteResult) -> Result<(), Box<dyn std::error::Error>> {
     let mut json_output = JsonOutput {
         version: get_version().to_string(),
         target: result.target.clone(),

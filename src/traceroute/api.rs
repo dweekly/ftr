@@ -4,10 +4,9 @@
 //! with immediate response processing using Tokio.
 
 use crate::services::Services;
-use crate::socket::async_factory::create_async_probe_socket_with_options;
-use crate::traceroute::fully_parallel_async_engine::FullyParallelAsyncEngine;
+use crate::socket::factory::create_probe_socket_with_options;
+use crate::traceroute::engine::TracerouteEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
-use anyhow::Result;
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;
@@ -15,13 +14,13 @@ use std::net::IpAddr;
 
 /// Async traceroute API
 #[derive(Debug)]
-pub struct AsyncTraceroute {
+pub struct Traceroute {
     config: TracerouteConfig,
     target_ip: IpAddr,
     services: Option<Services>,
 }
 
-impl AsyncTraceroute {
+impl Traceroute {
     /// Create a new async traceroute from configuration with injected services
     pub async fn new_with_services(
         mut config: TracerouteConfig,
@@ -141,33 +140,18 @@ impl AsyncTraceroute {
             std::env::set_var("FTR_VERBOSE", self.config.verbose.to_string());
         }
 
-        // Create async socket with protocol preference
-        let socket = create_async_probe_socket_with_options(
+        // Create socket with protocol preference
+        let socket = create_probe_socket_with_options(
             self.target_ip,
             timing_config,
             self.config.protocol,
             self.config.socket_mode,
         )
-        .await
-        .map_err(|e| {
-            let err_str = e.to_string();
-            if err_str.contains("TCP traceroute is not yet implemented") {
-                TracerouteError::NotImplemented {
-                    feature: "TCP traceroute".to_string(),
-                }
-            } else if err_str.contains("requires root or CAP_NET_RAW") {
-                TracerouteError::InsufficientPermissions {
-                    required: "root or CAP_NET_RAW capability".to_string(),
-                    suggestion: "Try running with sudo or use UDP mode (--udp)".to_string(),
-                }
-            } else {
-                TracerouteError::SocketError(err_str)
-            }
-        })?;
+        .await?;
 
         // Create and run fully parallel async engine
         let engine = if let Some(services) = self.services {
-            FullyParallelAsyncEngine::new_with_services(
+            TracerouteEngine::new_with_services(
                 socket,
                 self.config.clone(),
                 self.target_ip,
@@ -176,7 +160,7 @@ impl AsyncTraceroute {
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         } else {
-            FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)
+            TracerouteEngine::new(socket, self.config.clone(), self.target_ip)
                 .await
                 .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         };
@@ -204,7 +188,7 @@ pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteErr
 pub async fn trace_with_config_async(
     config: TracerouteConfig,
 ) -> Result<TracerouteResult, TracerouteError> {
-    let traceroute = AsyncTraceroute::new(config).await?;
+    let traceroute = Traceroute::new(config).await?;
     traceroute.run().await
 }
 
@@ -213,7 +197,7 @@ pub(crate) async fn trace_with_services(
     config: TracerouteConfig,
     services: &Services,
 ) -> Result<TracerouteResult, TracerouteError> {
-    let traceroute = AsyncTraceroute::new_with_services(config, services.clone()).await?;
+    let traceroute = Traceroute::new_with_services(config, services.clone()).await?;
     traceroute.run().await
 }
 
@@ -229,7 +213,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -247,7 +231,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -264,7 +248,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -329,7 +313,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -347,7 +331,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -366,7 +350,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let traceroute = AsyncTraceroute::new(config).await.unwrap();
+        let traceroute = Traceroute::new(config).await.unwrap();
 
         // Store original value
         let original = std::env::var("FTR_VERBOSE").ok();

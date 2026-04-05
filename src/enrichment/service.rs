@@ -4,12 +4,12 @@
 
 use crate::services::Services;
 use crate::traceroute::AsnInfo;
-use anyhow::Result;
-use futures::stream::{FuturesUnordered, StreamExt};
+use crate::traceroute::TracerouteError;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task::JoinSet;
 
 /// Enrichment result for an IP address
 #[derive(Debug, Clone)]
@@ -23,16 +23,16 @@ pub struct EnrichmentResult {
 }
 
 /// Async enrichment service
-pub struct AsyncEnrichmentService {
+pub struct EnrichmentService {
     services: Arc<Services>,
     seen_addresses: Arc<RwLock<HashSet<IpAddr>>>,
     enrichment_tx: mpsc::UnboundedSender<IpAddr>,
     enrichment_rx: Arc<RwLock<mpsc::UnboundedReceiver<IpAddr>>>,
 }
 
-impl AsyncEnrichmentService {
+impl EnrichmentService {
     /// Create a new async enrichment service
-    pub async fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self, TracerouteError> {
         let services = Arc::new(Services::new());
         let (enrichment_tx, enrichment_rx) = mpsc::unbounded_channel();
 
@@ -45,10 +45,12 @@ impl AsyncEnrichmentService {
     }
 
     /// Enqueue an IP address for enrichment
-    pub async fn enqueue(&self, addr: IpAddr) -> Result<()> {
+    pub async fn enqueue(&self, addr: IpAddr) -> Result<(), TracerouteError> {
         let mut seen = self.seen_addresses.write().await;
         if seen.insert(addr) {
-            self.enrichment_tx.send(addr)?;
+            self.enrichment_tx
+                .send(addr)
+                .map_err(|e| TracerouteError::Other(e.to_string()))?;
         }
         Ok(())
     }
@@ -56,7 +58,7 @@ impl AsyncEnrichmentService {
     /// Start background enrichment processing
     pub async fn start_background_enrichment(self: Arc<Self>) -> HashMap<IpAddr, EnrichmentResult> {
         let mut results = HashMap::new();
-        let mut enrichment_futures = FuturesUnordered::new();
+        let mut enrichment_futures = JoinSet::new();
 
         // Take ownership of the receiver
         let mut rx = self.enrichment_rx.write().await;
@@ -69,7 +71,7 @@ impl AsyncEnrichmentService {
                     let services = Arc::clone(&self.services);
 
                     // Spawn parallel DNS and ASN lookups
-                    let enrichment_future = async move {
+                    enrichment_futures.spawn(async move {
                         let dns_future = services.rdns.lookup(addr);
                         let asn_future = services.asn.lookup(addr);
 
@@ -83,13 +85,11 @@ impl AsyncEnrichmentService {
                             hostname,
                             asn_info,
                         }
-                    };
-
-                    enrichment_futures.push(enrichment_future);
+                    });
                 }
 
                 // Collect completed enrichments
-                Some(result) = enrichment_futures.next() => {
+                Some(Ok(result)) = enrichment_futures.join_next() => {
                     results.insert(result.addr, result);
                 }
 
@@ -110,12 +110,12 @@ impl AsyncEnrichmentService {
         &self,
         addresses: Vec<IpAddr>,
     ) -> HashMap<IpAddr, EnrichmentResult> {
-        let mut enrichment_futures = FuturesUnordered::new();
+        let mut enrichment_futures = JoinSet::new();
 
         for addr in addresses {
             let services = Arc::clone(&self.services);
 
-            let enrichment_future = async move {
+            enrichment_futures.spawn(async move {
                 let dns_future = services.rdns.lookup(addr);
                 let asn_future = services.asn.lookup(addr);
 
@@ -129,13 +129,11 @@ impl AsyncEnrichmentService {
                     hostname,
                     asn_info,
                 }
-            };
-
-            enrichment_futures.push(enrichment_future);
+            });
         }
 
         let mut results = HashMap::new();
-        while let Some(result) = enrichment_futures.next().await {
+        while let Some(Ok(result)) = enrichment_futures.join_next().await {
             results.insert(result.addr, result);
         }
 
@@ -150,13 +148,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_creation() {
-        let service = AsyncEnrichmentService::new().await;
+        let service = EnrichmentService::new().await;
         assert!(service.is_ok());
     }
 
     #[tokio::test]
     async fn test_enqueue_deduplication() {
-        let service = Arc::new(AsyncEnrichmentService::new().await.unwrap());
+        let service = Arc::new(EnrichmentService::new().await.unwrap());
         let addr: IpAddr = "8.8.8.8".parse().unwrap();
 
         // First enqueue should succeed
@@ -173,7 +171,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrich_addresses() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let addresses = vec![
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
             IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
@@ -234,7 +232,7 @@ mod tests {
     #[tokio::test]
     async fn test_background_enrichment() {
         // Create service without Arc first
-        let mut service = AsyncEnrichmentService::new().await.unwrap();
+        let mut service = EnrichmentService::new().await.unwrap();
         let addr1: IpAddr = "8.8.8.8".parse().unwrap();
         let addr2: IpAddr = "1.1.1.1".parse().unwrap();
 
@@ -264,7 +262,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ipv6_enrichment() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let ipv6_addr: IpAddr = "2001:4860:4860::8888".parse().unwrap();
 
         let results = service.enrich_addresses(vec![ipv6_addr]).await;
@@ -281,7 +279,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_private_ip_enrichment() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let private_addrs = vec![
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),

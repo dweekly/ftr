@@ -154,8 +154,8 @@ pub use traceroute::{
     TracerouteProgress, TracerouteResult,
 };
 
-// Re-export async API
-pub use traceroute::async_api;
+// Re-export API
+pub use traceroute::api;
 
 use services::Services;
 
@@ -259,7 +259,7 @@ impl Ftr {
         config: TracerouteConfig,
     ) -> Result<TracerouteResult, TracerouteError> {
         // Use the services-aware implementation
-        traceroute::async_api::trace_with_services(config, &self.services).await
+        traceroute::api::trace_with_services(config, &self.services).await
     }
 
     /// Look up ASN information for an IP address

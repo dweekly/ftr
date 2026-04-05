@@ -3,23 +3,23 @@
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
-// Async socket modules
-pub mod async_factory;
-pub mod async_trait;
 #[cfg(any(
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "dragonfly"
 ))]
-pub mod bsd_async;
+pub mod bsd;
+pub mod factory;
+pub mod icmp;
 #[cfg(target_os = "linux")]
-pub mod linux_async;
+pub mod linux;
 #[cfg(target_os = "macos")]
-pub mod macos_async;
+pub mod macos;
+pub mod traits;
 pub mod utils;
 #[cfg(target_os = "windows")]
-pub mod windows_async_tokio;
+pub mod windows;
 
 use serde::{Deserialize, Serialize};
 

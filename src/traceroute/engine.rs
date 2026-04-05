@@ -1,4 +1,4 @@
-//! Fully parallel async traceroute engine
+//! Traceroute engine
 //!
 //! This implementation maximizes parallelism by:
 //! 1. Starting ISP detection (STUN) immediately on launch
@@ -6,20 +6,23 @@
 //! 3. Starting ASN/rDNS enrichment immediately as each response arrives
 //! 4. Using caches to avoid duplicate lookups
 
-use crate::enrichment::AsyncEnrichmentService;
+use crate::enrichment::EnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::services::Services;
-use crate::socket::async_trait::AsyncProbeSocket;
+use crate::socket::traits::ProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
+use crate::traceroute::TracerouteError;
 use crate::traceroute::{AsnInfo, ClassifiedHopInfo, SegmentType, TracerouteResult};
-use anyhow::Result;
-use futures::stream::{FuturesUnordered, StreamExt};
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
+#[cfg(test)]
+#[path = "engine_test.rs"]
+mod engine_test;
 #[cfg(test)]
 #[path = "sandwich_test.rs"]
 mod sandwich_test;
@@ -33,25 +36,29 @@ struct EnrichmentResult {
 }
 
 /// Fully parallel async traceroute engine
-pub struct FullyParallelAsyncEngine {
-    socket: Arc<Box<dyn AsyncProbeSocket>>,
+pub struct TracerouteEngine {
+    socket: Arc<Box<dyn ProbeSocket>>,
     config: crate::TracerouteConfig,
     target: IpAddr,
-    enrichment_service: Arc<AsyncEnrichmentService>,
+    enrichment_service: Arc<EnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
     services: Option<Arc<Services>>,
 }
 
-impl FullyParallelAsyncEngine {
+impl TracerouteEngine {
     /// Create a new fully parallel async traceroute engine with injected services
     pub async fn new_with_services(
-        socket: Box<dyn AsyncProbeSocket>,
+        socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
         services: Arc<Services>,
-    ) -> Result<Self> {
+    ) -> Result<Self, TracerouteError> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+        let enrichment_service = Arc::new(
+            EnrichmentService::new()
+                .await
+                .map_err(|e| TracerouteError::Other(e.to_string()))?,
+        );
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -65,12 +72,16 @@ impl FullyParallelAsyncEngine {
 
     /// Create a new fully parallel async traceroute engine (uses global caches)
     pub async fn new(
-        socket: Box<dyn AsyncProbeSocket>,
+        socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
-    ) -> Result<Self> {
+    ) -> Result<Self, TracerouteError> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+        let enrichment_service = Arc::new(
+            EnrichmentService::new()
+                .await
+                .map_err(|e| TracerouteError::Other(e.to_string()))?,
+        );
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -83,7 +94,7 @@ impl FullyParallelAsyncEngine {
     }
 
     /// Run the fully parallel async traceroute
-    pub async fn run(&self) -> Result<TracerouteResult> {
+    pub async fn run(&self) -> Result<TracerouteResult, TracerouteError> {
         let start_time = Instant::now();
         trace_time!(
             self.config.verbose,
@@ -172,7 +183,7 @@ impl FullyParallelAsyncEngine {
         };
 
         // 2. Create futures for all probes with immediate enrichment
-        let mut probe_futures = FuturesUnordered::new();
+        let mut probe_futures = JoinSet::new();
         let mut sequence = 1u16;
 
         trace_time!(
@@ -263,7 +274,7 @@ impl FullyParallelAsyncEngine {
                     }
                 };
 
-                probe_futures.push(probe_future);
+                probe_futures.spawn(probe_future);
             }
         }
 
@@ -282,7 +293,7 @@ impl FullyParallelAsyncEngine {
         trace_time!(self.config.verbose, "Starting response collection");
 
         let collection_future = async {
-            while let Some(response) = probe_futures.next().await {
+            while let Some(Ok(response)) = probe_futures.join_next().await {
                 if let Some(resp) = response {
                     let ttl = resp.ttl;
                     let is_destination = resp.is_destination;
@@ -315,8 +326,8 @@ impl FullyParallelAsyncEngine {
                             sleep(Duration::from_millis(25)).await;
 
                             // Collect any remaining
-                            while let Ok(Some(response)) =
-                                timeout(Duration::from_millis(10), probe_futures.next()).await
+                            while let Ok(Some(Ok(response))) =
+                                timeout(Duration::from_millis(10), probe_futures.join_next()).await
                             {
                                 if let Some(resp) = response {
                                     responses.push(resp);
@@ -354,7 +365,7 @@ impl FullyParallelAsyncEngine {
             >,
         >,
         dest_asn_future: Option<tokio::task::JoinHandle<Option<AsnInfo>>>,
-    ) -> Result<TracerouteResult> {
+    ) -> Result<TracerouteResult, TracerouteError> {
         let mut hops: HashMap<u8, Vec<ProbeResponse>> = HashMap::new();
 
         // Group responses by TTL
@@ -539,18 +550,12 @@ impl FullyParallelAsyncEngine {
 
         // Determine protocol and socket mode
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::async_trait::ProbeMode::DgramIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Dgram)
-            }
-            crate::socket::async_trait::ProbeMode::WindowsIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
-            crate::socket::async_trait::ProbeMode::UdpWithRecverr => {
+            crate::socket::traits::ProbeMode::DgramIcmp => (ProbeProtocol::Icmp, SocketMode::Dgram),
+            crate::socket::traits::ProbeMode::WindowsIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
+            crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
             }
-            crate::socket::async_trait::ProbeMode::RawIcmp => {
-                (ProbeProtocol::Icmp, SocketMode::Raw)
-            }
+            crate::socket::traits::ProbeMode::RawIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
         };
 
         trace_time!(

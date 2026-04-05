@@ -5,7 +5,7 @@ use crate::traceroute::{is_cgnat, is_internal_ip, AsnInfo};
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
 use hickory_resolver::TokioResolver;
-use ipnet::Ipv4Net;
+use ip_network::Ipv4Network;
 use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -61,7 +61,7 @@ pub(crate) async fn lookup_asn_with_cache(
         };
 
         // Cache the result
-        if let Ok(net) = asn_info.prefix.parse::<Ipv4Net>() {
+        if let Ok(net) = asn_info.prefix.parse::<Ipv4Network>() {
             let cache_write = cache.write().await;
             cache_write.insert(net, asn_info.clone());
         }
@@ -125,9 +125,9 @@ pub(crate) async fn lookup_asn_with_cache(
         String::new()
     };
 
-    // Parse prefix to create Ipv4Net
+    // Parse prefix to create Ipv4Network
     let net = prefix
-        .parse::<Ipv4Net>()
+        .parse::<Ipv4Network>()
         .map_err(|_| AsnLookupError::InvalidFormat)?;
 
     // Query for AS name

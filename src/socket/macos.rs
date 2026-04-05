@@ -6,18 +6,15 @@
 //! TimeExceeded messages when used with async I/O.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::socket::icmp;
+use crate::socket::traits::{ProbeMode, ProbeSocket};
+use crate::traceroute::TracerouteError;
 use crate::TimingConfig;
-use anyhow::{anyhow, Context, Result};
-use async_trait::async_trait;
-use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
-use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::Packet;
-use pnet::util::checksum as pnet_checksum;
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
+use std::future::Future;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -41,12 +38,12 @@ pub struct MacOSAsyncIcmpSocket {
 
 impl MacOSAsyncIcmpSocket {
     /// Create a new macOS async ICMP socket
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, TracerouteError> {
         Self::new_with_config(TimingConfig::default())
     }
 
     /// Create a new macOS async ICMP socket with timing configuration
-    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self> {
+    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
         let verbose = std::env::var("FTR_VERBOSE")
             .ok()
             .and_then(|v| v.parse::<u8>().ok())
@@ -75,20 +72,19 @@ impl MacOSAsyncIcmpSocket {
         dest: IpAddr,
     ) -> Option<ProbeResponse> {
         // Parse outer IPv4 packet
-        let outer_ipv4_packet = Ipv4Packet::new(packet_data)?;
-        let icmp_data = outer_ipv4_packet.payload();
-        let icmp_packet = IcmpPacket::new(icmp_data)?;
+        let icmp_data = icmp::ipv4_payload(packet_data)?;
+        let hdr = icmp::parse_icmp_header(icmp_data)?;
 
         trace_time!(
             self.verbose,
-            "Received ICMP type {:?} code {:?} from {}",
-            icmp_packet.get_icmp_type(),
-            icmp_packet.get_icmp_code(),
+            "Received ICMP type {} code {} from {}",
+            hdr.icmp_type,
+            hdr.icmp_code,
             from_addr
         );
 
-        match icmp_packet.get_icmp_type() {
-            IcmpTypes::TimeExceeded | IcmpTypes::DestinationUnreachable => {
+        match hdr.icmp_type {
+            icmp::ICMP_TIME_EXCEEDED | icmp::ICMP_DEST_UNREACHABLE => {
                 // Parse the original packet that triggered this response
                 let original_datagram_bytes = if icmp_data.len() >= ICMP_ERROR_HEADER_LEN_BYTES {
                     &icmp_data[ICMP_ERROR_HEADER_LEN_BYTES..]
@@ -100,8 +96,8 @@ impl MacOSAsyncIcmpSocket {
                     return None;
                 }
 
-                let inner_ip_packet = Ipv4Packet::new(original_datagram_bytes)?;
-                let original_icmp_bytes = inner_ip_packet.payload();
+                let (inner_hdr_len, _) = icmp::parse_ipv4_header(original_datagram_bytes)?;
+                let original_icmp_bytes = &original_datagram_bytes[inner_hdr_len..];
 
                 if original_icmp_bytes.len() < 8 {
                     return None;
@@ -114,14 +110,11 @@ impl MacOSAsyncIcmpSocket {
                 let original_seq =
                     u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
 
-                if original_type == IcmpTypes::EchoRequest.0
+                if original_type == icmp::ICMP_ECHO_REQUEST
                     && original_id == self.icmp_identifier
                     && original_seq == expected_sequence
                 {
-                    let is_destination = matches!(
-                        icmp_packet.get_icmp_type(),
-                        IcmpTypes::DestinationUnreachable
-                    );
+                    let is_destination = hdr.icmp_type == icmp::ICMP_DEST_UNREACHABLE;
                     return Some(ProbeResponse {
                         from_addr,
                         sequence: expected_sequence,
@@ -133,12 +126,9 @@ impl MacOSAsyncIcmpSocket {
                     });
                 }
             }
-            IcmpTypes::EchoReply => {
-                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet())
-                {
-                    if echo_reply_pkt.get_identifier() == self.icmp_identifier
-                        && echo_reply_pkt.get_sequence_number() == expected_sequence
-                    {
+            icmp::ICMP_ECHO_REPLY => {
+                if let Some((reply_id, reply_seq)) = icmp::parse_echo_reply(icmp_data) {
+                    if reply_id == self.icmp_identifier && reply_seq == expected_sequence {
                         let is_destination = from_addr == dest;
                         return Some(ProbeResponse {
                             from_addr,
@@ -159,49 +149,44 @@ impl MacOSAsyncIcmpSocket {
     }
 
     /// Send an ICMP echo request and wait for response
-    async fn send_and_recv_probe(&self, dest: Ipv4Addr, probe: ProbeInfo) -> Result<ProbeResponse> {
+    async fn send_and_recv_probe(
+        &self,
+        dest: Ipv4Addr,
+        probe: ProbeInfo,
+    ) -> Result<ProbeResponse, TracerouteError> {
         let send_start = probe.sent_at;
 
         // Create a new DGRAM ICMP socket for this probe
-        let socket = Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4))
-            .context("Failed to create ICMP socket")?;
+        let socket =
+            Socket2::new(Domain::IPV4, Type::DGRAM, Some(Protocol::ICMPV4)).map_err(|e| {
+                TracerouteError::SocketError(format!("Failed to create ICMP socket: {e}"))
+            })?;
 
         // Set TTL
         socket
             .set_ttl_v4(probe.ttl as u32)
-            .context("Failed to set TTL")?;
+            .map_err(|e| TracerouteError::SocketError(format!("Failed to set TTL: {e}")))?;
 
         // Set non-blocking
-        socket.set_nonblocking(true)?;
+        socket.set_nonblocking(true).map_err(|e| {
+            TracerouteError::SocketError(format!("Failed to set non-blocking: {e}"))
+        })?;
 
         // Build ICMP Echo Request packet
-        let mut icmp_buf =
-            vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
-        let mut echo_req_packet = MutableEchoRequestPacket::new(&mut icmp_buf)
-            .ok_or_else(|| anyhow!("Failed to create ICMP packet"))?;
-
-        echo_req_packet.set_icmp_type(IcmpTypes::EchoRequest);
-        echo_req_packet.set_icmp_code(pnet::packet::icmp::IcmpCode(0));
-        echo_req_packet.set_identifier(self.icmp_identifier);
-        echo_req_packet.set_sequence_number(probe.sequence);
-
-        // Create payload
         let payload_data = (self.icmp_identifier as u32) << 16 | (probe.sequence as u32);
         let payload_bytes = payload_data.to_be_bytes();
         let mut final_payload = vec![0u8; ICMP_ECHO_PAYLOAD_SIZE];
         let bytes_to_copy = payload_bytes.len().min(ICMP_ECHO_PAYLOAD_SIZE);
         final_payload[..bytes_to_copy].copy_from_slice(&payload_bytes[..bytes_to_copy]);
-        echo_req_packet.set_payload(&final_payload);
 
-        // Calculate checksum
-        let checksum = pnet_checksum(echo_req_packet.packet(), 1);
-        echo_req_packet.set_checksum(checksum);
+        let icmp_buf =
+            icmp::build_echo_request(self.icmp_identifier, probe.sequence, &final_payload);
 
         // Send the packet
         let dest_addr = SocketAddr::new(IpAddr::V4(dest), 0);
-        socket
-            .send_to(echo_req_packet.packet(), &dest_addr.into())
-            .context("Failed to send ICMP packet")?;
+        socket.send_to(&icmp_buf, &dest_addr.into()).map_err(|e| {
+            TracerouteError::ProbeSendError(format!("Failed to send ICMP packet: {e}"))
+        })?;
 
         trace_time!(
             self.verbose,
@@ -215,7 +200,9 @@ impl MacOSAsyncIcmpSocket {
         let (tx, rx) = oneshot::channel();
 
         // Spawn task to receive response
-        let socket_clone = socket.try_clone()?;
+        let socket_clone = socket
+            .try_clone()
+            .map_err(|e| TracerouteError::SocketError(format!("Failed to clone socket: {e}")))?;
         let icmp_identifier = self.icmp_identifier;
         let sequence = probe.sequence;
         let ttl = probe.ttl;
@@ -338,7 +325,9 @@ impl MacOSAsyncIcmpSocket {
             Ok(Ok(response)) => Ok(response),
             Ok(Err(_)) => {
                 // Channel closed
-                Err(anyhow!("Response channel closed unexpectedly"))
+                Err(TracerouteError::SocketError(
+                    "Response channel closed unexpectedly".to_string(),
+                ))
             }
             Err(_) => {
                 // Timeout
@@ -356,22 +345,27 @@ impl MacOSAsyncIcmpSocket {
     }
 }
 
-#[async_trait]
-impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
+impl ProbeSocket for MacOSAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         ProbeMode::DgramIcmp
     }
 
-    async fn send_probe_and_recv(&self, dest: IpAddr, probe: ProbeInfo) -> Result<ProbeResponse> {
-        let dest_v4 = match dest {
-            IpAddr::V4(addr) => addr,
-            _ => return Err(anyhow!("Only IPv4 is supported")),
-        };
+    fn send_probe_and_recv(
+        &self,
+        dest: IpAddr,
+        probe: ProbeInfo,
+    ) -> Pin<Box<dyn Future<Output = Result<ProbeResponse, TracerouteError>> + Send + '_>> {
+        Box::pin(async move {
+            let dest_v4 = match dest {
+                IpAddr::V4(addr) => addr,
+                _ => return Err(TracerouteError::Ipv6NotSupported),
+            };
 
-        // Increment pending count
-        self.pending_count.fetch_add(1, Ordering::Relaxed);
+            // Increment pending count
+            self.pending_count.fetch_add(1, Ordering::Relaxed);
 
-        self.send_and_recv_probe(dest_v4, probe).await
+            self.send_and_recv_probe(dest_v4, probe).await
+        })
     }
 
     fn destination_reached(&self) -> bool {

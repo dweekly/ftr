@@ -156,24 +156,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_concurrent_lookups() {
-        use futures::future::join_all;
-        
+        use tokio::task::JoinSet;
+
         let ips = vec![
             Ipv4Addr::new(8, 8, 8, 8),
             Ipv4Addr::new(1, 1, 1, 1),
             Ipv4Addr::new(9, 9, 9, 9),
         ];
-        
-        let futures: Vec<_> = ips
-            .into_iter()
-            .map(|ip| lookup_asn(ip, None))
-            .collect();
-        
-        let results = join_all(futures).await;
-        
+
+        let mut set = JoinSet::new();
+        for ip in ips {
+            set.spawn(async move { lookup_asn(ip, None).await });
+        }
+
         // All lookups should complete without panic
-        for result in results {
-            assert!(result.is_ok() || result.is_err()); // Just verify it completes
+        while let Some(result) = set.join_next().await {
+            let lookup_result = result.expect("task should not panic");
+            assert!(lookup_result.is_ok() || lookup_result.is_err());
         }
     }
 
