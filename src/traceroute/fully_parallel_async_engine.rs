@@ -11,7 +11,6 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::services::Services;
 use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
-use crate::trace_time;
 use crate::traceroute::{AsnInfo, ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
 use futures::stream::{FuturesUnordered, StreamExt};

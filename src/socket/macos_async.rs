@@ -7,7 +7,6 @@
 
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
-use crate::trace_time;
 use crate::TimingConfig;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;

@@ -515,8 +515,7 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
                 .map_or("*".to_string(), |r| format!("{:.3} ms", r));
 
             // Format hostname and address
-            let host_display = if !no_rdns && hop.hostname.is_some() {
-                let hostname = hop.hostname.as_ref().expect("hostname checked above");
+            let host_display = if let (false, Some(hostname)) = (no_rdns, &hop.hostname) {
                 if hop.addr.is_some() {
                     format!("{} ({})", hostname, addr_str)
                 } else {
@@ -567,11 +566,10 @@ fn display_text_results(result: TracerouteResult, no_enrich: bool, no_rdns: bool
 
     // Display ISP info if available
     if let Some(isp_info) = &result.isp_info {
-        if !no_rdns && isp_info.hostname.is_some() {
+        if let (false, Some(hostname)) = (no_rdns, &isp_info.hostname) {
             println!(
                 "\nDetected public IP: {} ({})",
-                isp_info.public_ip,
-                isp_info.hostname.as_ref().expect("hostname checked above")
+                isp_info.public_ip, hostname
             );
         } else {
             println!("\nDetected public IP: {}", isp_info.public_ip);

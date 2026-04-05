@@ -91,13 +91,9 @@ mod tests {
         // So we just check that the function completes without panicking
         match result {
             Ok(hostname) => {
+                // PTR resolution succeeded — just verify we got a non-empty string.
+                // The actual value is system-dependent (localhost, loopback, machine hostname, etc.)
                 assert!(!hostname.is_empty());
-                // Common localhost names
-                assert!(
-                    hostname.contains("localhost")
-                        || hostname.contains("127.0.0.1")
-                        || hostname.contains("loopback")
-                );
             }
             Err(_) => {
                 // It's okay if localhost doesn't have a PTR record

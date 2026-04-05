@@ -383,20 +383,45 @@ The parallel approach maintains accuracy while significantly reducing wait time.
 
 MIT License - see LICENSE file for details
 
-## Contributing
+### Segment Labels
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Author
-
-David Weekly (dweekly)
-#### Segment Labels
-
-When enrichment is enabled (default), segments are shown as:
+When enrichment is enabled (default), each hop is labeled:
 - `LAN`: local/private addresses
 - `ISP`: your provider’s network (includes CGNAT range)
 - `TRANSIT`: networks after ISP with different ASNs than the destination
 - `DESTINATION`: networks in the destination’s ASN
 - `UNKNOWN`: insufficient data to classify
 
-The JSON output’s `segment` field also reflects these refined labels when available.
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [CHANGELOG.md](CHANGELOG.md) | Release history and migration guides |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
+| [TODO.md](TODO.md) | Active development tasks and roadmap |
+| [CLAUDE.md](CLAUDE.md) | AI agent instructions for working with this codebase |
+| [docs/LIBRARY_USAGE.md](docs/LIBRARY_USAGE.md) | Using ftr as a Rust library (API examples, configuration) |
+| [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) | Secure release workflow |
+| [docs/MULTI_MODE.md](docs/MULTI_MODE.md) | Multi-probe per hop feature |
+| [docs/UDP_TRACEROUTE_LINUX.md](docs/UDP_TRACEROUTE_LINUX.md) | Linux UDP traceroute and IP_RECVERR |
+| [docs/TIMING_CONFIGURATION.md](docs/TIMING_CONFIGURATION.md) | Timing system for performance tuning |
+| [docs/WINDOWS_ASYNC_FINDINGS.md](docs/WINDOWS_ASYNC_FINDINGS.md) | Windows async ICMP implementation analysis |
+| [docs/RUST_BEST_PRACTICES.md](docs/RUST_BEST_PRACTICES.md) | Rust coding standards for this project |
+| [docs/IXP_DETECTION_PROPOSAL.md](docs/IXP_DETECTION_PROPOSAL.md) | Proposed IXP/peering point detection (future) |
+| [docs/WHOIS_ENHANCEMENT_PROPOSAL.md](docs/WHOIS_ENHANCEMENT_PROPOSAL.md) | Proposed WHOIS fallback for network ownership (future) |
+| [docs/MODERNIZATION_PLAN.md](docs/MODERNIZATION_PLAN.md) | Dependency reduction and codebase modernization roadmap |
+| [scripts/README.md](scripts/README.md) | Cross-platform VM testing scripts |
+| [scripts/vagrant-quick-start.md](scripts/vagrant-quick-start.md) | Automated VM testing with Vagrant |
+| [.githooks/README.md](.githooks/README.md) | Git hooks setup and usage |
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Author
+
+David Weekly ([dweekly](https://github.com/dweekly))
