@@ -200,11 +200,10 @@ fn test_rtt_precision_helper() {
 
 #[test]
 fn test_v6_version_string() {
-    // Ensure we're testing v0.6.0
     let version = env!("CARGO_PKG_VERSION");
     assert!(
-        version.starts_with("0.6"),
-        "Expected v0.6.x, got {}",
+        version.starts_with("0."),
+        "Expected 0.x.y version, got {}",
         version
     );
 }

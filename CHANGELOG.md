@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Renamed modules — `async_api` -> `api`, `async_engine` -> `engine`, `async_factory` -> `factory`, `async_trait` -> `traits`, `async_service` -> `service`, platform socket files drop `_async` suffix
 - **BREAKING**: Renamed types — `AsyncProbeSocket` -> `ProbeSocket`, `AsyncEnrichmentService` -> `EnrichmentService`, `FullyParallelAsyncEngine` -> `TracerouteEngine`, `AsyncTraceroute` -> `Traceroute`
 - **BREAKING**: All functions now return `Result<T, TracerouteError>` instead of `anyhow::Result<T>`
+- Replaced `hickory-resolver` with custom DNS client (`src/dns/resolver.rs`, ~300 lines) — A, PTR, and TXT queries over UDP to Cloudflare DNS
 - Replaced `reqwest` with `ureq` for public IP detection (simple HTTPS GETs don't need hyper/tower/http)
 - Replaced `pnet` with manual ICMP packet parsing (`src/socket/icmp.rs`, ~130 lines)
 - Replaced `FuturesUnordered` with `tokio::task::JoinSet`
@@ -21,27 +22,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Consolidated `ipnet` usage to `ip_network` (already a dependency)
 
 ### Removed
-- Dependencies: `anyhow`, `async-trait`, `futures`, `ipnet`, `lazy_static`, `pnet`, `reqwest`, `tokio-util`
-- Dead code: unused `TracerouteEngine` (old sequential engine replaced by parallel engine in v0.4.0)
-- Orphaned release docs: `RELEASE_CHECKLIST_v0.6.0.md`, `RELEASE_NOTES_v0.6.0.md`, `RELEASE_v0.6.0_SUMMARY.md`
-- `AGENTS.md` (consolidated into `CLAUDE.md`)
+- Dependencies: `anyhow`, `async-trait`, `futures`, `hickory-resolver`, `ipnet`, `lazy_static`, `pnet`, `reqwest`, `tokio-util`
+- Dead code: unused sequential engine (replaced by parallel engine in v0.4.0)
+- Orphaned release docs and stale documentation files
 
 ### Added
-- `src/socket/icmp.rs` — manual ICMP echo request construction, IPv4/ICMP header parsing, RFC 1071 checksum (with 10 unit tests)
-- `ureq` dependency (lightweight blocking HTTP client, ~5 transitive deps vs reqwest's ~50)
-- Documentation index in README.md linking every .md file in the project
-- `docs/MODERNIZATION_PLAN.md` — dependency reduction roadmap
+- `src/dns/resolver.rs` — custom async DNS resolver with 31 unit tests (A, PTR, TXT queries, name compression, error handling)
+- `src/socket/icmp.rs` — manual ICMP echo request construction, IPv4/ICMP header parsing, RFC 1071 checksum (10 unit tests)
+- `src/traceroute/engine_test.rs` — mock-based engine tests (7 tests for probe sequencing, timeouts, early exit)
+- `ureq` dependency (lightweight blocking HTTP client)
+- Documentation index in README.md
 
 ### Fixed
-- 2 security advisories (updated `bytes` 1.10.1->1.11.1, `tracing-subscriber` 0.3.19->0.3.20)
-- 5 clippy errors (unused imports, unnecessary unwrap patterns)
-- Flaky `test_reverse_dns_localhost` (overly strict PTR assertion)
-- Stale CHANGELOG comparison links for v0.4.0-v0.6.0
+- 2 security advisories (updated `bytes`, `tracing-subscriber`)
+- Clippy errors (unused imports, unnecessary unwrap patterns)
+- Flaky network-dependent tests (added timeouts for coverage instrumentation)
+- Stale CHANGELOG comparison links
 
 ### Metrics
-- Direct dependencies: 16 -> 11
-- Transitive crates: 296 -> 267
-- Tests: 126 -> 136
+- Direct dependencies: 16 -> 10
+- Transitive crates: 296 -> 170
+- Release binary: 1.4 MB -> 1.0 MB
+- Tests: 126 -> 170
 
 ## [0.6.0] - 2025-08-29
 

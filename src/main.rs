@@ -408,6 +408,11 @@ async fn resolve_target(host: &str) -> Result<IpAddr, Box<dyn std::error::Error>
         return Ok(ip);
     }
 
+    // Handle localhost without DNS
+    if host == "localhost" {
+        return Ok(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
+    }
+
     // Use our DNS resolver
     let addrs = ftr::dns::resolve_a(host)
         .await
