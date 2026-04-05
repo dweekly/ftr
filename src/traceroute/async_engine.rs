@@ -8,7 +8,7 @@ use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::{ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
-use futures::stream::{FuturesUnordered, StreamExt};
+use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ impl AsyncTracerouteEngine {
             self.target
         );
 
-        let mut probe_futures = FuturesUnordered::new();
+        let mut probe_futures = JoinSet::new();
         let mut responses: Vec<ProbeResponse> = Vec::new();
         let mut sequence = 1u16;
 
@@ -90,7 +90,7 @@ impl AsyncTracerouteEngine {
                     result
                 };
 
-                probe_futures.push(probe_future);
+                probe_futures.spawn(probe_future);
             }
         }
         trace_time!(
@@ -104,7 +104,7 @@ impl AsyncTracerouteEngine {
         let collection_start = Instant::now();
         trace_time!(self.config.verbose, "Starting response collection");
         let collection_future = async {
-            while let Some(response) = probe_futures.next().await {
+            while let Some(Ok(response)) = probe_futures.join_next().await {
                 if let Some(resp) = response {
                     let ttl = resp.ttl;
                     let is_destination = resp.is_destination;
@@ -143,8 +143,8 @@ impl AsyncTracerouteEngine {
 
                             // Collect any remaining responses that arrived
                             let mut late_count = 0;
-                            while let Ok(Some(response)) =
-                                timeout(Duration::from_millis(10), probe_futures.next()).await
+                            while let Ok(Some(Ok(response))) =
+                                timeout(Duration::from_millis(10), probe_futures.join_next()).await
                             {
                                 if let Some(resp) = response {
                                     responses.push(resp);

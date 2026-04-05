@@ -5,7 +5,7 @@
 use crate::services::Services;
 use crate::traceroute::AsnInfo;
 use anyhow::Result;
-use futures::stream::{FuturesUnordered, StreamExt};
+use tokio::task::JoinSet;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -56,7 +56,7 @@ impl AsyncEnrichmentService {
     /// Start background enrichment processing
     pub async fn start_background_enrichment(self: Arc<Self>) -> HashMap<IpAddr, EnrichmentResult> {
         let mut results = HashMap::new();
-        let mut enrichment_futures = FuturesUnordered::new();
+        let mut enrichment_futures = JoinSet::new();
 
         // Take ownership of the receiver
         let mut rx = self.enrichment_rx.write().await;
@@ -69,7 +69,7 @@ impl AsyncEnrichmentService {
                     let services = Arc::clone(&self.services);
 
                     // Spawn parallel DNS and ASN lookups
-                    let enrichment_future = async move {
+                    enrichment_futures.spawn(async move {
                         let dns_future = services.rdns.lookup(addr);
                         let asn_future = services.asn.lookup(addr);
 
@@ -83,13 +83,11 @@ impl AsyncEnrichmentService {
                             hostname,
                             asn_info,
                         }
-                    };
-
-                    enrichment_futures.push(enrichment_future);
+                    });
                 }
 
                 // Collect completed enrichments
-                Some(result) = enrichment_futures.next() => {
+                Some(Ok(result)) = enrichment_futures.join_next() => {
                     results.insert(result.addr, result);
                 }
 
@@ -110,12 +108,12 @@ impl AsyncEnrichmentService {
         &self,
         addresses: Vec<IpAddr>,
     ) -> HashMap<IpAddr, EnrichmentResult> {
-        let mut enrichment_futures = FuturesUnordered::new();
+        let mut enrichment_futures = JoinSet::new();
 
         for addr in addresses {
             let services = Arc::clone(&self.services);
 
-            let enrichment_future = async move {
+            enrichment_futures.spawn(async move {
                 let dns_future = services.rdns.lookup(addr);
                 let asn_future = services.asn.lookup(addr);
 
@@ -129,13 +127,11 @@ impl AsyncEnrichmentService {
                     hostname,
                     asn_info,
                 }
-            };
-
-            enrichment_futures.push(enrichment_future);
+            });
         }
 
         let mut results = HashMap::new();
-        while let Some(result) = enrichment_futures.next().await {
+        while let Some(Ok(result)) = enrichment_futures.join_next().await {
             results.insert(result.addr, result);
         }
 

@@ -23,7 +23,14 @@
       "WebFetch(domain:www.peeringdb.com)",
       "WebFetch(domain:docs.peeringdb.com)",
       "Bash(~/.cargo/bin/cargo test --lib)",
-      "Bash(~/.cargo/bin/cargo test:*)"
+      "Bash(~/.cargo/bin/cargo test:*)",
+      "Bash(cargo fix:*)",
+      "Bash(grep:*)",
+      "Bash(wc -l ~/dev/SwiftFTR/Sources/SwiftFTR/*.swift)",
+      "Bash(wc -l ~/dev/ftr/src/**/*.rs)",
+      "Bash(cargo tree:*)",
+      "Bash(wc -l src/**/*.rs src/*.rs)",
+      "Bash(cargo clippy:*)"
     ],
     "deny": []
   }

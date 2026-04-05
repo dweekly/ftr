@@ -13,7 +13,7 @@ use crate::socket::async_trait::AsyncProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::{AsnInfo, ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
-use futures::stream::{FuturesUnordered, StreamExt};
+use tokio::task::JoinSet;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -172,7 +172,7 @@ impl FullyParallelAsyncEngine {
         };
 
         // 2. Create futures for all probes with immediate enrichment
-        let mut probe_futures = FuturesUnordered::new();
+        let mut probe_futures = JoinSet::new();
         let mut sequence = 1u16;
 
         trace_time!(
@@ -263,7 +263,7 @@ impl FullyParallelAsyncEngine {
                     }
                 };
 
-                probe_futures.push(probe_future);
+                probe_futures.spawn(probe_future);
             }
         }
 
@@ -282,7 +282,7 @@ impl FullyParallelAsyncEngine {
         trace_time!(self.config.verbose, "Starting response collection");
 
         let collection_future = async {
-            while let Some(response) = probe_futures.next().await {
+            while let Some(Ok(response)) = probe_futures.join_next().await {
                 if let Some(resp) = response {
                     let ttl = resp.ttl;
                     let is_destination = resp.is_destination;
@@ -315,8 +315,8 @@ impl FullyParallelAsyncEngine {
                             sleep(Duration::from_millis(25)).await;
 
                             // Collect any remaining
-                            while let Ok(Some(response)) =
-                                timeout(Duration::from_millis(10), probe_futures.next()).await
+                            while let Ok(Some(Ok(response))) =
+                                timeout(Duration::from_millis(10), probe_futures.join_next()).await
                             {
                                 if let Some(resp) = response {
                                     responses.push(resp);
