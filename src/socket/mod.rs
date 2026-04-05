@@ -4,6 +4,7 @@ use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 pub mod factory;
+pub mod icmp;
 pub mod traits;
 #[cfg(any(
     target_os = "freebsd",

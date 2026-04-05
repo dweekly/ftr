@@ -7,7 +7,7 @@ use crate::probe::{ProbeInfo, ProbeResponse};
 use anyhow::{Context, Result};
 use std::future::Future;
 use std::pin::Pin;
-use pnet::packet::{MutablePacket, Packet};
+use crate::socket::icmp;
 use std::mem;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::unix::io::AsRawFd;
@@ -369,35 +369,11 @@ impl LinuxAsyncIcmpSocket {
 
     /// Create ICMP echo request packet
     fn create_echo_request(&self, sequence: u16) -> Vec<u8> {
-        use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
-        use pnet::packet::icmp::IcmpTypes;
-        use pnet::packet::Packet;
-        use pnet::util::checksum;
+        let mut payload = vec![0u8; 16];
+        let tag = b"ftr-traceroute";
+        payload[..tag.len()].copy_from_slice(tag);
 
-        const ICMP_HEADER_SIZE: usize = 8;
-        const ICMP_PAYLOAD_SIZE: usize = 16;
-        const PACKET_SIZE: usize = ICMP_HEADER_SIZE + ICMP_PAYLOAD_SIZE;
-
-        let mut buf = vec![0u8; PACKET_SIZE];
-
-        // Create ICMP packet
-        if let Some(mut packet) = MutableEchoRequestPacket::new(&mut buf) {
-            packet.set_icmp_type(IcmpTypes::EchoRequest);
-            packet.set_identifier(self.icmp_identifier);
-            packet.set_sequence_number(sequence);
-
-            // Set payload
-            let payload = b"ftr-traceroute";
-            let payload_slice = packet.payload_mut();
-            payload_slice[..payload.len()].copy_from_slice(payload);
-
-            // Calculate checksum
-            let icmp_packet = packet.to_immutable();
-            let checksum = checksum(icmp_packet.packet(), 1);
-            packet.set_checksum(checksum);
-        }
-
-        buf
+        icmp::build_echo_request(self.icmp_identifier, sequence, &payload)
     }
 
     /// Parse ICMP response
@@ -407,71 +383,30 @@ impl LinuxAsyncIcmpSocket {
         from_addr: IpAddr,
         sequence: u16,
     ) -> Option<(IpAddr, bool)> {
-        use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
-        use pnet::packet::ipv4::Ipv4Packet;
+        let icmp_data = icmp::ipv4_payload(data)?;
+        let hdr = icmp::parse_icmp_header(icmp_data)?;
 
-        // Parse IPv4 packet
-        let ipv4_packet = Ipv4Packet::new(data)?;
-        let icmp_data = ipv4_packet.payload();
-        let icmp_packet = IcmpPacket::new(icmp_data)?;
-
-        match icmp_packet.get_icmp_type() {
-            IcmpTypes::EchoReply => {
-                // Parse echo reply
-                if let Some(echo_reply) = echo_reply::EchoReplyPacket::new(icmp_data) {
-                    if echo_reply.get_identifier() == self.icmp_identifier
-                        && echo_reply.get_sequence_number() == sequence
-                    {
-                        return Some((from_addr, true)); // is_destination = true
+        match hdr.icmp_type {
+            icmp::ICMP_ECHO_REPLY => {
+                if let Some((id, seq)) = icmp::parse_echo_reply(icmp_data) {
+                    if id == self.icmp_identifier && seq == sequence {
+                        return Some((from_addr, true));
                     }
                 }
             }
-            IcmpTypes::TimeExceeded => {
-                // Extract original packet from ICMP error
+            icmp::ICMP_TIME_EXCEEDED | icmp::ICMP_DEST_UNREACHABLE => {
                 const ICMP_ERROR_HEADER_LEN: usize = 8;
-                const IPV4_HEADER_MIN_LEN: usize = 20;
 
-                if icmp_data.len() >= ICMP_ERROR_HEADER_LEN + IPV4_HEADER_MIN_LEN {
+                if icmp_data.len() >= ICMP_ERROR_HEADER_LEN {
                     let inner_data = &icmp_data[ICMP_ERROR_HEADER_LEN..];
-                    if let Some(inner_ipv4) = Ipv4Packet::new(inner_data) {
-                        let inner_icmp_data = inner_ipv4.payload();
-
-                        // Check if this is our packet by examining the first 8 bytes
-                        if inner_icmp_data.len() >= 8 {
-                            let inner_type = inner_icmp_data[0];
-                            if inner_type == 8 {
-                                // Echo Request
-                                let identifier =
-                                    u16::from_be_bytes([inner_icmp_data[4], inner_icmp_data[5]]);
-                                let seq =
-                                    u16::from_be_bytes([inner_icmp_data[6], inner_icmp_data[7]]);
-
-                                if identifier == self.icmp_identifier && seq == sequence {
-                                    return Some((from_addr, false)); // is_destination = false
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            IcmpTypes::DestinationUnreachable => {
-                // Similar to TimeExceeded, extract original packet
-                const ICMP_ERROR_HEADER_LEN: usize = 8;
-                const IPV4_HEADER_MIN_LEN: usize = 20;
-
-                if icmp_data.len() >= ICMP_ERROR_HEADER_LEN + IPV4_HEADER_MIN_LEN {
-                    let inner_data = &icmp_data[ICMP_ERROR_HEADER_LEN..];
-                    if let Some(inner_ipv4) = Ipv4Packet::new(inner_data) {
-                        let inner_icmp_data = inner_ipv4.payload();
+                    if let Some((inner_hdr_len, _)) = icmp::parse_ipv4_header(inner_data) {
+                        let inner_icmp_data = &inner_data[inner_hdr_len..];
 
                         if inner_icmp_data.len() >= 8 {
                             let inner_type = inner_icmp_data[0];
-                            if inner_type == 8 {
-                                // Echo Request
-                                let identifier =
-                                    u16::from_be_bytes([inner_icmp_data[4], inner_icmp_data[5]]);
-                                let seq =
-                                    u16::from_be_bytes([inner_icmp_data[6], inner_icmp_data[7]]);
+                            if inner_type == icmp::ICMP_ECHO_REQUEST {
+                                let identifier = u16::from_be_bytes([inner_icmp_data[4], inner_icmp_data[5]]);
+                                let seq = u16::from_be_bytes([inner_icmp_data[6], inner_icmp_data[7]]);
 
                                 if identifier == self.icmp_identifier && seq == sequence {
                                     return Some((from_addr, false));

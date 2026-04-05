@@ -11,11 +11,7 @@ use crate::TimingConfig;
 use anyhow::{anyhow, Context, Result};
 use std::future::Future;
 use std::pin::Pin;
-use pnet::packet::icmp::echo_request::MutableEchoRequestPacket;
-use pnet::packet::icmp::{echo_reply, IcmpPacket, IcmpTypes};
-use pnet::packet::ipv4::Ipv4Packet;
-use pnet::packet::Packet;
-use pnet::util::checksum as pnet_checksum;
+use crate::socket::icmp;
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -76,20 +72,19 @@ impl MacOSAsyncIcmpSocket {
         dest: IpAddr,
     ) -> Option<ProbeResponse> {
         // Parse outer IPv4 packet
-        let outer_ipv4_packet = Ipv4Packet::new(packet_data)?;
-        let icmp_data = outer_ipv4_packet.payload();
-        let icmp_packet = IcmpPacket::new(icmp_data)?;
+        let icmp_data = icmp::ipv4_payload(packet_data)?;
+        let hdr = icmp::parse_icmp_header(icmp_data)?;
 
         trace_time!(
             self.verbose,
-            "Received ICMP type {:?} code {:?} from {}",
-            icmp_packet.get_icmp_type(),
-            icmp_packet.get_icmp_code(),
+            "Received ICMP type {} code {} from {}",
+            hdr.icmp_type,
+            hdr.icmp_code,
             from_addr
         );
 
-        match icmp_packet.get_icmp_type() {
-            IcmpTypes::TimeExceeded | IcmpTypes::DestinationUnreachable => {
+        match hdr.icmp_type {
+            icmp::ICMP_TIME_EXCEEDED | icmp::ICMP_DEST_UNREACHABLE => {
                 // Parse the original packet that triggered this response
                 let original_datagram_bytes = if icmp_data.len() >= ICMP_ERROR_HEADER_LEN_BYTES {
                     &icmp_data[ICMP_ERROR_HEADER_LEN_BYTES..]
@@ -101,8 +96,8 @@ impl MacOSAsyncIcmpSocket {
                     return None;
                 }
 
-                let inner_ip_packet = Ipv4Packet::new(original_datagram_bytes)?;
-                let original_icmp_bytes = inner_ip_packet.payload();
+                let (inner_hdr_len, _) = icmp::parse_ipv4_header(original_datagram_bytes)?;
+                let original_icmp_bytes = &original_datagram_bytes[inner_hdr_len..];
 
                 if original_icmp_bytes.len() < 8 {
                     return None;
@@ -115,14 +110,11 @@ impl MacOSAsyncIcmpSocket {
                 let original_seq =
                     u16::from_be_bytes([original_icmp_bytes[6], original_icmp_bytes[7]]);
 
-                if original_type == IcmpTypes::EchoRequest.0
+                if original_type == icmp::ICMP_ECHO_REQUEST
                     && original_id == self.icmp_identifier
                     && original_seq == expected_sequence
                 {
-                    let is_destination = matches!(
-                        icmp_packet.get_icmp_type(),
-                        IcmpTypes::DestinationUnreachable
-                    );
+                    let is_destination = hdr.icmp_type == icmp::ICMP_DEST_UNREACHABLE;
                     return Some(ProbeResponse {
                         from_addr,
                         sequence: expected_sequence,
@@ -134,11 +126,9 @@ impl MacOSAsyncIcmpSocket {
                     });
                 }
             }
-            IcmpTypes::EchoReply => {
-                if let Some(echo_reply_pkt) = echo_reply::EchoReplyPacket::new(icmp_packet.packet())
-                {
-                    if echo_reply_pkt.get_identifier() == self.icmp_identifier
-                        && echo_reply_pkt.get_sequence_number() == expected_sequence
+            icmp::ICMP_ECHO_REPLY => {
+                if let Some((reply_id, reply_seq)) = icmp::parse_echo_reply(icmp_data) {
+                    if reply_id == self.icmp_identifier && reply_seq == expected_sequence
                     {
                         let is_destination = from_addr == dest;
                         return Some(ProbeResponse {
@@ -176,32 +166,18 @@ impl MacOSAsyncIcmpSocket {
         socket.set_nonblocking(true)?;
 
         // Build ICMP Echo Request packet
-        let mut icmp_buf =
-            vec![0u8; MutableEchoRequestPacket::minimum_packet_size() + ICMP_ECHO_PAYLOAD_SIZE];
-        let mut echo_req_packet = MutableEchoRequestPacket::new(&mut icmp_buf)
-            .ok_or_else(|| anyhow!("Failed to create ICMP packet"))?;
-
-        echo_req_packet.set_icmp_type(IcmpTypes::EchoRequest);
-        echo_req_packet.set_icmp_code(pnet::packet::icmp::IcmpCode(0));
-        echo_req_packet.set_identifier(self.icmp_identifier);
-        echo_req_packet.set_sequence_number(probe.sequence);
-
-        // Create payload
         let payload_data = (self.icmp_identifier as u32) << 16 | (probe.sequence as u32);
         let payload_bytes = payload_data.to_be_bytes();
         let mut final_payload = vec![0u8; ICMP_ECHO_PAYLOAD_SIZE];
         let bytes_to_copy = payload_bytes.len().min(ICMP_ECHO_PAYLOAD_SIZE);
         final_payload[..bytes_to_copy].copy_from_slice(&payload_bytes[..bytes_to_copy]);
-        echo_req_packet.set_payload(&final_payload);
 
-        // Calculate checksum
-        let checksum = pnet_checksum(echo_req_packet.packet(), 1);
-        echo_req_packet.set_checksum(checksum);
+        let icmp_buf = icmp::build_echo_request(self.icmp_identifier, probe.sequence, &final_payload);
 
         // Send the packet
         let dest_addr = SocketAddr::new(IpAddr::V4(dest), 0);
         socket
-            .send_to(echo_req_packet.packet(), &dest_addr.into())
+            .send_to(&icmp_buf, &dest_addr.into())
             .context("Failed to send ICMP packet")?;
 
         trace_time!(
