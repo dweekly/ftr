@@ -51,7 +51,7 @@ git config core.hooksPath .githooks
 ### Core Modules (`src/`)
 
 - **`traceroute/`** — Engine: async probe sending, parallel execution, config, result types, segment classification (LAN/ISP/TRANSIT/DESTINATION), ISP detection
-- **`socket/`** — Platform-abstracted socket layer with automatic fallback (Raw ICMP -> DGRAM -> privileged UDP). Each platform has its own implementation file (`linux_async.rs`, `macos_async.rs`, `bsd_async.rs`, `windows_async_tokio.rs`). Factory pattern in `async_factory.rs`
+- **`socket/`** — Platform-abstracted socket layer with automatic fallback (Raw ICMP -> DGRAM -> privileged UDP). Each platform has its own implementation file (`linux.rs`, `macos.rs`, `bsd.rs`, `windows.rs`). Factory pattern in `factory.rs`, manual ICMP parsing in `icmp.rs`
 - **`asn/`** — ASN lookup via WHOIS API with in-memory cache
 - **`dns/`** — Reverse DNS via hickory-resolver with in-memory cache
 - **`public_ip/`** — Public IP detection via STUN protocol with cache
