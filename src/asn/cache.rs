@@ -3,7 +3,6 @@
 use crate::traceroute::AsnInfo;
 use ip_network::Ipv4Network;
 use ip_network_table::IpNetworkTable;
-use ipnet::Ipv4Net;
 use std::sync::{Arc, RwLock};
 
 /// Thread-safe cache for ASN lookups by CIDR prefix
@@ -40,17 +39,9 @@ impl AsnCache {
     }
 
     /// Insert an ASN info entry into the cache
-    pub fn insert(&self, prefix: Ipv4Net, asn_info: AsnInfo) {
+    pub fn insert(&self, prefix: Ipv4Network, asn_info: AsnInfo) {
         let mut cache = self.cache.write().expect("rwlock poisoned");
-        match Ipv4Network::new(prefix.addr(), prefix.prefix_len()) {
-            Ok(ipv4_network) => {
-                cache.insert(ipv4_network, asn_info);
-            }
-            Err(e) => {
-                // This should not happen as we are converting from a valid Ipv4Net
-                eprintln!("Error converting Ipv4Net to Ipv4Network: {}", e);
-            }
-        }
+        cache.insert(prefix, asn_info);
     }
 
     /// Get the number of entries in the cache
@@ -93,7 +84,7 @@ mod tests {
         };
 
         // Insert into cache
-        let prefix: Ipv4Net = "104.16.0.0/12".parse().unwrap();
+        let prefix: Ipv4Network = "104.16.0.0/12".parse().unwrap();
         cache.insert(prefix, asn_info.clone());
 
         assert_eq!(cache.len(), 1);

@@ -34,7 +34,7 @@ pub mod types;
 #[cfg(test)]
 mod caching_test;
 
-use ipnet::Ipv4Net;
+use ip_network::Ipv4Network;
 use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
@@ -163,8 +163,8 @@ impl AsnInfo {
     }
 }
 
-/// Parse CIDR notation into Ipv4Net
-pub fn parse_cidr(cidr: &str) -> Option<Ipv4Net> {
+/// Parse CIDR notation into Ipv4Network
+pub fn parse_cidr(cidr: &str) -> Option<Ipv4Network> {
     cidr.parse().ok()
 }
 

@@ -476,7 +476,6 @@ dependencies = [
  "hickory-resolver",
  "ip_network",
  "ip_network_table",
- "ipnet",
  "libc",
  "pnet",
  "predicates",
