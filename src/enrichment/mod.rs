@@ -4,7 +4,7 @@
 //! additional information like DNS names and ASN details.
 
 #[cfg(feature = "async")]
-pub mod async_service;
+pub mod service;
 
 #[cfg(feature = "async")]
-pub use async_service::{AsyncEnrichmentService, EnrichmentResult};
+pub use service::{EnrichmentService, EnrichmentResult};

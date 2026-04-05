@@ -4,8 +4,8 @@
 //! with immediate response processing using Tokio.
 
 use crate::services::Services;
-use crate::socket::async_factory::create_async_probe_socket_with_options;
-use crate::traceroute::fully_parallel_async_engine::FullyParallelAsyncEngine;
+use crate::socket::factory::create_probe_socket_with_options;
+use crate::traceroute::parallel_engine::ParallelEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
 use anyhow::Result;
 use hickory_resolver::config::ResolverConfig;
@@ -15,13 +15,13 @@ use std::net::IpAddr;
 
 /// Async traceroute API
 #[derive(Debug)]
-pub struct AsyncTraceroute {
+pub struct Traceroute {
     config: TracerouteConfig,
     target_ip: IpAddr,
     services: Option<Services>,
 }
 
-impl AsyncTraceroute {
+impl Traceroute {
     /// Create a new async traceroute from configuration with injected services
     pub async fn new_with_services(
         mut config: TracerouteConfig,
@@ -142,7 +142,7 @@ impl AsyncTraceroute {
         }
 
         // Create async socket with protocol preference
-        let socket = create_async_probe_socket_with_options(
+        let socket = create_probe_socket_with_options(
             self.target_ip,
             timing_config,
             self.config.protocol,
@@ -167,7 +167,7 @@ impl AsyncTraceroute {
 
         // Create and run fully parallel async engine
         let engine = if let Some(services) = self.services {
-            FullyParallelAsyncEngine::new_with_services(
+            ParallelEngine::new_with_services(
                 socket,
                 self.config.clone(),
                 self.target_ip,
@@ -176,7 +176,7 @@ impl AsyncTraceroute {
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         } else {
-            FullyParallelAsyncEngine::new(socket, self.config.clone(), self.target_ip)
+            ParallelEngine::new(socket, self.config.clone(), self.target_ip)
                 .await
                 .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         };
@@ -204,7 +204,7 @@ pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteErr
 pub async fn trace_with_config_async(
     config: TracerouteConfig,
 ) -> Result<TracerouteResult, TracerouteError> {
-    let traceroute = AsyncTraceroute::new(config).await?;
+    let traceroute = Traceroute::new(config).await?;
     traceroute.run().await
 }
 
@@ -213,7 +213,7 @@ pub(crate) async fn trace_with_services(
     config: TracerouteConfig,
     services: &Services,
 ) -> Result<TracerouteResult, TracerouteError> {
-    let traceroute = AsyncTraceroute::new_with_services(config, services.clone()).await?;
+    let traceroute = Traceroute::new_with_services(config, services.clone()).await?;
     traceroute.run().await
 }
 
@@ -229,7 +229,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -247,7 +247,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -264,7 +264,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -329,7 +329,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
         let traceroute = result.unwrap();
@@ -347,7 +347,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = AsyncTraceroute::new(config).await;
+        let result = Traceroute::new(config).await;
         assert!(result.is_err());
 
         match result.unwrap_err() {
@@ -366,7 +366,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let traceroute = AsyncTraceroute::new(config).await.unwrap();
+        let traceroute = Traceroute::new(config).await.unwrap();
 
         // Store original value
         let original = std::env::var("FTR_VERBOSE").ok();

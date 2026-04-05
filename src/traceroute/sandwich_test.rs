@@ -47,7 +47,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,
@@ -87,7 +87,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,
@@ -126,7 +126,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,
@@ -181,7 +181,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,
@@ -238,7 +238,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,
@@ -258,7 +258,7 @@ mod tests {
 
         // Empty list
         let mut empty_hops: Vec<ClassifiedHopInfo> = vec![];
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut empty_hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut empty_hops);
         assert_eq!(empty_hops.len(), 0, "Empty list should remain empty");
 
         // Single hop
@@ -270,7 +270,7 @@ mod tests {
             asn_info: None,
             rtt: Some(Duration::from_millis(5)),
         }];
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut single_hop);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut single_hop);
         assert_eq!(
             single_hop[0].segment,
             SegmentType::Unknown,
@@ -296,7 +296,7 @@ mod tests {
                 rtt: Some(Duration::from_millis(10)),
             },
         ];
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut two_hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut two_hops);
         assert_eq!(
             two_hops[1].segment,
             SegmentType::Unknown,
@@ -334,7 +334,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         // We don't sandwich between LAN hops (they're typically different networks)
         assert_eq!(
@@ -382,7 +382,7 @@ mod tests {
             },
         ];
 
-        super::super::FullyParallelAsyncEngine::apply_sandwich_logic(&mut hops);
+        super::super::ParallelEngine::apply_sandwich_logic(&mut hops);
 
         assert_eq!(
             hops[1].segment,

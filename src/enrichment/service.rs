@@ -23,14 +23,14 @@ pub struct EnrichmentResult {
 }
 
 /// Async enrichment service
-pub struct AsyncEnrichmentService {
+pub struct EnrichmentService {
     services: Arc<Services>,
     seen_addresses: Arc<RwLock<HashSet<IpAddr>>>,
     enrichment_tx: mpsc::UnboundedSender<IpAddr>,
     enrichment_rx: Arc<RwLock<mpsc::UnboundedReceiver<IpAddr>>>,
 }
 
-impl AsyncEnrichmentService {
+impl EnrichmentService {
     /// Create a new async enrichment service
     pub async fn new() -> Result<Self> {
         let services = Arc::new(Services::new());
@@ -146,13 +146,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrichment_service_creation() {
-        let service = AsyncEnrichmentService::new().await;
+        let service = EnrichmentService::new().await;
         assert!(service.is_ok());
     }
 
     #[tokio::test]
     async fn test_enqueue_deduplication() {
-        let service = Arc::new(AsyncEnrichmentService::new().await.unwrap());
+        let service = Arc::new(EnrichmentService::new().await.unwrap());
         let addr: IpAddr = "8.8.8.8".parse().unwrap();
 
         // First enqueue should succeed
@@ -169,7 +169,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrich_addresses() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let addresses = vec![
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
             IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
@@ -230,7 +230,7 @@ mod tests {
     #[tokio::test]
     async fn test_background_enrichment() {
         // Create service without Arc first
-        let mut service = AsyncEnrichmentService::new().await.unwrap();
+        let mut service = EnrichmentService::new().await.unwrap();
         let addr1: IpAddr = "8.8.8.8".parse().unwrap();
         let addr2: IpAddr = "1.1.1.1".parse().unwrap();
 
@@ -260,7 +260,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ipv6_enrichment() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let ipv6_addr: IpAddr = "2001:4860:4860::8888".parse().unwrap();
 
         let results = service.enrich_addresses(vec![ipv6_addr]).await;
@@ -277,7 +277,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_private_ip_enrichment() {
-        let service = AsyncEnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new().await.unwrap();
         let private_addrs = vec![
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),

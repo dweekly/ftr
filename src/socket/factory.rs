@@ -3,27 +3,27 @@
 //! This module provides factory functions for creating async probe sockets
 //! that use Tokio for immediate response notification.
 
-use super::async_trait::{AsyncProbeSocket, ProbeMode};
+use super::traits::{ProbeSocket, ProbeMode};
 use super::{ProbeProtocol, SocketMode};
 use crate::TimingConfig;
 use anyhow::{anyhow, Result};
 use std::net::IpAddr;
 
 /// Create an async probe socket for the given target
-pub async fn create_async_probe_socket(
+pub async fn create_probe_socket(
     target: IpAddr,
     timing_config: TimingConfig,
-) -> Result<Box<dyn AsyncProbeSocket>> {
-    create_async_probe_socket_with_options(target, timing_config, None, None).await
+) -> Result<Box<dyn ProbeSocket>> {
+    create_probe_socket_with_options(target, timing_config, None, None).await
 }
 
 /// Create an async probe socket with protocol and mode preferences
-pub async fn create_async_probe_socket_with_options(
+pub async fn create_probe_socket_with_options(
     target: IpAddr,
     timing_config: TimingConfig,
     protocol: Option<ProbeProtocol>,
     socket_mode: Option<SocketMode>,
-) -> Result<Box<dyn AsyncProbeSocket>> {
+) -> Result<Box<dyn ProbeSocket>> {
     // Check for unsupported protocols
     if let Some(ProbeProtocol::Tcp) = protocol {
         return Err(anyhow!("TCP traceroute is not yet implemented"));
@@ -35,7 +35,7 @@ pub async fn create_async_probe_socket_with_options(
             {
                 let _ = protocol; // Unused on Windows
                 let _ = socket_mode; // Unused on Windows
-                use super::windows_async_tokio::WindowsAsyncIcmpSocket;
+                use super::windows::WindowsAsyncIcmpSocket;
                 let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
 
                 // Print verbose mode info if requested
@@ -55,7 +55,7 @@ pub async fn create_async_probe_socket_with_options(
                 let _ = protocol; // Unused on macOS
                 let _ = socket_mode; // Unused on macOS
                                      // Use implementation that creates per-probe sockets
-                use super::macos_async::MacOSAsyncIcmpSocket;
+                use super::macos::MacOSAsyncIcmpSocket;
                 let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
 
                 // Print verbose mode info if requested
@@ -82,7 +82,7 @@ pub async fn create_async_probe_socket_with_options(
                     match Socket::new(Domain::IPV4, Type::RAW, Some(Protocol::ICMPV4)) {
                         Ok(_) => {
                             // We have permissions for raw ICMP
-                            use super::linux_async::LinuxAsyncIcmpSocket;
+                            use super::linux::LinuxAsyncIcmpSocket;
                             let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
 
                             // Print verbose mode info if requested
@@ -104,7 +104,7 @@ pub async fn create_async_probe_socket_with_options(
                     }
                 } else {
                     // Default to UDP or when explicitly requested
-                    use super::linux_async::LinuxAsyncUdpSocket;
+                    use super::linux::LinuxAsyncUdpSocket;
                     let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
 
                     // Print verbose mode info if requested
@@ -129,7 +129,7 @@ pub async fn create_async_probe_socket_with_options(
             {
                 let _ = protocol; // Unused on BSDs
                 let _ = socket_mode; // Unused on BSDs
-                use super::bsd_async::BsdAsyncIcmpSocket;
+                use super::bsd::BsdAsyncIcmpSocket;
                 let socket = BsdAsyncIcmpSocket::new_with_config(timing_config)?;
 
                 // Print verbose mode info if requested
@@ -166,11 +166,11 @@ pub async fn create_async_probe_socket_with_options(
 }
 
 /// Create an async probe socket with specific mode preference
-pub async fn create_async_probe_socket_with_mode(
+pub async fn create_probe_socket_with_mode(
     target: IpAddr,
     timing_config: TimingConfig,
     preferred_mode: Option<ProbeMode>,
-) -> Result<Box<dyn AsyncProbeSocket>> {
+) -> Result<Box<dyn ProbeSocket>> {
     // Check platform-specific mode support
     #[cfg(target_os = "windows")]
     {
@@ -221,5 +221,5 @@ pub async fn create_async_probe_socket_with_mode(
         }
     }
 
-    create_async_probe_socket(target, timing_config).await
+    create_probe_socket(target, timing_config).await
 }

@@ -6,10 +6,10 @@
 //! 3. Starting ASN/rDNS enrichment immediately as each response arrives
 //! 4. Using caches to avoid duplicate lookups
 
-use crate::enrichment::AsyncEnrichmentService;
+use crate::enrichment::EnrichmentService;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::services::Services;
-use crate::socket::async_trait::AsyncProbeSocket;
+use crate::socket::traits::ProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::{AsnInfo, ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
@@ -33,25 +33,25 @@ struct EnrichmentResult {
 }
 
 /// Fully parallel async traceroute engine
-pub struct FullyParallelAsyncEngine {
-    socket: Arc<Box<dyn AsyncProbeSocket>>,
+pub struct ParallelEngine {
+    socket: Arc<Box<dyn ProbeSocket>>,
     config: crate::TracerouteConfig,
     target: IpAddr,
-    enrichment_service: Arc<AsyncEnrichmentService>,
+    enrichment_service: Arc<EnrichmentService>,
     enrichment_cache: Arc<Mutex<HashMap<IpAddr, EnrichmentResult>>>,
     services: Option<Arc<Services>>,
 }
 
-impl FullyParallelAsyncEngine {
+impl ParallelEngine {
     /// Create a new fully parallel async traceroute engine with injected services
     pub async fn new_with_services(
-        socket: Box<dyn AsyncProbeSocket>,
+        socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
         services: Arc<Services>,
     ) -> Result<Self> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+        let enrichment_service = Arc::new(EnrichmentService::new().await?);
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -65,12 +65,12 @@ impl FullyParallelAsyncEngine {
 
     /// Create a new fully parallel async traceroute engine (uses global caches)
     pub async fn new(
-        socket: Box<dyn AsyncProbeSocket>,
+        socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
     ) -> Result<Self> {
         // Create enrichment service upfront
-        let enrichment_service = Arc::new(AsyncEnrichmentService::new().await?);
+        let enrichment_service = Arc::new(EnrichmentService::new().await?);
 
         Ok(Self {
             socket: Arc::new(socket),
@@ -539,16 +539,16 @@ impl FullyParallelAsyncEngine {
 
         // Determine protocol and socket mode
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::async_trait::ProbeMode::DgramIcmp => {
+            crate::socket::traits::ProbeMode::DgramIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Dgram)
             }
-            crate::socket::async_trait::ProbeMode::WindowsIcmp => {
+            crate::socket::traits::ProbeMode::WindowsIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Raw)
             }
-            crate::socket::async_trait::ProbeMode::UdpWithRecverr => {
+            crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
             }
-            crate::socket::async_trait::ProbeMode::RawIcmp => {
+            crate::socket::traits::ProbeMode::RawIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Raw)
             }
         };

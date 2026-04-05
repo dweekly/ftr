@@ -26,7 +26,7 @@ pub enum ProbeMode {
 /// This trait defines the interface for all async probe socket implementations.
 /// It enables immediate response processing without polling delays.
 #[async_trait]
-pub trait AsyncProbeSocket: Send + Sync {
+pub trait ProbeSocket: Send + Sync {
     /// Get the probe mode this socket supports
     fn mode(&self) -> ProbeMode;
 

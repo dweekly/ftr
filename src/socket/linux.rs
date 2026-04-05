@@ -2,7 +2,7 @@
 //!
 //! This module provides async UDP traceroute using IP_RECVERR for non-root operation.
 
-use super::async_trait::{AsyncProbeSocket, ProbeMode};
+use super::traits::{ProbeSocket, ProbeMode};
 use crate::probe::{ProbeInfo, ProbeResponse};
 use anyhow::{Context, Result};
 use pnet::packet::{MutablePacket, Packet};
@@ -168,7 +168,7 @@ impl LinuxAsyncUdpSocket {
 }
 
 #[async_trait::async_trait]
-impl AsyncProbeSocket for LinuxAsyncUdpSocket {
+impl ProbeSocket for LinuxAsyncUdpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }
@@ -482,7 +482,7 @@ impl LinuxAsyncIcmpSocket {
 }
 
 #[async_trait::async_trait]
-impl AsyncProbeSocket for LinuxAsyncIcmpSocket {
+impl ProbeSocket for LinuxAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }

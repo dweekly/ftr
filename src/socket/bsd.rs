@@ -8,7 +8,7 @@
 //! using the standard POSIX socket API with raw sockets.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -176,7 +176,7 @@ impl BsdAsyncIcmpSocket {
 }
 
 #[async_trait]
-impl AsyncProbeSocket for BsdAsyncIcmpSocket {
+impl ProbeSocket for BsdAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         self.mode
     }

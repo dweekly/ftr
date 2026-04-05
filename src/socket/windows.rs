@@ -5,7 +5,7 @@
 //! response notification.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{anyhow, Result};
 use async_trait::async_trait;
@@ -181,7 +181,7 @@ impl WindowsAsyncIcmpSocket {
 }
 
 #[async_trait]
-impl AsyncProbeSocket for WindowsAsyncIcmpSocket {
+impl ProbeSocket for WindowsAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         ProbeMode::WindowsIcmp
     }

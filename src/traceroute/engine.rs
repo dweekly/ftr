@@ -4,7 +4,7 @@
 //! Tokio for immediate response processing.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::async_trait::AsyncProbeSocket;
+use crate::socket::traits::ProbeSocket;
 use crate::socket::{ProbeProtocol, SocketMode};
 use crate::traceroute::{ClassifiedHopInfo, SegmentType, TracerouteResult};
 use anyhow::Result;
@@ -16,16 +16,16 @@ use std::time::{Duration, Instant};
 use tokio::time::{sleep, timeout};
 
 /// Async traceroute engine
-pub struct AsyncTracerouteEngine {
-    socket: Arc<Box<dyn AsyncProbeSocket>>,
+pub struct TracerouteEngine {
+    socket: Arc<Box<dyn ProbeSocket>>,
     config: crate::TracerouteConfig,
     target: IpAddr,
 }
 
-impl AsyncTracerouteEngine {
+impl TracerouteEngine {
     /// Create a new async traceroute engine
     pub fn new(
-        socket: Box<dyn AsyncProbeSocket>,
+        socket: Box<dyn ProbeSocket>,
         config: crate::TracerouteConfig,
         target: IpAddr,
     ) -> Self {
@@ -301,16 +301,16 @@ impl AsyncTracerouteEngine {
 
         // Determine protocol and socket mode used
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::async_trait::ProbeMode::DgramIcmp => {
+            crate::socket::traits::ProbeMode::DgramIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Dgram)
             }
-            crate::socket::async_trait::ProbeMode::WindowsIcmp => {
+            crate::socket::traits::ProbeMode::WindowsIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Raw)
             }
-            crate::socket::async_trait::ProbeMode::UdpWithRecverr => {
+            crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
             }
-            crate::socket::async_trait::ProbeMode::RawIcmp => {
+            crate::socket::traits::ProbeMode::RawIcmp => {
                 (ProbeProtocol::Icmp, SocketMode::Raw)
             }
         };

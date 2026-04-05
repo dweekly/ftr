@@ -6,7 +6,7 @@
 //! TimeExceeded messages when used with async I/O.
 
 use crate::probe::{ProbeInfo, ProbeResponse};
-use crate::socket::async_trait::{AsyncProbeSocket, ProbeMode};
+use crate::socket::traits::{ProbeSocket, ProbeMode};
 use crate::TimingConfig;
 use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
@@ -357,7 +357,7 @@ impl MacOSAsyncIcmpSocket {
 }
 
 #[async_trait]
-impl AsyncProbeSocket for MacOSAsyncIcmpSocket {
+impl ProbeSocket for MacOSAsyncIcmpSocket {
     fn mode(&self) -> ProbeMode {
         ProbeMode::DgramIcmp
     }

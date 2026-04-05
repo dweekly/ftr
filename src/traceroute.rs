@@ -22,11 +22,11 @@
 //! This design allows library users to handle errors programmatically without
 //! parsing error strings.
 
-pub mod async_api;
-pub mod async_engine;
+pub mod api;
 pub mod config;
+pub mod engine;
 pub mod error;
-pub mod fully_parallel_async_engine;
+pub mod parallel_engine;
 pub mod isp_from_path;
 pub mod result;
 pub mod types;
@@ -39,10 +39,7 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
 // Re-export commonly used types
-pub use async_api::{
-    trace_async as trace, trace_with_config_async as trace_with_config,
-    AsyncTraceroute as Traceroute,
-};
+pub use api::{trace_async as trace, trace_with_config_async as trace_with_config, Traceroute};
 pub use config::{TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
 pub use error::TracerouteError;
 pub use result::{TracerouteProgress, TracerouteResult};
