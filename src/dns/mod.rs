@@ -1,6 +1,7 @@
 //! DNS functionality for reverse lookups
 
 pub mod cache;
+pub mod resolver;
 pub mod reverse;
 pub mod service;
 
@@ -8,5 +9,6 @@ pub mod service;
 pub mod test_utils;
 
 pub use cache::RdnsCache;
-pub use reverse::{create_default_resolver, ReverseDnsError};
+pub use resolver::{resolve_a, resolve_ptr, resolve_txt};
+pub use reverse::ReverseDnsError;
 pub use service::RdnsLookup;

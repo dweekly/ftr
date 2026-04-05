@@ -241,14 +241,7 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
         tokio::spawn(async move {
             // Pre-warm DNS reverse lookup only if rDNS is enabled
             if !no_rdns {
-                use hickory_resolver::name_server::TokioConnectionProvider;
-                use hickory_resolver::{config::ResolverConfig, TokioResolver};
-                let resolver = TokioResolver::builder_with_config(
-                    ResolverConfig::cloudflare(),
-                    TokioConnectionProvider::default(),
-                )
-                .build();
-                let _ = resolver.reverse_lookup(target_ip_clone).await;
+                let _ = ftr::dns::resolve_ptr(target_ip_clone).await;
             }
 
             // ASN pre-warming removed - caches are now managed by Ftr instance
@@ -415,32 +408,12 @@ async fn resolve_target(host: &str) -> Result<IpAddr, Box<dyn std::error::Error>
         return Ok(ip);
     }
 
-    // Use DNS resolution
-    use hickory_resolver::config::ResolverConfig;
-    use hickory_resolver::name_server::TokioConnectionProvider;
-    use hickory_resolver::TokioResolver;
+    // Use our DNS resolver
+    let addrs = ftr::dns::resolve_a(host)
+        .await
+        .map_err(|e| format!("Error resolving host: {e}"))?;
 
-    let resolver = TokioResolver::builder_with_config(
-        ResolverConfig::cloudflare(),
-        TokioConnectionProvider::default(),
-    )
-    .build();
-
-    // Try IPv4 first
-    if let Ok(lookup) = resolver.ipv4_lookup(host).await {
-        if let Some(ipv4) = lookup.iter().next() {
-            return Ok(IpAddr::V4(ipv4.0));
-        }
-    }
-
-    // Try IPv6
-    if let Ok(lookup) = resolver.ipv6_lookup(host).await {
-        if let Some(ipv6) = lookup.iter().next() {
-            return Ok(IpAddr::V6(ipv6.0));
-        }
-    }
-
-    Err(format!("Error resolving host: {}", host).into())
+    Ok(IpAddr::V4(addrs[0]))
 }
 
 /// Display results in JSON format

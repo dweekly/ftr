@@ -101,13 +101,13 @@ impl Services {
         stun_cache: Option<crate::public_ip::stun_cache::StunCache>,
     ) -> Self {
         let asn = if let Some(cache) = asn_cache {
-            AsnLookup::with_cache(cache, None)
+            AsnLookup::with_cache(cache)
         } else {
             AsnLookup::new()
         };
 
         let rdns = if let Some(cache) = rdns_cache {
-            RdnsLookup::with_cache(cache, None)
+            RdnsLookup::with_cache(cache)
         } else {
             RdnsLookup::new()
         };

@@ -3,13 +3,11 @@
 //! This module provides the async API for performing traceroute operations
 //! with immediate response processing using Tokio.
 
+use crate::dns::resolver;
 use crate::services::Services;
 use crate::socket::factory::create_probe_socket_with_options;
 use crate::traceroute::engine::TracerouteEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
-use hickory_resolver::config::ResolverConfig;
-use hickory_resolver::name_server::TokioConnectionProvider;
-use hickory_resolver::TokioResolver;
 use std::net::IpAddr;
 
 /// Async traceroute API
@@ -26,46 +24,7 @@ impl Traceroute {
         mut config: TracerouteConfig,
         services: Services,
     ) -> Result<Self, TracerouteError> {
-        // Check if target is an IP address literal
-        if let Ok(ip) = config.target.parse::<IpAddr>() {
-            if ip.is_ipv6() {
-                return Err(TracerouteError::Ipv6NotSupported);
-            }
-            config.target_ip = Some(ip);
-        }
-
-        // Resolve target if needed
-        let target_ip = if let Some(ip) = config.target_ip {
-            ip
-        } else {
-            // Resolve hostname
-            let resolver = TokioResolver::builder_with_config(
-                ResolverConfig::cloudflare(),
-                TokioConnectionProvider::default(),
-            )
-            .build();
-
-            let response = resolver
-                .lookup_ip(&config.target)
-                .await
-                .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
-
-            // Check if we got any IPv6 addresses but no IPv4
-            let has_ipv6 = response.iter().any(|ip| ip.is_ipv6());
-            let has_ipv4 = response.iter().any(|ip| ip.is_ipv4());
-
-            if has_ipv6 && !has_ipv4 {
-                return Err(TracerouteError::Ipv6NotSupported);
-            }
-
-            // Get first IPv4 address
-            response
-                .iter()
-                .find(IpAddr::is_ipv4)
-                .ok_or_else(|| TracerouteError::ResolutionError("No addresses found".to_string()))?
-        };
-
-        config.target_ip = Some(target_ip);
+        let target_ip = Self::resolve_target(&mut config).await?;
 
         Ok(Self {
             config,
@@ -74,53 +33,46 @@ impl Traceroute {
         })
     }
 
-    /// Create a new async traceroute from configuration (uses global caches)
-    pub async fn new(mut config: TracerouteConfig) -> Result<Self, TracerouteError> {
+    /// Resolve the target hostname/IP to an IpAddr
+    async fn resolve_target(config: &mut TracerouteConfig) -> Result<IpAddr, TracerouteError> {
         // Check if target is an IP address literal
         if let Ok(ip) = config.target.parse::<IpAddr>() {
             if ip.is_ipv6() {
                 return Err(TracerouteError::Ipv6NotSupported);
             }
             config.target_ip = Some(ip);
+            return Ok(ip);
         }
 
-        // Resolve target if needed
-        let target_ip = if let Some(ip) = config.target_ip {
-            ip
-        } else {
-            // Resolve hostname
-            let resolver = TokioResolver::builder_with_config(
-                ResolverConfig::cloudflare(),
-                TokioConnectionProvider::default(),
-            )
-            .build();
-
-            let response = resolver
-                .lookup_ip(&config.target)
-                .await
-                .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
-
-            // Check if we got any IPv6 addresses but no IPv4
-            let has_ipv6 = response.iter().any(|ip| ip.is_ipv6());
-
-            response
-                .iter()
-                .find(std::net::IpAddr::is_ipv4)
-                .ok_or_else(|| {
-                    if has_ipv6 {
-                        TracerouteError::Ipv6NotSupported
-                    } else {
-                        TracerouteError::ResolutionError("No IPv4 address found".to_string())
-                    }
-                })?
-        };
-
-        // IPv6 check
-        if target_ip.is_ipv6() {
-            return Err(TracerouteError::Ipv6NotSupported);
+        // Handle well-known hostnames
+        if config.target == "localhost" {
+            let ip = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+            config.target_ip = Some(ip);
+            return Ok(ip);
         }
 
-        config.target_ip = Some(target_ip);
+        // Already resolved
+        if let Some(ip) = config.target_ip {
+            return Ok(ip);
+        }
+
+        // Resolve hostname to IPv4 via DNS
+        let addrs = resolver::resolve_a(&config.target)
+            .await
+            .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
+
+        let ip =
+            IpAddr::V4(*addrs.first().ok_or_else(|| {
+                TracerouteError::ResolutionError("No addresses found".to_string())
+            })?);
+
+        config.target_ip = Some(ip);
+        Ok(ip)
+    }
+
+    /// Create a new async traceroute from configuration (uses global caches)
+    pub async fn new(mut config: TracerouteConfig) -> Result<Self, TracerouteError> {
+        let target_ip = Self::resolve_target(&mut config).await?;
 
         Ok(Self {
             config,
