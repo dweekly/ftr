@@ -86,6 +86,10 @@ GitHub Actions runs on push/PR to main: tests (Ubuntu stable + MSRV 1.82.0, macO
 
 Defined in `Cargo.toml` under `[lints.clippy]`: correctness and suspicious lints are denied, `unwrap_used` warns (use `expect()` instead), `module_name_repetitions` is allowed, public items require docs (`missing_docs = "warn"`).
 
+## PR Merging
+
+`gh pr merge` is a remote operation — the PR merges on GitHub even if the local checkout afterward fails. Never retry `gh pr merge` after a local git error. Check `gh pr view <number> --json state` first.
+
 ## Safety Rules
 
 - **Never run `sudo`** — ask the user to run privileged commands
