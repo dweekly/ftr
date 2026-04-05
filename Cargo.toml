@@ -10,7 +10,7 @@ homepage = "https://github.com/dweekly/ftr"
 readme = "README.md"
 keywords = ["traceroute", "icmp", "networking", "asn", "diagnostics"]
 categories = ["command-line-utilities", "network-programming"]
-rust-version = "1.82.0"
+rust-version = "1.85.0"
 
 [features]
 default = ["async"]
@@ -43,7 +43,6 @@ pnet = "0.35"
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 hickory-resolver = { version = "0.25", features = ["tokio"] }
-reqwest = { version = "0.12", default-features = false, features = ["native-tls"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -51,11 +50,12 @@ thiserror = "2.0"
 getrandom = "0.3"
 ip_network_table = "0.2.0"
 ip_network = "0.4.1"
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 # Enable vendored OpenSSL for static linking on Linux
-reqwest = { version = "0.12", default-features = false, features = ["native-tls", "native-tls-vendored"] }
+ureq = { version = "3", default-features = false, features = ["native-tls", "vendored"] }
 
 [target.'cfg(target_os = "freebsd")'.dependencies]
 libc = "0.2"

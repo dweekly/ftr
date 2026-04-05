@@ -30,7 +30,8 @@
       "Bash(wc -l ~/dev/ftr/src/**/*.rs)",
       "Bash(cargo tree:*)",
       "Bash(wc -l src/**/*.rs src/*.rs)",
-      "Bash(cargo clippy:*)"
+      "Bash(cargo clippy:*)",
+      "Bash(cargo search:*)"
     ],
     "deny": []
   }
