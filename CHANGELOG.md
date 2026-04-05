@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - Unreleased
+
+### Changed
+- **BREAKING**: MSRV bumped from 1.82 to 1.85
+- **BREAKING**: Renamed modules — `async_api` -> `api`, `async_engine` -> `engine`, `async_factory` -> `factory`, `async_trait` -> `traits`, `async_service` -> `service`, platform socket files drop `_async` suffix
+- **BREAKING**: Renamed types — `AsyncProbeSocket` -> `ProbeSocket`, `AsyncEnrichmentService` -> `EnrichmentService`, `FullyParallelAsyncEngine` -> `TracerouteEngine`, `AsyncTraceroute` -> `Traceroute`
+- **BREAKING**: All functions now return `Result<T, TracerouteError>` instead of `anyhow::Result<T>`
+- Replaced `reqwest` with `ureq` for public IP detection (simple HTTPS GETs don't need hyper/tower/http)
+- Replaced `pnet` with manual ICMP packet parsing (`src/socket/icmp.rs`, ~130 lines)
+- Replaced `FuturesUnordered` with `tokio::task::JoinSet`
+- Replaced `#[async_trait]` proc macro with manual `Pin<Box<dyn Future>>` return types
+- Consolidated `ipnet` usage to `ip_network` (already a dependency)
+
+### Removed
+- Dependencies: `anyhow`, `async-trait`, `futures`, `ipnet`, `lazy_static`, `pnet`, `reqwest`, `tokio-util`
+- Dead code: unused `TracerouteEngine` (old sequential engine replaced by parallel engine in v0.4.0)
+- Orphaned release docs: `RELEASE_CHECKLIST_v0.6.0.md`, `RELEASE_NOTES_v0.6.0.md`, `RELEASE_v0.6.0_SUMMARY.md`
+- `AGENTS.md` (consolidated into `CLAUDE.md`)
+
+### Added
+- `src/socket/icmp.rs` — manual ICMP echo request construction, IPv4/ICMP header parsing, RFC 1071 checksum (with 10 unit tests)
+- `ureq` dependency (lightweight blocking HTTP client, ~5 transitive deps vs reqwest's ~50)
+- Documentation index in README.md linking every .md file in the project
+- `docs/MODERNIZATION_PLAN.md` — dependency reduction roadmap
+
+### Fixed
+- 2 security advisories (updated `bytes` 1.10.1->1.11.1, `tracing-subscriber` 0.3.19->0.3.20)
+- 5 clippy errors (unused imports, unnecessary unwrap patterns)
+- Flaky `test_reverse_dns_localhost` (overly strict PTR assertion)
+- Stale CHANGELOG comparison links for v0.4.0-v0.6.0
+
+### Metrics
+- Direct dependencies: 16 -> 11
+- Transitive crates: 296 -> 267
+- Tests: 126 -> 136
+
 ## [0.6.0] - 2025-08-29
 
 ### Added
@@ -438,7 +474,8 @@ let ftr = Ftr::with_caches(Some(asn_cache), None, None);
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dweekly/ftr/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dweekly/ftr/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dweekly/ftr/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dweekly/ftr/compare/v0.3.1...v0.4.0

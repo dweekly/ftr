@@ -5,7 +5,7 @@
 
 use crate::services::Services;
 use crate::socket::factory::create_probe_socket_with_options;
-use crate::traceroute::parallel_engine::ParallelEngine;
+use crate::traceroute::engine::TracerouteEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
 use hickory_resolver::config::ResolverConfig;
 use hickory_resolver::name_server::TokioConnectionProvider;
@@ -166,7 +166,7 @@ impl Traceroute {
 
         // Create and run fully parallel async engine
         let engine = if let Some(services) = self.services {
-            ParallelEngine::new_with_services(
+            TracerouteEngine::new_with_services(
                 socket,
                 self.config.clone(),
                 self.target_ip,
@@ -175,7 +175,7 @@ impl Traceroute {
             .await
             .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         } else {
-            ParallelEngine::new(socket, self.config.clone(), self.target_ip)
+            TracerouteEngine::new(socket, self.config.clone(), self.target_ip)
                 .await
                 .map_err(|e| TracerouteError::SocketError(e.to_string()))?
         };
