@@ -140,29 +140,14 @@ impl Traceroute {
             std::env::set_var("FTR_VERBOSE", self.config.verbose.to_string());
         }
 
-        // Create async socket with protocol preference
+        // Create socket with protocol preference
         let socket = create_probe_socket_with_options(
             self.target_ip,
             timing_config,
             self.config.protocol,
             self.config.socket_mode,
         )
-        .await
-        .map_err(|e| {
-            let err_str = e.to_string();
-            if err_str.contains("TCP traceroute is not yet implemented") {
-                TracerouteError::NotImplemented {
-                    feature: "TCP traceroute".to_string(),
-                }
-            } else if err_str.contains("requires root or CAP_NET_RAW") {
-                TracerouteError::InsufficientPermissions {
-                    required: "root or CAP_NET_RAW capability".to_string(),
-                    suggestion: "Try running with sudo or use UDP mode (--udp)".to_string(),
-                }
-            } else {
-                TracerouteError::SocketError(err_str)
-            }
-        })?;
+        .await?;
 
         // Create and run fully parallel async engine
         let engine = if let Some(services) = self.services {

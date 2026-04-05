@@ -31,7 +31,9 @@
       "Bash(cargo tree:*)",
       "Bash(wc -l src/**/*.rs src/*.rs)",
       "Bash(cargo clippy:*)",
-      "Bash(cargo search:*)"
+      "Bash(cargo search:*)",
+      "Bash(gh run:*)",
+      "Bash(gh api:*)"
     ],
     "deny": []
   }
