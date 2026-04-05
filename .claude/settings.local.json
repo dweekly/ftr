@@ -33,7 +33,8 @@
       "Bash(cargo clippy:*)",
       "Bash(cargo search:*)",
       "Bash(gh run:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(gh pr:*)"
     ],
     "deny": []
   }

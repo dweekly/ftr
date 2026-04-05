@@ -304,7 +304,7 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 
 ## Requirements
 
-- Rust 1.82.0 or later (for building from source)
+- Rust 1.85.0 or later (for building from source)
 - Platform-specific requirements:
   - **Linux**: Root privileges or configured ping_group_range for ICMP functionality
   - **macOS**: Root privileges may be required for raw socket access
@@ -406,10 +406,8 @@ When enrichment is enabled (default), each hop is labeled:
 | [docs/UDP_TRACEROUTE_LINUX.md](docs/UDP_TRACEROUTE_LINUX.md) | Linux UDP traceroute and IP_RECVERR |
 | [docs/TIMING_CONFIGURATION.md](docs/TIMING_CONFIGURATION.md) | Timing system for performance tuning |
 | [docs/WINDOWS_ASYNC_FINDINGS.md](docs/WINDOWS_ASYNC_FINDINGS.md) | Windows async ICMP implementation analysis |
-| [docs/RUST_BEST_PRACTICES.md](docs/RUST_BEST_PRACTICES.md) | Rust coding standards for this project |
 | [docs/IXP_DETECTION_PROPOSAL.md](docs/IXP_DETECTION_PROPOSAL.md) | Proposed IXP/peering point detection (future) |
 | [docs/WHOIS_ENHANCEMENT_PROPOSAL.md](docs/WHOIS_ENHANCEMENT_PROPOSAL.md) | Proposed WHOIS fallback for network ownership (future) |
-| [docs/MODERNIZATION_PLAN.md](docs/MODERNIZATION_PLAN.md) | Dependency reduction and codebase modernization roadmap |
 | [scripts/README.md](scripts/README.md) | Cross-platform VM testing scripts |
 | [scripts/vagrant-quick-start.md](scripts/vagrant-quick-start.md) | Automated VM testing with Vagrant |
 | [.githooks/README.md](.githooks/README.md) | Git hooks setup and usage |
