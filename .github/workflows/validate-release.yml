@@ -60,11 +60,11 @@ jobs:
             echo "⚠️  Warning: No CI checks found for this commit"
             echo "This might indicate the commit was pushed directly without a PR"
           else
-            # Check if all required checks passed
-            FAILED_CHECKS=$(echo "$RESPONSE" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .name' | wc -l)
+            # Check if required checks passed (exclude coverage which is continue-on-error)
+            FAILED_CHECKS=$(echo "$RESPONSE" | jq -r '.check_runs[] | select((.conclusion == "failure" or .conclusion == "cancelled") and (.name | test("coverage"; "i") | not)) | .name' | wc -l)
             if [ "$FAILED_CHECKS" -gt 0 ]; then
               echo "❌ Error: Some CI checks failed for this commit"
-              echo "$RESPONSE" | jq -r '.check_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | "  - \(.name): \(.conclusion)"'
+              echo "$RESPONSE" | jq -r '.check_runs[] | select((.conclusion == "failure" or .conclusion == "cancelled") and (.name | test("coverage"; "i") | not)) | "  - \(.name): \(.conclusion)"'
               echo "valid=false" >> $GITHUB_OUTPUT
               exit 1
             fi
