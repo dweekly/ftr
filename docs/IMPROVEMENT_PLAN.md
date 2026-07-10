@@ -1,102 +1,62 @@
 # ftr Improvement Plan
 
-Sequenced plan from a full-project review (code, docs, CI, and a feature-gap
-analysis against SwiftFTR 0.13.0) against Rust best practices as of mid-2026.
-One entry per shippable stage; delete stages as they merge (git has the history).
+Plan from a full-project review (code, docs, CI, and a feature-gap analysis
+against SwiftFTR 0.13.0) against Rust best practices as of mid-2026. Sections
+are stack-ranked — top is next; each is a shippable unit. Delete sections as
+they merge (git has the history).
 
 Context: ftr is in maintenance mode (SwiftFTR is the primary macOS client), but
 has external users (GitHub stars, crates.io, APT repo, one open issue — #22
-requesting IPv6). Priorities therefore lean correctness, docs accuracy, and
-supply-chain hygiene first; feature work (IPv6, streaming) second; SwiftFTR
-parity ports (multipath, probes) only as appetite allows.
+requesting IPv6). Docs accuracy, correctness fixes, dependency updates,
+CI/supply-chain hardening, and IPv6 validation spikes landed in PRs #23–#27;
+what remains is below.
 
-## Stage 1 — Docs accuracy & hygiene (1 PR, no code changes)
+## Follow-ups from landed work (small, independent)
 
-- README Options table: document all 16 flags from `src/main.rs` (missing:
-  `--protocol`, `--socket-mode`, `-q/--queries`, `-v`, `-p/--port`,
-  `--public-ip`, `--stun-server`, `--json`); fix `-i` documented default
-  (README says 5, code default is 0).
-- Fix MSRV references: `README.md:334` and `CLAUDE.md` say 1.82; actual is
-  1.85 (`Cargo.toml`).
-- Remove false claim that `cargo install ftr` is unavailable (`README.md:260`)
-  — it is published.
-- CLAUDE.md refresh: version 0.7.0 (says 0.6.0); `dns/` module is a custom
-  resolver, not hickory-resolver.
-- Add an Examples section to README covering `examples/` (8 files, currently
-  orphaned); rename `examples/test_v0_6_library.rs` (version-pinned name).
-- Delete `.github/workflows/debug-test.yml` (dead debug scaffolding).
-- TODO.md: remove shipped "custom DNS client" item.
-- Fix doc/constant drift: `TimingConfig` doc says poll interval default 100ms,
-  constant is 1ms.
+- DNS resolver: read system resolvers (`/etc/resolv.conf` / platform
+  equivalents) instead of the hardcoded 1.1.1.1 → 8.8.8.8 chain — currently
+  degraded on split-horizon/VPN/filtered networks. TCP fallback on truncated
+  (TC) responses (`DnsError::Truncated` exists; nothing retries over TCP).
+- Releases: adopt crates.io Trusted Publishing (OIDC) — requires one-time
+  configuration on crates.io by the maintainer, then swap the token step in
+  `release.yml` for `rust-lang/crates-io-auth-action`. Restructure the
+  two-phase draft-release flow so tagging can't leave crates.io/APT silently
+  unpublished. Add macOS release artifacts (brew tap currently builds from
+  source).
+- Coverage: make the llvm-cov job blocking once it proves stable (it kept
+  `continue-on-error: true` at introduction).
+- Lint debt: `cargo clippy --all-targets -- -D warnings` fails in `tests/`
+  (accumulated `unwrap_used` etc. — CI only lints lib+bin). Clean up, then add
+  `--all-targets` to the CI clippy job so it can't regress.
+- criterion is held at 0.7 because 0.8 declares `rust-version = 1.86` — bump
+  together with the next MSRV raise.
 
-## Stage 2 — Correctness bug fixes (1–2 PRs, patch release v0.7.1)
-
-- **Enrichment ignores injected Services** (HIGH): `EnrichmentService::new()`
-  builds a fresh `Services` (`src/enrichment/service.rs:36`), so
-  `Ftr::with_caches` prewarmed ASN/rDNS caches never reach hop enrichment and
-  each trace runs two disjoint cache sets. Add
-  `EnrichmentService::new_with_services` and thread the engine's `Services`
-  through (`src/traceroute/engine.rs`).
-- **StunClient custom servers ignored** (MEDIUM): `with_servers` stores
-  servers but the query path uses the hardcoded `STUN_SERVERS` constant
-  (`src/public_ip/stun.rs:160-170`). Make the query path use `self.servers`.
-- **Remove `env::set_var` intra-process signaling** (HIGH): `FTR_VERBOSE` set
-  in `src/traceroute/api.rs:92` and read in the socket factory; `FTR_STUN_SERVER`
-  set in `main.rs:184`. Races across concurrent traces and becomes `unsafe`
-  under edition 2024 — thread these through config structs instead. This is
-  the edition-2024 blocker.
-- **Engine error re-wrapping** loses variants: `api.rs:113-123` collapses any
-  engine error into `SocketError(String)`. Preserve the original variant.
-- **DNS resolver hardening** (`src/dns/resolver.rs`): validate response query
-  ID / QR bit / question section (currently accepts any datagram on the
-  unconnected socket); add one retransmit before the 5s timeout; add a
-  fallback server; check the TC bit instead of silently parsing truncated
-  responses. Larger follow-on (separate PR): read system resolvers from
-  `/etc/resolv.conf` / platform equivalents instead of hardcoded 1.1.1.1 —
-  currently broken on split-horizon/VPN/filtered networks.
-
-## Stage 3 — CI & supply chain to 2026 baseline (1–2 PRs)
-
-- SHA-pin all GitHub Actions (currently mutable tags incl. floating
-  `dtolnay/rust-toolchain@master`) + Dependabot for action updates.
-- Add cargo-deny with a reviewed `deny.toml` (licenses/bans/advisories/sources);
-  keep or drop standalone cargo-audit.
-- Add `cargo-semver-checks-action` — baseline for a published library crate.
-- Coverage: switch tarpaulin → cargo-llvm-cov (cross-platform, less invasive —
-  likely fixes the flakiness that forced `continue-on-error: true`); remove the
-  contradictory `fail_ci_if_error: true`.
-- Releases: adopt crates.io Trusted Publishing (OIDC) instead of a long-lived
-  token; add SHA256SUMS + GitHub artifact attestations (SLSA) for release
-  binaries; fix the two-phase draft-release trigger so tagging can't leave
-  crates.io/APT silently unpublished; consider macOS release artifacts
-  (currently none — brew tap builds from source).
-
-## Stage 4 — API cleanup & modernization (1 PR, minor release v0.8.0)
+## API cleanup & modernization (one PR, minor release v0.8.0)
 
 Bundle the breaking changes:
 
-- Edition 2021 → 2024 (unblocked by Stage 2's `set_var` removal); MSRV stays 1.85.
+- Edition 2021 → 2024 (unblocked: `env::set_var` signaling was removed in #26);
+  consider raising MSRV 1.85 → 1.86+ at the same time (unblocks criterion 0.8).
 - `#[non_exhaustive]` on public enums that will grow (`TracerouteError`,
   `SegmentType`, `ProbeProtocol`, `SocketMode`, `IpVersion`, error enums) —
   prerequisite for adding IPv6/TCP variants non-breakingly later.
 - Remove dead/duplicate public surface: unused `Caches` (`src/caches.rs`),
   duplicate `TimingConfig` (`src/config/timing.rs` vs `src/traceroute/config.rs`),
-  duplicate `ProbeInfo`/`ProbeResponse` (`src/socket/mod.rs:151-181` vs
-  `src/probe.rs`); make `Ftr.services` non-pub; narrow `pub mod socket`/`probe`.
+  duplicate `ProbeInfo`/`ProbeResponse` (`src/socket/mod.rs` vs `src/probe.rs`);
+  make `Ftr.services` non-pub; narrow `pub mod socket`/`probe`.
 - `TracerouteConfigBuilder::build()` → typed `ConfigError` instead of `String`.
-- Dependency minor bumps: tokio 1.47→1.52, criterion 0.7→0.8.
 
-## Stage 5 — Performance & reliability (2 PRs)
+## Performance & reliability (two PRs)
 
 - Replace 1ms busy-poll receive loops (`linux.rs`, `macos.rs`, `bsd.rs`) with
   tokio `AsyncFd` readiness — the dominant avoidable CPU cost; also fixes
   detached receiver tasks outliving the trace (tie receivers to the engine's
   `JoinSet`), removes `env::var("CI")` reads inside poll loops, and the
   per-packet throwaway struct allocations.
-- Consider shared-socket receive demux instead of socket-per-probe. SwiftFTR
-  lesson (0.8.0 regression): each concurrent socket needs a **unique ICMP
-  identifier**, validated on Echo Reply AND on the id embedded in Time
-  Exceeded/Unreachable payloads — kernels demux datagram-ICMP replies by id.
+- Consider shared-socket receive demux instead of socket-per-probe. Unique
+  ICMP identifier per concurrent socket, validated on Echo Reply AND on the id
+  embedded in Time Exceeded/Unreachable payloads (see `docs/IPV6_DESIGN.md` —
+  mandatory for v6 on Darwin, and SwiftFTR's 0.8.0 v4 regression).
 - Drop redundant double-locking: outer `tokio::RwLock` around internally
   locked `AsnCache`/`RdnsCache`; make `RdnsCache::get` not take a write lock
   per read.
@@ -106,42 +66,44 @@ Bundle the breaking changes:
   network tests behind an env var and serialize them (SwiftFTR's
   `NetworkTestGate` pattern) instead of letting them flake CI.
 
-## Stage 6 — IPv6 support (release train, closes issue #22)
+## IPv6 support (release train, closes issue #22)
 
-The only open user request. Currently v4-only: factory returns
-`Ipv6NotSupported`, ASN returns `NotFound` for v6, STUN v6 is a stub. Bundle
-v6 trace + v6 ASN enrichment in one release (SwiftFTR shipped these together —
-each is a half-feature alone); STUN v6 can trail.
+Design and macOS kernel behavior are validated — see `docs/IPV6_DESIGN.md`
+(spikes in `examples/spike_*.rs`, PR #27). Key validated facts: unprivileged
+DGRAM ICMPv6 on macOS receives Time Exceeded directly (no root needed, unlike
+v4); Darwin does NOT demux v6 replies by echo identifier, so userspace id
+filtering is mandatory; `ICMP6_FILTER` works via raw `setsockopt` (constant 18
+from the macOS SDK, absent from libc/socket2); kernel computes ICMPv6
+checksums on DGRAM; STUN v6 and Cymru `origin6` ASN lookups verified live.
 
-- ICMPv6 sockets via socket2 (`Domain::IPV6`/`Protocol::ICMPV6`,
-  `IPV6_UNICAST_HOPS`, `IPV6_RECVHOPLIMIT`). Note socket2 has no `ICMP6_FILTER`
-  helper (rust-lang/socket2#199) — set it via raw `setsockopt` through libc or
-  filter in userspace. Kernel does NOT include the IPv6 header on raw v6
-  receive (unlike v4) — parsing differs.
-- v6 ASN: Team Cymru `origin6.asn.cymru.com` nibble-reversed queries.
-- STUN v6: XOR-MAPPED-ADDRESS family 0x02, un-XOR bytes 4..15 against the
-  transaction ID (RFC 5389 §15.2).
-- rDNS `ip6.arpa` construction already exists (`dns/resolver.rs:76-85`).
-- `--preferred-family`/auto selection; consider `getaddrinfo` AI_V4MAPPED for
-  NAT64 transparency (SwiftFTR does this).
-- Contract lessons from SwiftFTR: emit canonical (`inet_ntop`-stable) address
-  strings; never strip `%zone` from link-local addresses; single family-
-  agnostic entry point, family in error *context* not error *type*.
+Remaining before integration:
+- Validate Linux (do ping sockets rewrite ids? filter semantics inverted?),
+  Windows (`Icmp6SendEcho2`), and BSD behavior — run the spikes there
+  (Parallels VMs / trogdor; GitHub cloud runners have no public IPv6, so live
+  v6 tests must be env-gated).
+- Root-mode RAW-vs-DGRAM comparison on macOS: `sudo cargo run --example
+  spike_traceroute6` (spike auto-detects euid 0).
 
-## Stage 7 — Feature ports from SwiftFTR (optional, by appetite)
+Bundle v6 trace + v6 ASN enrichment in one release (each is a half-feature
+alone); STUN v6 can trail. Contracts (from SwiftFTR, full list in the design
+doc): canonical `inet_ntop`-stable address strings; never strip `%zone` from
+link-local; single family-agnostic entry point; family in error *context*, not
+error type; `--preferred-family`/auto selection with `AI_V4MAPPED` for NAT64.
 
-Ranked by fit for a traceroute tool with external users:
+## Feature ports from SwiftFTR (optional, by appetite)
 
-1. **Streaming trace API** — `impl Stream<Item = StreamingHop>` emitting hops
+Stack-ranked by fit for a traceroute tool with external users:
+
+- **Streaming trace API** — `impl Stream<Item = StreamingHop>` emitting hops
    in arrival order with a re-probe phase for rate-limited routers. Best
    library-consumer win; SwiftFTR's `StreamingTrace` is the reference.
-2. **UDP 5-tuple multipath/ECMP discovery** — ftr on Linux already has
+- **UDP 5-tuple multipath/ECMP discovery** — ftr on Linux already has
    unprivileged UDP traceroute, so true Dublin/Paris-style flow variation is
    *more* attainable here than it was for SwiftFTR (which shipped ICMP-ID
    variation and documented it under-discovers, deferring UDP to its roadmap).
    A differentiating feature, not just parity.
-3. **TCP/UDP connectivity probes** — connected-UDP trick (ICMP unreachable
+- **TCP/UDP connectivity probes** — connected-UDP trick (ICMP unreachable
    surfaces as `ECONNREFUSED`, no privileges) and non-blocking TCP connect.
    Small, self-contained.
-4. **Bufferbloat/RPM testing** — probably out of scope for ftr; it drags in
+- **Bufferbloat/RPM testing** — probably out of scope for ftr; it drags in
    HTTP load generation and third-party endpoints. Skip unless a user asks.

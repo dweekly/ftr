@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ftr** (Fast TRaceroute) is a high-performance parallel ICMP traceroute written in Rust. It sends probes concurrently for ~10x speedup over traditional traceroute, with automatic ASN lookup, reverse DNS, public IP detection via STUN, and network segment classification. Available as both a CLI tool and a Rust library. Cross-platform: Linux, macOS, Windows, FreeBSD, OpenBSD.
 
-- **Version**: 0.7.0 (keep in sync with `Cargo.toml`)
+- **Version**: 0.8.0 (keep in sync with `Cargo.toml`)
 - **MSRV**: 1.85.0 (keep in sync with `rust-version` in `Cargo.toml`)
 - **Rust Edition**: 2021
 - **License**: MIT

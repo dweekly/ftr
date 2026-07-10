@@ -18,3 +18,8 @@ updates:
       cargo-dependencies:
         patterns:
           - "*"
+    ignore:
+      # criterion 0.8+ declares rust-version 1.86, above our MSRV (1.85).
+      # Remove this ignore when the MSRV is raised (see docs/IMPROVEMENT_PLAN.md).
+      - dependency-name: "criterion"
+        versions: [">=0.8.0"]
