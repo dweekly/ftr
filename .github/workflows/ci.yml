@@ -79,28 +79,32 @@ jobs:
   coverage:
     name: Code coverage
     runs-on: ubuntu-latest
-    continue-on-error: true  # Coverage is informational; network-dependent tests may flake under instrumentation
+    # Coverage is informational for now: integration tests exercise live
+    # network services (DNS, WHOIS, STUN) and may flake under instrumentation.
+    # Consider making this job blocking once it has a track record of stability.
+    continue-on-error: true
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master (2026-06-30)
       with:
         toolchain: stable
+        components: llvm-tools-preview
     - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       with:
         shared-key: "ci-ubuntu-latest"
     - uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
       with:
-        tool: cargo-tarpaulin
+        tool: cargo-llvm-cov
     - name: Run coverage
-      run: cargo tarpaulin --engine llvm --verbose --all-features --workspace --timeout 120 --out xml --exclude-files "*/tests/*" --exclude-files "*/examples/*"
+      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        files: ./cobertura.xml
+        files: lcov.info
         flags: unittests
         name: codecov-umbrella
-        fail_ci_if_error: true
+        fail_ci_if_error: false  # informational, consistent with continue-on-error above
         verbose: true
 
   # cargo-deny subsumes the previous cargo-audit job: its advisories check
