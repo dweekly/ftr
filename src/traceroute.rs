@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
 // Re-export commonly used types
-pub use api::{trace_async as trace, trace_with_config_async as trace_with_config, Traceroute};
+pub use api::{Traceroute, trace_async as trace, trace_with_config_async as trace_with_config};
 pub use config::{TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
 pub use error::TracerouteError;
 pub use result::{TracerouteProgress, TracerouteResult};

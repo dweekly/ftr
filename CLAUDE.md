@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - **Version**: 0.8.0 (keep in sync with `Cargo.toml`)
 - **MSRV**: 1.85.0 (keep in sync with `rust-version` in `Cargo.toml`)
-- **Rust Edition**: 2021
+- **Rust Edition**: 2024
 - **License**: MIT
 - **Repo**: github.com/dweekly/ftr
 

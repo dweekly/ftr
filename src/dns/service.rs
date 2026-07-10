@@ -4,7 +4,7 @@
 //! abstracting away the caching implementation details.
 
 use super::cache::RdnsCache;
-use super::reverse::{reverse_dns_lookup_with_cache, ReverseDnsError};
+use super::reverse::{ReverseDnsError, reverse_dns_lookup_with_cache};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;

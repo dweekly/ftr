@@ -149,9 +149,11 @@ async fn test_config_validation_errors() {
         .build();
 
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .contains("max_hops must be greater than or equal to start_ttl"));
+    assert!(
+        result
+            .unwrap_err()
+            .contains("max_hops must be greater than or equal to start_ttl")
+    );
 
     // Test empty target
     let result = TracerouteConfigBuilder::new().target("").build();

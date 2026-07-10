@@ -132,8 +132,8 @@ mod tests {
 
     #[test]
     fn test_cache_thread_safety() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread;
 
         // Create a shared cache

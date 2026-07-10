@@ -6,7 +6,7 @@ pub fn is_root() -> bool {
     {
         unsafe {
             // Use the libc crate to check effective user ID
-            extern "C" {
+            unsafe extern "C" {
                 fn geteuid() -> u32;
             }
             geteuid() == 0

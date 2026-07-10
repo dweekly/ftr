@@ -2,7 +2,7 @@
 
 use crate::asn::cache::AsnCache;
 use crate::dns::resolver;
-use crate::traceroute::{is_cgnat, is_internal_ip, AsnInfo};
+use crate::traceroute::{AsnInfo, is_cgnat, is_internal_ip};
 use ip_network::Ipv4Network;
 use std::net::Ipv4Addr;
 use std::sync::Arc;

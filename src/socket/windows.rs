@@ -4,10 +4,10 @@
 //! IcmpSendEcho2 API with Tokio's async primitives for immediate
 //! response notification.
 
+use crate::TimingConfig;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::traits::{ProbeMode, ProbeSocket};
 use crate::traceroute::TracerouteError;
-use crate::TimingConfig;
 use std::ffi::c_void;
 use std::future::Future;
 use std::mem;
@@ -18,11 +18,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, GetLastError, ERROR_IO_PENDING, HANDLE, WAIT_OBJECT_0,
+    CloseHandle, ERROR_IO_PENDING, GetLastError, HANDLE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho2, ICMP_ECHO_REPLY, IP_OPTION_INFORMATION,
-    IP_SUCCESS,
+    ICMP_ECHO_REPLY, IP_OPTION_INFORMATION, IP_SUCCESS, IcmpCloseHandle, IcmpCreateFile,
+    IcmpSendEcho2,
 };
 
 // ICMP status codes not provided by windows-sys

@@ -11,6 +11,8 @@ Next release is 0.8.0 (breaking change below); `Cargo.toml` already carries
 the bumped version so `cargo-semver-checks` gates against the right baseline.
 
 ### Changed
+- Rust edition 2021 -> 2024 (MSRV unchanged at 1.85, which edition 2024
+  requires as a minimum; includes the 2024 style-edition reformat)
 - **BREAKING**: `DnsError` gained a `Truncated` variant — truncated (TC-bit)
   DNS responses are now rejected instead of silently parsed as partial data
 - Dependencies updated: tokio 1.52, clap 4.6, getrandom 0.4, windows-sys 0.61,

@@ -3,9 +3,9 @@
 //! This module provides a service-oriented API for STUN-based public IP detection,
 //! abstracting away the server address caching implementation details.
 
-use super::stun::{get_public_ip_stun_with_servers_and_cache, StunError, STUN_SERVERS};
-use super::stun_cache::StunCache;
 use super::PublicIpError;
+use super::stun::{STUN_SERVERS, StunError, get_public_ip_stun_with_servers_and_cache};
+use super::stun_cache::StunCache;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;

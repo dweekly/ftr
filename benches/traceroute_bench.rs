@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use ftr::{trace_with_config, TracerouteConfig};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use ftr::{TracerouteConfig, trace_with_config};
 use std::time::Duration;
 
 fn benchmark_traceroute_local(c: &mut Criterion) {

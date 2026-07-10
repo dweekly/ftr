@@ -1,8 +1,8 @@
 //! Result types for traceroute operations
 
 use crate::socket::{ProbeProtocol, SocketMode};
-use crate::traceroute::types::{ClassifiedHopInfo, IspInfo};
 use crate::traceroute::AsnInfo;
+use crate::traceroute::types::{ClassifiedHopInfo, IspInfo};
 // No additional labels; SegmentType now includes Transit/Destination
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;

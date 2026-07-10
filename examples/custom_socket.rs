@@ -1,6 +1,6 @@
 //! Example of using ftr with custom socket configuration
 
-use ftr::{trace_with_config, ProbeProtocol, SocketMode, TracerouteConfigBuilder};
+use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, trace_with_config};
 use std::time::Duration;
 
 #[tokio::main]

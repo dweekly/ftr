@@ -1,6 +1,6 @@
 //! Performance tests for the ftr library
 
-use ftr::{trace_with_config, TracerouteConfig};
+use ftr::{TracerouteConfig, trace_with_config};
 use std::time::{Duration, Instant};
 
 #[tokio::test]

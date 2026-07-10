@@ -46,10 +46,12 @@ mod tests {
     async fn test_resolve_target_invalid() {
         let result = resolve_target("this.domain.definitely.does.not.exist.invalid").await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Error resolving host"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Error resolving host")
+        );
     }
 
     #[test]

@@ -5,18 +5,18 @@
 //! This avoids issues with macOS DGRAM ICMP sockets not receiving
 //! TimeExceeded messages when used with async I/O.
 
+use crate::TimingConfig;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::icmp;
 use crate::socket::traits::{ProbeMode, ProbeSocket};
 use crate::traceroute::TracerouteError;
-use crate::TimingConfig;
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
 use std::future::Future;
 use std::mem::MaybeUninit;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 
