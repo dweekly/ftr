@@ -1,14 +1,12 @@
 //! Integration tests for edge cases and performance
 
-#![allow(clippy::unwrap_used)]
-
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::time::{Duration, Instant};
 
 #[test]
 fn test_very_low_timeout() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--probe-timeout-ms",
         "1",
@@ -20,7 +18,7 @@ fn test_very_low_timeout() {
     ]);
 
     let start = Instant::now();
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
     let duration = start.elapsed();
 
     // Should complete within reasonable time even with low timeout
@@ -40,7 +38,7 @@ fn test_very_low_timeout() {
 
 #[test]
 fn test_high_ttl_value() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--start-ttl",
         "64",
@@ -50,7 +48,7 @@ fn test_high_ttl_value() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // Should handle high TTL values appropriately
     if output.status.success() {
@@ -67,7 +65,7 @@ fn test_multiple_concurrent_instances() {
 
     for i in 0..3 {
         let handle = std::thread::spawn(move || {
-            let mut cmd = Command::cargo_bin("ftr").unwrap();
+            let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
             cmd.args([
                 "--start-ttl",
                 "1",
@@ -91,7 +89,7 @@ fn test_multiple_concurrent_instances() {
 
 #[test]
 fn test_ipv4_address_input() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--start-ttl",
         "1",
@@ -101,7 +99,7 @@ fn test_ipv4_address_input() {
         "192.168.1.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // Should accept IPv4 addresses directly
     if output.status.success() {
@@ -120,7 +118,7 @@ fn test_queries_edge_cases() {
     ];
 
     for (queries, should_succeed) in test_cases {
-        let mut cmd = Command::cargo_bin("ftr").unwrap();
+        let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
         cmd.args([
             "--queries",
             queries,
@@ -131,7 +129,7 @@ fn test_queries_edge_cases() {
             "127.0.0.1",
         ]);
 
-        let output = cmd.output().unwrap();
+        let output = cmd.output().expect("failed to run ftr");
 
         if should_succeed {
             // Should either succeed or fail with permission error, not parameter error
@@ -157,7 +155,7 @@ fn test_port_boundaries() {
     ];
 
     for (port, _should_succeed) in test_cases {
-        let mut cmd = Command::cargo_bin("ftr").unwrap();
+        let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
         cmd.args([
             "--protocol",
             "udp",
@@ -177,7 +175,7 @@ fn test_port_boundaries() {
 
 #[test]
 fn test_silent_hops_minimalist_output() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     // Use a high starting TTL to likely get some silent hops
     cmd.args([
         "--start-ttl",
@@ -188,7 +186,7 @@ fn test_silent_hops_minimalist_output() {
         "8.8.8.8",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);

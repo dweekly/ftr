@@ -7,7 +7,7 @@ use predicates::prelude::*;
 
 #[test]
 fn test_windows_localhost_trace() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
@@ -17,7 +17,7 @@ fn test_windows_localhost_trace() {
 
 #[test]
 fn test_windows_icmp_mode() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["-v", "--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
@@ -27,10 +27,10 @@ fn test_windows_icmp_mode() {
 
 #[test]
 fn test_windows_gateway_detection() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "8.8.8.8"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -59,10 +59,10 @@ fn test_windows_gateway_detection() {
 
 #[test]
 fn test_windows_json_output() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--json", "--max-hops", "1", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -76,12 +76,12 @@ fn test_windows_json_output() {
 
 #[test]
 fn test_windows_dns_resolution() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "localhost"]);
 
     // The test should fail because "localhost" is being treated as invalid
     // This is a bug in the DNS resolution that needs to be investigated
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // For now, just check that it processes localhost in some way
     // Either it succeeds (resolving to 127.0.0.1) or fails with an error
@@ -93,7 +93,7 @@ fn test_windows_dns_resolution() {
 
 #[test]
 fn test_windows_invalid_host() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.arg("invalid.host.that.does.not.exist.example");
 
     cmd.assert()
@@ -109,7 +109,7 @@ fn test_windows_timeout_handling() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--probe-timeout-ms",
         "1", // Very short timeout
@@ -119,7 +119,7 @@ fn test_windows_timeout_handling() {
     ]);
 
     // Should complete even with very short timeout
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
     // Either succeeds or fails gracefully (not panic/crash)
     assert!(
         output.status.success() || !output.stderr.is_empty(),
@@ -135,10 +135,10 @@ fn test_windows_asn_lookup() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "18", "8.8.8.8"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
