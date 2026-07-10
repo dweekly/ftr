@@ -214,13 +214,11 @@ mod tests {
     async fn test_provider_failover() {
         let result = get_public_ip(PublicIpProvider::ICanHazIp).await;
 
-        match result {
-            Ok(_) => {}
-            Err(PublicIpError::AllProvidersFailed) => {}
-            Err(e) => {
-                panic!("Unexpected error type: {}", e);
-            }
-        }
+        assert!(
+            matches!(&result, Ok(_) | Err(PublicIpError::AllProvidersFailed)),
+            "Unexpected error type: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -231,10 +229,12 @@ mod tests {
 
         assert!(result.is_err());
 
-        match result.unwrap_err() {
-            PublicIpError::Timeout | PublicIpError::HttpError(_) => {}
-            e => panic!("Unexpected error type: {}", e),
-        }
+        let err = result.expect_err("1ms timeout should fail");
+        assert!(
+            matches!(err, PublicIpError::Timeout | PublicIpError::HttpError(_)),
+            "Unexpected error type: {}",
+            err
+        );
     }
 
     #[test]

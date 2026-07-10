@@ -155,15 +155,15 @@ mod tests {
         let config = TracerouteConfig::builder()
             .target("127.0.0.1")
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
-        let traceroute = result.unwrap();
+        let traceroute = result.expect("Traceroute creation should succeed");
         assert_eq!(
             traceroute.target_ip,
-            IpAddr::V4("127.0.0.1".parse().unwrap())
+            IpAddr::V4("127.0.0.1".parse().expect("valid IPv4 address"))
         );
     }
 
@@ -171,32 +171,34 @@ mod tests {
     async fn test_async_traceroute_ipv6_error() {
         let config = TracerouteConfig::builder()
             .target("::1")
-            .target_ip(IpAddr::V6("::1".parse().unwrap()))
+            .target_ip(IpAddr::V6("::1".parse().expect("valid IPv6 address")))
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = Traceroute::new(config).await;
-        assert!(result.is_err());
-
-        match result.unwrap_err() {
-            TracerouteError::Ipv6NotSupported => {}
-            _ => panic!("Expected IPv6 not supported error"),
-        }
+        assert!(
+            matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
+            "Expected IPv6 not supported error, got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
     async fn test_async_traceroute_with_ip() {
         let config = TracerouteConfig::builder()
             .target("8.8.8.8")
-            .target_ip(IpAddr::V4("8.8.8.8".parse().unwrap()))
+            .target_ip(IpAddr::V4("8.8.8.8".parse().expect("valid IPv4 address")))
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
-        let traceroute = result.unwrap();
-        assert_eq!(traceroute.target_ip, IpAddr::V4("8.8.8.8".parse().unwrap()));
+        let traceroute = result.expect("Traceroute creation should succeed");
+        assert_eq!(
+            traceroute.target_ip,
+            IpAddr::V4("8.8.8.8".parse().expect("valid IPv4 address"))
+        );
     }
 
     #[tokio::test]
@@ -204,20 +206,19 @@ mod tests {
         // This may fail due to permissions, but should at least parse correctly
         let result = trace_async("127.0.0.1").await;
 
-        // Either succeeds or fails with permissions
-        match result {
-            Ok(trace_result) => {
-                assert_eq!(trace_result.target, "127.0.0.1");
-            }
-            Err(TracerouteError::InsufficientPermissions { .. }) => {
-                // Expected on systems without proper permissions
-            }
-            Err(TracerouteError::SocketError(_)) => {
-                // Also acceptable for socket creation failures
-            }
-            Err(e) => {
-                panic!("Unexpected error: {:?}", e);
-            }
+        // Either succeeds, fails with permissions, or fails creating a socket
+        assert!(
+            matches!(
+                &result,
+                Ok(_)
+                    | Err(TracerouteError::InsufficientPermissions { .. })
+                    | Err(TracerouteError::SocketError(_))
+            ),
+            "Unexpected error: {:?}",
+            result
+        );
+        if let Ok(trace_result) = result {
+            assert_eq!(trace_result.target, "127.0.0.1");
         }
     }
 
@@ -228,25 +229,24 @@ mod tests {
             .max_hops(3)
             .probe_timeout(Duration::from_millis(100))
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = trace_with_config_async(config).await;
 
-        // Either succeeds or fails with permissions
-        match result {
-            Ok(trace_result) => {
-                assert_eq!(trace_result.target, "127.0.0.1");
-                assert!(trace_result.hops.len() <= 3);
-            }
-            Err(TracerouteError::InsufficientPermissions { .. }) => {
-                // Expected on systems without proper permissions
-            }
-            Err(TracerouteError::SocketError(_)) => {
-                // Also acceptable for socket creation failures
-            }
-            Err(e) => {
-                panic!("Unexpected error: {:?}", e);
-            }
+        // Either succeeds, fails with permissions, or fails creating a socket
+        assert!(
+            matches!(
+                &result,
+                Ok(_)
+                    | Err(TracerouteError::InsufficientPermissions { .. })
+                    | Err(TracerouteError::SocketError(_))
+            ),
+            "Unexpected error: {:?}",
+            result
+        );
+        if let Ok(trace_result) = result {
+            assert_eq!(trace_result.target, "127.0.0.1");
+            assert!(trace_result.hops.len() <= 3);
         }
     }
 
@@ -255,16 +255,16 @@ mod tests {
         let config = TracerouteConfig::builder()
             .target("localhost")
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = Traceroute::new(config).await;
         assert!(result.is_ok());
 
-        let traceroute = result.unwrap();
+        let traceroute = result.expect("Traceroute creation should succeed");
         // localhost should resolve to 127.0.0.1
         assert_eq!(
             traceroute.target_ip,
-            IpAddr::V4("127.0.0.1".parse().unwrap())
+            IpAddr::V4("127.0.0.1".parse().expect("valid IPv4 address"))
         );
     }
 
@@ -273,15 +273,14 @@ mod tests {
         let config = TracerouteConfig::builder()
             .target("this.hostname.definitely.does.not.exist.invalid")
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result = Traceroute::new(config).await;
-        assert!(result.is_err());
-
-        match result.unwrap_err() {
-            TracerouteError::ResolutionError(_) => {}
-            _ => panic!("Expected resolution error"),
-        }
+        assert!(
+            matches!(&result, Err(TracerouteError::ResolutionError(_))),
+            "Expected resolution error, got: {:?}",
+            result
+        );
     }
 
     #[tokio::test]
@@ -292,10 +291,12 @@ mod tests {
             .max_hops(1) // Limit hops to make test faster
             .probe_timeout(Duration::from_millis(100))
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
         assert_eq!(config.verbose, 2);
 
-        let traceroute = Traceroute::new(config).await.unwrap();
+        let traceroute = Traceroute::new(config)
+            .await
+            .expect("Traceroute creation for localhost should succeed");
 
         // Verbosity is threaded through explicitly; running a trace must not
         // mutate process-global environment state (which would race between

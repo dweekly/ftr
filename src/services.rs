@@ -158,7 +158,7 @@ mod tests {
 
         // Services should be directly accessible without locking
         // Test that we can call methods on them
-        let ip: std::net::IpAddr = "192.168.1.1".parse().unwrap();
+        let ip: std::net::IpAddr = "192.168.1.1".parse().expect("valid IP address");
         let _ = services.asn.lookup(ip).await;
 
         // Should be able to clear all caches
@@ -173,7 +173,7 @@ mod tests {
         let services = Services::with_services(None, Some(custom_rdns), None);
 
         // Should have the custom rdns service and be able to use it
-        let ip: std::net::IpAddr = "8.8.8.8".parse().unwrap();
+        let ip: std::net::IpAddr = "8.8.8.8".parse().expect("valid IP address");
         let _ = services.rdns.lookup(ip).await;
     }
 
@@ -185,7 +185,7 @@ mod tests {
         // Both should reference the same underlying services
         // (Arc ensures they share the same instances)
         // Test by verifying both can be used
-        let ip: std::net::IpAddr = "10.0.0.1".parse().unwrap();
+        let ip: std::net::IpAddr = "10.0.0.1".parse().expect("valid IP address");
         let _ = services1.asn.lookup(ip).await;
         let _ = services2.asn.lookup(ip).await;
     }

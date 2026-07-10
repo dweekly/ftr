@@ -263,7 +263,7 @@ mod tests {
 
         let dest_hop = result.destination_hop();
         assert!(dest_hop.is_some());
-        assert_eq!(dest_hop.unwrap().ttl, 3);
+        assert_eq!(dest_hop.expect("destination hop should exist").ttl, 3);
 
         let asn_hops = result.hops_with_asn();
         assert_eq!(asn_hops.len(), 2);
@@ -273,7 +273,7 @@ mod tests {
 
         let avg_rtt = result.average_rtt_ms();
         assert!(avg_rtt.is_some());
-        assert_eq!(avg_rtt.unwrap(), 15.0); // (5 + 15 + 25) / 3
+        assert_eq!(avg_rtt.expect("average RTT should be present"), 15.0); // (5 + 15 + 25) / 3
     }
 
     #[test]

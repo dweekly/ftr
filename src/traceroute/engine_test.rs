@@ -131,7 +131,7 @@ fn test_config(max_hops: u8) -> TracerouteConfig {
 async fn test_engine_three_hop_path() {
     let socket = MockSocket::three_hop_path();
     let config = test_config(5);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -155,7 +155,7 @@ async fn test_engine_three_hop_path() {
 async fn test_engine_handles_timeout_hops() {
     let socket = MockSocket::path_with_timeout();
     let config = test_config(5);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -179,7 +179,7 @@ async fn test_engine_handles_timeout_hops() {
 async fn test_engine_sends_correct_number_of_probes() {
     let socket = MockSocket::three_hop_path();
     let config = test_config(3);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -205,7 +205,7 @@ async fn test_engine_no_destination_reached() {
     let socket = MockSocket::new(responses, Duration::from_millis(5));
 
     let config = test_config(3);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -220,7 +220,7 @@ async fn test_engine_no_destination_reached() {
 async fn test_engine_result_metadata() {
     let socket = MockSocket::three_hop_path();
     let config = test_config(5);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -241,7 +241,7 @@ async fn test_engine_single_hop_destination() {
     let socket = MockSocket::new(responses, Duration::from_millis(1));
 
     let config = test_config(30);
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await
@@ -267,7 +267,7 @@ async fn test_engine_overall_timeout() {
     let mut config = test_config(30);
     config.overall_timeout = Duration::from_millis(200); // Very short overall timeout
 
-    let target: IpAddr = "8.8.8.8".parse().unwrap();
+    let target: IpAddr = "8.8.8.8".parse().expect("valid IPv4 address");
 
     let engine = super::TracerouteEngine::new(Box::new(socket), config, target)
         .await

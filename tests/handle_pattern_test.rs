@@ -20,7 +20,7 @@ async fn test_ftr_instance_basic_trace() {
     let result = ftr.trace("127.0.0.1").await;
 
     assert!(result.is_ok(), "Failed to trace localhost: {:?}", result);
-    let trace_result = result.unwrap();
+    let trace_result = result.expect("trace to localhost should succeed");
     assert!(
         !trace_result.hops.is_empty(),
         "Should have at least one hop"
@@ -49,7 +49,7 @@ async fn test_ftr_instance_with_config() {
     let result = ftr.trace_with_config(config).await;
 
     assert!(result.is_ok(), "Failed to trace with config: {:?}", result);
-    let trace_result = result.unwrap();
+    let trace_result = result.expect("trace with config should succeed");
     assert!(
         !trace_result.hops.is_empty(),
         "Should have at least one hop"

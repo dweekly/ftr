@@ -74,7 +74,9 @@ jobs:
       with:
         shared-key: "ci-ubuntu-latest"
     - name: Run clippy
-      run: cargo clippy -- -D warnings
+      # --all-targets also lints tests, benches, and examples so lint debt
+      # cannot re-accumulate outside the library/binary targets.
+      run: cargo clippy --all-targets -- -D warnings
 
   coverage:
     name: Code coverage

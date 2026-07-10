@@ -18,11 +18,13 @@ mod tests {
         assert!(result1.is_ok() || result1.is_err()); // May succeed or fail depending on network
 
         // Second lookup should be from cache if first succeeded
-        if result1.is_ok() {
-            let hostname1 = result1.unwrap();
+        if let Ok(hostname1) = result1 {
             let result2 = rdns_service.lookup(ip).await;
             assert!(result2.is_ok());
-            assert_eq!(hostname1, result2.unwrap());
+            assert_eq!(
+                hostname1,
+                result2.expect("second rDNS lookup should succeed")
+            );
 
             // Verify it's cached
             assert!(rdns_service.is_cached(&ip).await);
@@ -40,13 +42,13 @@ mod tests {
         // First lookup
         let result1 = asn_service.lookup_ipv4(ip).await;
         assert!(result1.is_ok());
-        let asn1 = result1.unwrap();
+        let asn1 = result1.expect("ASN lookup for private IP should succeed");
         assert_eq!(asn1.name, "Private Network");
 
         // Second lookup should be from cache
         let result2 = asn_service.lookup_ipv4(ip).await;
         assert!(result2.is_ok());
-        let asn2 = result2.unwrap();
+        let asn2 = result2.expect("cached ASN lookup should succeed");
 
         // Should be the same
         assert_eq!(asn1.asn, asn2.asn);
@@ -70,7 +72,7 @@ mod tests {
             .public_ip(public_ip)
             .enable_asn_lookup(true)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result =
             tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config)).await;
@@ -104,7 +106,7 @@ mod tests {
             .enable_asn_lookup(true)
             .enable_rdns(true)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let result1 =
             tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config1)).await;
@@ -120,7 +122,7 @@ mod tests {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
 
             let result2 =
                 tokio::time::timeout(Duration::from_secs(2), ftr.trace_with_config(config2)).await;
@@ -154,7 +156,7 @@ mod tests {
 
                     // Try to insert - this should not panic
                     match std::panic::catch_unwind(|| {
-                        let cache_write = cache.write().unwrap();
+                        let cache_write = cache.write().expect("cache lock poisoned");
                         cache_write.insert(ip, format!("test-host-{}.local", i));
                     }) {
                         Ok(_) => {}
@@ -168,7 +170,7 @@ mod tests {
                     for j in 0..10 {
                         let check_ip = IpAddr::V4(Ipv4Addr::new(10, 250, j, 1));
                         match std::panic::catch_unwind(|| {
-                            let cache_read = cache.read().unwrap();
+                            let cache_read = cache.read().expect("cache lock poisoned");
                             let _ = cache_read.get(&check_ip);
                         }) {
                             Ok(_) => {}
@@ -183,7 +185,7 @@ mod tests {
             .collect();
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("worker thread should not panic");
         }
 
         // The test passes if all operations completed without panicking

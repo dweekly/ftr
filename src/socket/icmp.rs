@@ -170,7 +170,7 @@ mod tests {
         hdr[14] = 1;
         hdr[15] = 1;
 
-        let (hdr_len, src) = parse_ipv4_header(&hdr).unwrap();
+        let (hdr_len, src) = parse_ipv4_header(&hdr).expect("valid IPv4 header should parse");
         assert_eq!(hdr_len, 20);
         assert_eq!(src, Ipv4Addr::new(192, 168, 1, 1));
     }
@@ -185,7 +185,7 @@ mod tests {
         hdr[14] = 0;
         hdr[15] = 1;
 
-        let (hdr_len, src) = parse_ipv4_header(&hdr).unwrap();
+        let (hdr_len, src) = parse_ipv4_header(&hdr).expect("valid IPv4 header should parse");
         assert_eq!(hdr_len, 24);
         assert_eq!(src, Ipv4Addr::new(10, 0, 0, 1));
     }
@@ -201,7 +201,7 @@ mod tests {
         pkt[0] = 0x45; // IHL 5 = 20 bytes header
         pkt[20] = 0x08; // payload starts here (ICMP echo request type)
 
-        let payload = ipv4_payload(&pkt).unwrap();
+        let payload = ipv4_payload(&pkt).expect("IPv4 payload should be extracted");
         assert_eq!(payload.len(), 4);
         assert_eq!(payload[0], 0x08);
     }
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_parse_icmp_header() {
         let data = [ICMP_TIME_EXCEEDED, 0x00, 0x00, 0x00];
-        let hdr = parse_icmp_header(&data).unwrap();
+        let hdr = parse_icmp_header(&data).expect("ICMP header should parse");
         assert_eq!(hdr.icmp_type, ICMP_TIME_EXCEEDED);
         assert_eq!(hdr.icmp_code, 0);
     }
@@ -221,7 +221,7 @@ mod tests {
         data[4..6].copy_from_slice(&0x1234u16.to_be_bytes());
         data[6..8].copy_from_slice(&0x0005u16.to_be_bytes());
 
-        let (id, seq) = parse_echo_reply(&data).unwrap();
+        let (id, seq) = parse_echo_reply(&data).expect("echo reply should parse");
         assert_eq!(id, 0x1234);
         assert_eq!(seq, 0x0005);
     }

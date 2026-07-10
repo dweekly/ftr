@@ -448,7 +448,7 @@ mod tests {
             .probe_timeout(Duration::from_millis(500))
             .queries_per_hop(3)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         assert_eq!(config.target, "google.com");
         assert_eq!(config.max_hops, 20);
@@ -495,7 +495,10 @@ mod tests {
     #[test]
     fn test_config_with_ip() {
         let ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
-        let config = TracerouteConfig::builder().target_ip(ip).build().unwrap();
+        let config = TracerouteConfig::builder()
+            .target_ip(ip)
+            .build()
+            .expect("failed to build traceroute config");
 
         assert_eq!(config.target_ip, Some(ip));
     }

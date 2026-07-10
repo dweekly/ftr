@@ -26,7 +26,7 @@ async fn test_traceroute_with_caching() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result1 = ftr_instance.trace_with_config(config1).await;
     match result1 {
@@ -62,7 +62,7 @@ async fn test_traceroute_with_caching() {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
 
             let result2 = ftr_instance.trace_with_config(config2).await;
             match result2 {
@@ -136,7 +136,7 @@ async fn test_multiple_targets_share_cache() {
             .enable_asn_lookup(true)
             .enable_rdns(true)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         match ftr_instance.trace_with_config(config).await {
             Ok(trace_result) => {

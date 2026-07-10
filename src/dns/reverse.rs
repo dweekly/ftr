@@ -69,10 +69,10 @@ mod tests {
         let cache = Arc::new(RwLock::new(crate::dns::cache::RdnsCache::with_default_ttl()));
         let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let result = reverse_dns_lookup_with_cache(ip, &cache).await;
-        // Private IPs usually don't have PTR records, but not always
-        match result {
-            Ok(hostname) => assert!(!hostname.is_empty()),
-            Err(_) => {} // Expected
+        // Private IPs usually don't have PTR records, but not always;
+        // an Err here is expected and fine.
+        if let Ok(hostname) = result {
+            assert!(!hostname.is_empty());
         }
     }
 
@@ -88,7 +88,7 @@ mod tests {
             // First lookup - should hit network
             let hostname1 = reverse_dns_lookup_with_cache(ip, &cache)
                 .await
-                .unwrap_or_else(|e| panic!("First lookup failed for {ip}: {e}"));
+                .expect("first rDNS lookup for 8.8.8.8 should succeed");
             assert!(
                 hostname1.contains("dns.google"),
                 "Expected dns.google, got '{hostname1}'"
@@ -97,7 +97,7 @@ mod tests {
             // Second lookup - should hit cache
             let hostname2 = reverse_dns_lookup_with_cache(ip, &cache)
                 .await
-                .unwrap_or_else(|e| panic!("Second lookup failed for {ip}: {e}"));
+                .expect("second (cached) rDNS lookup for 8.8.8.8 should succeed");
             assert_eq!(hostname1, hostname2, "Cache returned different value");
 
             // Verify it's in cache
@@ -123,10 +123,10 @@ mod tests {
         let cache = Arc::new(RwLock::new(crate::dns::cache::RdnsCache::with_default_ttl()));
         let ip: IpAddr = "2001:4860:4860::8888".parse().expect("valid IPv6");
         let result = reverse_dns_lookup_with_cache(ip, &cache).await;
-        // IPv6 PTR lookups should work but may not always resolve
-        match result {
-            Ok(hostname) => assert!(!hostname.is_empty()),
-            Err(_) => {} // Expected in some environments
+        // IPv6 PTR lookups should work but may not always resolve;
+        // an Err is expected in some environments.
+        if let Ok(hostname) = result {
+            assert!(!hostname.is_empty());
         }
     }
 

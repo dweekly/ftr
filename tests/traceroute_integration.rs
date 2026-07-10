@@ -5,7 +5,7 @@ use predicates::prelude::*;
 
 #[test]
 fn test_traceroute_to_localhost() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--start-ttl",
         "1",
@@ -15,7 +15,7 @@ fn test_traceroute_to_localhost() {
         "localhost",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // Localhost should resolve to 127.0.0.1
     if output.status.success() {
@@ -26,7 +26,7 @@ fn test_traceroute_to_localhost() {
 
 #[test]
 fn test_traceroute_with_multiple_queries() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--queries",
         "2",
@@ -44,7 +44,7 @@ fn test_traceroute_with_multiple_queries() {
 
 #[test]
 fn test_udp_mode_with_custom_port() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--protocol",
         "udp",
@@ -57,7 +57,7 @@ fn test_udp_mode_with_custom_port() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // Check if port is being used (in verbose mode we would see it)
     // For now, just verify command accepts the parameters
@@ -70,7 +70,7 @@ fn test_udp_mode_with_custom_port() {
 
 #[test]
 fn test_no_rdns_flag() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--no-rdns",
         "--start-ttl",
@@ -80,7 +80,7 @@ fn test_no_rdns_flag() {
         "8.8.8.8",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -91,7 +91,7 @@ fn test_no_rdns_flag() {
 
 #[test]
 fn test_no_enrich_flag() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--no-enrich",
         "--start-ttl",
@@ -101,7 +101,7 @@ fn test_no_enrich_flag() {
         "8.8.8.8",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -113,7 +113,7 @@ fn test_no_enrich_flag() {
 
 #[test]
 fn test_json_output_structure() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--json",
         "--start-ttl",
@@ -124,7 +124,7 @@ fn test_json_output_structure() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -132,14 +132,24 @@ fn test_json_output_structure() {
 
         // Verify JSON structure
         assert!(json["version"].is_string());
-        let version = json["version"].as_str().unwrap();
+        let version = json["version"]
+            .as_str()
+            .expect("version field should be a string");
         // Version should be in format X.Y.Z or X.Y.Z-UNRELEASED
         assert!(version.chars().filter(|c| *c == '.').count() >= 2);
         if cfg!(debug_assertions) {
             assert!(version.ends_with("-UNRELEASED"));
         }
-        assert_eq!(json["target"].as_str().unwrap(), "127.0.0.1");
-        assert_eq!(json["target_ip"].as_str().unwrap(), "127.0.0.1");
+        assert_eq!(
+            json["target"].as_str().expect("target should be a string"),
+            "127.0.0.1"
+        );
+        assert_eq!(
+            json["target_ip"]
+                .as_str()
+                .expect("target_ip should be a string"),
+            "127.0.0.1"
+        );
         assert!(json["hops"].is_array());
         assert!(json["protocol"].is_string());
         assert!(json["socket_mode"].is_string());
@@ -159,7 +169,7 @@ fn test_json_output_structure() {
 
 #[test]
 fn test_invalid_hostname() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["this-is-not-a-valid-hostname-12345.invalid"]);
 
     cmd.assert()
@@ -172,10 +182,10 @@ fn test_socket_mode_requires_permissions() {
     // Test that raw socket mode fails appropriately without root
     // This is a CLI test, so we just verify it exits with error status
     // The actual structured error testing is done in error_handling_test.rs
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--socket-mode", "raw", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // If we're not root, this should fail
     // If we are root, it might succeed or fail for other reasons

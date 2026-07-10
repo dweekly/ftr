@@ -84,20 +84,20 @@ mod tests {
         };
 
         // Insert into cache
-        let prefix: Ipv4Network = "104.16.0.0/12".parse().unwrap();
+        let prefix: Ipv4Network = "104.16.0.0/12".parse().expect("valid prefix");
         cache.insert(prefix, asn_info.clone());
 
         assert_eq!(cache.len(), 1);
         assert!(!cache.is_empty());
 
         // Test lookup - IP within the prefix
-        let ip: Ipv4Addr = "104.16.1.1".parse().unwrap();
+        let ip: Ipv4Addr = "104.16.1.1".parse().expect("valid IP address");
         let result = cache.get(&ip);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().asn, 13335);
+        assert_eq!(result.expect("cache should contain entry").asn, 13335);
 
         // Test lookup - IP outside the prefix
-        let ip: Ipv4Addr = "8.8.8.8".parse().unwrap();
+        let ip: Ipv4Addr = "8.8.8.8".parse().expect("valid IP address");
         let result = cache.get(&ip);
         assert!(result.is_none());
 
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_overlapping_prefixes() {
         let cache = AsnCache::new();
-        let specific_prefix = "192.168.1.0/24".parse().unwrap();
+        let specific_prefix = "192.168.1.0/24".parse().expect("valid prefix");
         let specific_info = AsnInfo {
             asn: 1,
             prefix: "192.168.1.0/24".to_string(),
@@ -120,7 +120,7 @@ mod tests {
         };
         cache.insert(specific_prefix, specific_info);
 
-        let broader_prefix = "192.168.0.0/16".parse().unwrap();
+        let broader_prefix = "192.168.0.0/16".parse().expect("valid prefix");
         let broader_info = AsnInfo {
             asn: 2,
             prefix: "192.168.0.0/16".to_string(),
@@ -131,9 +131,9 @@ mod tests {
         cache.insert(broader_prefix, broader_info);
 
         // Should match the most specific prefix
-        let ip: Ipv4Addr = "192.168.1.1".parse().unwrap();
+        let ip: Ipv4Addr = "192.168.1.1".parse().expect("valid IP address");
         let result = cache.get(&ip);
         assert!(result.is_some());
-        assert_eq!(result.unwrap().asn, 1);
+        assert_eq!(result.expect("cache should contain entry").asn, 1);
     }
 }

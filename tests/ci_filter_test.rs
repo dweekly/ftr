@@ -13,8 +13,8 @@ fn test_with_2_in_name() {
 
 #[test]
 fn test_without_number() {
-    // This test has no "2" in the name
-    assert!(true);
+    // This test has no "2" in the name. Its body is intentionally trivial:
+    // what matters is that the test runs at all (see module docs above).
 }
 
 #[test]

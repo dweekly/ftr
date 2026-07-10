@@ -15,7 +15,7 @@ async fn test_ftr_instance_methods() {
         .target("::1")
         .max_hops(1)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = ftr.trace_with_config(config).await;
     assert!(result.is_ok() || result.is_err()); // Platform-dependent
@@ -113,7 +113,7 @@ async fn test_timing_config_flows_through() {
         .max_hops(1)
         .timing(custom_timing)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     // This should use the custom timing config
     let result = ftr.trace_with_config(config).await;
@@ -142,7 +142,7 @@ async fn test_ftr_default_is_same_as_new() {
         .target("localhost")
         .max_hops(1)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let (r1, r2) = tokio::join!(
         ftr1.trace_with_config(config.clone()),

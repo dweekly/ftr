@@ -119,7 +119,7 @@ mod tests {
         let retrieved = cache.get(&ip1);
         assert!(retrieved.is_some(), "Should find inserted entry");
         assert_eq!(
-            retrieved.unwrap(),
+            retrieved.expect("cached entry should be present"),
             hostname1,
             "Should retrieve correct hostname"
         );
@@ -128,7 +128,7 @@ mod tests {
         for _ in 0..10 {
             let result = cache.get(&ip1);
             assert_eq!(
-                result.unwrap(),
+                result.expect("cached entry should be present"),
                 hostname1,
                 "Cache should return consistent data"
             );
@@ -141,8 +141,8 @@ mod tests {
         assert_eq!(cache.len(), 2, "Cache should have 2 entries");
 
         // Verify both entries exist and are correct
-        assert_eq!(cache.get(&ip1).unwrap(), hostname1);
-        assert_eq!(cache.get(&ip2).unwrap(), hostname2);
+        assert_eq!(cache.get(&ip1).expect("ip1 should be cached"), hostname1);
+        assert_eq!(cache.get(&ip2).expect("ip2 should be cached"), hostname2);
 
         // Test missing entry
         let ip3 = IpAddr::V4(Ipv4Addr::new(4, 4, 4, 4));
@@ -155,18 +155,21 @@ mod tests {
         let new_hostname1 = "dns.google.com".to_string();
         cache.insert(ip1, new_hostname1.clone());
         assert_eq!(
-            cache.get(&ip1).unwrap(),
+            cache.get(&ip1).expect("ip1 should be cached"),
             new_hostname1,
             "Should return updated hostname"
         );
         assert_eq!(cache.len(), 2, "Size shouldn't change on update");
 
         // Test IPv6
-        let ipv6 = IpAddr::V6("2001:4860:4860::8888".parse().unwrap());
+        let ipv6 = IpAddr::V6("2001:4860:4860::8888".parse().expect("valid IPv6 address"));
         let hostname_v6 = "dns.google.ipv6".to_string();
         cache.insert(ipv6, hostname_v6.clone());
         assert_eq!(cache.len(), 3, "Should handle IPv6 addresses");
-        assert_eq!(cache.get(&ipv6).unwrap(), hostname_v6);
+        assert_eq!(
+            cache.get(&ipv6).expect("ipv6 entry should be cached"),
+            hostname_v6
+        );
 
         // Test clear
         cache.clear();
