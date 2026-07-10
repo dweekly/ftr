@@ -68,7 +68,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SegmentType::Isp => "ISP",
                 SegmentType::Transit => "TRANSIT",
                 SegmentType::Destination => "DESTINATION",
-                SegmentType::Unknown => "UNKNOWN",
+                // SegmentType is #[non_exhaustive]
+                _ => "UNKNOWN",
             };
 
             let hostname = hop.hostname.as_deref().unwrap_or("");
@@ -116,7 +117,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     SegmentType::Isp => Some("ISP".to_string()),
                     SegmentType::Transit => Some("TRANSIT".to_string()),
                     SegmentType::Destination => Some("DESTINATION".to_string()),
-                    SegmentType::Unknown => None,
+                    // SegmentType is #[non_exhaustive]
+                    _ => None,
                 },
                 address: hop.addr.map(|a| a.to_string()),
                 hostname: hop.hostname.clone(),

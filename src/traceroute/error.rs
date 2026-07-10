@@ -3,7 +3,11 @@
 use thiserror::Error;
 
 /// Errors that can occur during traceroute operations
+///
+/// This enum is `#[non_exhaustive]`: new error variants may be added in
+/// minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TracerouteError {
     /// Socket creation failed due to insufficient permissions
     ///

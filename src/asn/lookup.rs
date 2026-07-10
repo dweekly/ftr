@@ -9,7 +9,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Error type for ASN lookup operations
+///
+/// This enum is `#[non_exhaustive]`: new error variants may be added in
+/// minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum AsnLookupError {
     /// DNS resolution failed
     #[error("DNS resolution failed: {0}")]

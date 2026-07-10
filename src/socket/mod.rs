@@ -26,7 +26,11 @@ use serde::{Deserialize, Serialize};
 /// IP version to use for probing
 ///
 /// Currently only IPv4 is fully supported. IPv6 support is planned for future releases.
+///
+/// This enum is `#[non_exhaustive]` so downstream matches must include a
+/// wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum IpVersion {
     /// IPv4 addressing
     V4,
@@ -52,7 +56,11 @@ pub enum IpVersion {
 /// let protocol = ProbeProtocol::Udp;
 /// println!("Using {} protocol", protocol.description());
 /// ```
+///
+/// This enum is `#[non_exhaustive]`: new protocols may be added in minor
+/// releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum ProbeProtocol {
     /// ICMP Echo Request protocol
     Icmp,
@@ -88,7 +96,11 @@ impl ProbeProtocol {
 /// - **macOS**: Works without root for ICMP DGRAM sockets
 /// - **FreeBSD/OpenBSD**: Requires root
 /// - **Windows**: Uses Windows-specific ICMP APIs (IcmpSendEcho)
+///
+/// This enum is `#[non_exhaustive]`: new socket modes may be added in minor
+/// releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SocketMode {
     /// Raw socket - always requires CAP_NET_RAW or root
     Raw,

@@ -4,7 +4,11 @@ use std::net::IpAddr;
 use std::time::Duration;
 
 /// Error type for public IP detection
+///
+/// This enum is `#[non_exhaustive]`: new error variants may be added in
+/// minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum PublicIpError {
     /// HTTP request failed
     #[error("HTTP request failed: {0}")]
@@ -36,7 +40,11 @@ pub enum PublicIpError {
 }
 
 /// Public IP provider services
+///
+/// This enum is `#[non_exhaustive]`: new providers may be added in minor
+/// releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[non_exhaustive]
 pub enum PublicIpProvider {
     /// AWS checkip service
     #[default]

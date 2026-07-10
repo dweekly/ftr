@@ -460,7 +460,9 @@ fn display_json_results(result: TracerouteResult) -> Result<(), Box<dyn std::err
             ftr::SegmentType::Isp => Some("ISP".to_string()),
             ftr::SegmentType::Transit => Some("TRANSIT".to_string()),
             ftr::SegmentType::Destination => Some("DESTINATION".to_string()),
-            ftr::SegmentType::Unknown => None,
+            // SegmentType is #[non_exhaustive]; treat Unknown and any future
+            // variants this binary predates as unclassified.
+            _ => None,
         };
         json_output.hops.push(JsonHop {
             ttl: hop.ttl,

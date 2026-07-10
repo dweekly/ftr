@@ -57,7 +57,11 @@ pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
 /// let segment = SegmentType::Isp;
 /// println!("Hop is in the {} segment", segment);
 /// ```
+///
+/// This enum is `#[non_exhaustive]`: new segment classifications may be
+/// added in minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SegmentType {
     /// Local area network (private IP ranges like 192.168.x.x)
     Lan,
