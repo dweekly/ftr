@@ -5,10 +5,9 @@
 use crate::services::Services;
 use crate::traceroute::AsnInfo;
 use crate::traceroute::TracerouteError;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinSet;
 
 /// Enrichment result for an IP address
@@ -25,9 +24,6 @@ pub struct EnrichmentResult {
 /// Async enrichment service
 pub struct EnrichmentService {
     services: Arc<Services>,
-    seen_addresses: Arc<RwLock<HashSet<IpAddr>>>,
-    enrichment_tx: mpsc::UnboundedSender<IpAddr>,
-    enrichment_rx: Arc<RwLock<mpsc::UnboundedReceiver<IpAddr>>>,
 }
 
 impl EnrichmentService {
@@ -42,75 +38,7 @@ impl EnrichmentService {
     /// `services`, so any caches owned by those services (e.g. pre-warmed
     /// via [`crate::Ftr::with_caches`]) are honored.
     pub async fn new_with_services(services: Arc<Services>) -> Result<Self, TracerouteError> {
-        let (enrichment_tx, enrichment_rx) = mpsc::unbounded_channel();
-
-        Ok(Self {
-            services,
-            seen_addresses: Arc::new(RwLock::new(HashSet::new())),
-            enrichment_tx,
-            enrichment_rx: Arc::new(RwLock::new(enrichment_rx)),
-        })
-    }
-
-    /// Enqueue an IP address for enrichment
-    pub async fn enqueue(&self, addr: IpAddr) -> Result<(), TracerouteError> {
-        let mut seen = self.seen_addresses.write().await;
-        if seen.insert(addr) {
-            self.enrichment_tx
-                .send(addr)
-                .map_err(|e| TracerouteError::Other(e.to_string()))?;
-        }
-        Ok(())
-    }
-
-    /// Start background enrichment processing
-    pub async fn start_background_enrichment(self: Arc<Self>) -> HashMap<IpAddr, EnrichmentResult> {
-        let mut results = HashMap::new();
-        let mut enrichment_futures = JoinSet::new();
-
-        // Take ownership of the receiver
-        let mut rx = self.enrichment_rx.write().await;
-
-        // Process enrichment queue
-        loop {
-            tokio::select! {
-                // Check for new addresses to enrich
-                Some(addr) = rx.recv() => {
-                    let services = Arc::clone(&self.services);
-
-                    // Spawn parallel DNS and ASN lookups
-                    enrichment_futures.spawn(async move {
-                        let dns_future = services.rdns.lookup(addr);
-                        let asn_future = services.asn.lookup(addr);
-
-                        let (hostname_result, asn_result) = tokio::join!(dns_future, asn_future);
-
-                        let hostname = hostname_result.ok();
-                        let asn_info = asn_result.ok();
-
-                        EnrichmentResult {
-                            addr,
-                            hostname,
-                            asn_info,
-                        }
-                    });
-                }
-
-                // Collect completed enrichments
-                Some(Ok(result)) = enrichment_futures.join_next() => {
-                    results.insert(result.addr, result);
-                }
-
-                // Exit when queue is empty and all futures are done
-                else => {
-                    if enrichment_futures.is_empty() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        results
+        Ok(Self { services })
     }
 
     /// Enrich a set of IP addresses and wait for results
@@ -158,23 +86,6 @@ mod tests {
     async fn test_enrichment_service_creation() {
         let service = EnrichmentService::new().await;
         assert!(service.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_enqueue_deduplication() {
-        let service = Arc::new(EnrichmentService::new().await.unwrap());
-        let addr: IpAddr = "8.8.8.8".parse().unwrap();
-
-        // First enqueue should succeed
-        assert!(service.enqueue(addr).await.is_ok());
-
-        // Second enqueue of same address should be deduplicated
-        assert!(service.enqueue(addr).await.is_ok());
-
-        // Check that only one address is in seen set
-        let seen = service.seen_addresses.read().await;
-        assert_eq!(seen.len(), 1);
-        assert!(seen.contains(&addr));
     }
 
     #[tokio::test]
@@ -236,37 +147,6 @@ mod tests {
         let asn = result.asn_info.unwrap();
         assert_eq!(asn.asn, 15169);
         assert_eq!(asn.name, "GOOGLE");
-    }
-
-    #[tokio::test]
-    async fn test_background_enrichment() {
-        // Create service without Arc first
-        let mut service = EnrichmentService::new().await.unwrap();
-        let addr1: IpAddr = "8.8.8.8".parse().unwrap();
-        let addr2: IpAddr = "1.1.1.1".parse().unwrap();
-
-        // Enqueue addresses
-        service.enqueue(addr1).await.unwrap();
-        service.enqueue(addr2).await.unwrap();
-
-        // Take the sender out to close it
-        let tx = std::mem::replace(&mut service.enrichment_tx, mpsc::unbounded_channel().0);
-        drop(tx); // This actually closes the channel
-
-        // Now wrap in Arc for background processing
-        let service = Arc::new(service);
-
-        // 30s timeout: network tests run ~10x slower under coverage instrumentation
-        let results = tokio::time::timeout(
-            std::time::Duration::from_secs(30),
-            service.start_background_enrichment(),
-        )
-        .await
-        .expect("Background enrichment timed out");
-
-        // Should have results for both addresses
-        assert!(results.contains_key(&addr1));
-        assert!(results.contains_key(&addr2));
     }
 
     #[tokio::test]

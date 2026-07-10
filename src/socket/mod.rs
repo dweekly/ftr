@@ -1,25 +1,22 @@
 //! Socket abstraction layer for multi-protocol traceroute support
 
-use std::net::IpAddr;
-use std::time::{Duration, Instant};
-
 #[cfg(any(
     target_os = "freebsd",
     target_os = "openbsd",
     target_os = "netbsd",
     target_os = "dragonfly"
 ))]
-pub mod bsd;
-pub mod factory;
-pub mod icmp;
+pub(crate) mod bsd;
+pub(crate) mod factory;
+pub(crate) mod icmp;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "macos")]
-pub mod macos;
+pub(crate) mod macos;
 pub mod traits;
 pub mod utils;
 #[cfg(target_os = "windows")]
-pub mod windows;
+pub(crate) mod windows;
 
 use serde::{Deserialize, Serialize};
 
@@ -158,49 +155,6 @@ impl ProbeMode {
     }
 }
 
-/// Information about a sent probe
-#[derive(Debug, Clone)]
-pub struct ProbeInfo {
-    /// Time-to-live value
-    pub ttl: u8,
-    /// Unique identifier for this probe
-    pub identifier: u16,
-    /// Sequence number
-    pub sequence: u16,
-    /// When the probe was sent
-    pub sent_at: Instant,
-}
-
-/// Type of response received
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ResponseType {
-    /// ICMP Time Exceeded (TTL expired)
-    TimeExceeded,
-    /// ICMP Destination Unreachable
-    DestinationUnreachable(u8), // with ICMP code
-    /// ICMP Echo Reply
-    EchoReply,
-    /// TCP SYN-ACK received
-    TcpSynAck,
-    /// TCP RST received
-    TcpRst,
-    /// UDP port unreachable
-    UdpPortUnreachable,
-}
-
-/// Response from a probe
-#[derive(Debug, Clone)]
-pub struct ProbeResponse {
-    /// Address that sent the response
-    pub from_addr: IpAddr,
-    /// Type of response
-    pub response_type: ResponseType,
-    /// Probe information that triggered this response
-    pub probe_info: ProbeInfo,
-    /// Round-trip time
-    pub rtt: Duration,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,14 +180,5 @@ mod tests {
     fn test_ip_version() {
         assert_eq!(IpVersion::V4, IpVersion::V4);
         assert_ne!(IpVersion::V4, IpVersion::V6);
-    }
-
-    #[test]
-    fn test_response_types() {
-        let resp = ResponseType::DestinationUnreachable(3);
-        match resp {
-            ResponseType::DestinationUnreachable(code) => assert_eq!(code, 3),
-            _ => panic!("Wrong response type"),
-        }
     }
 }

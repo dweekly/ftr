@@ -40,11 +40,6 @@ pub fn build_echo_request(identifier: u16, sequence: u16, payload: &[u8]) -> Vec
     buf
 }
 
-/// Minimum packet size for an ICMP echo request (header only, no payload).
-pub const fn echo_request_min_size() -> usize {
-    ICMP_HEADER_SIZE
-}
-
 /// Parse an IPv4 header to extract the payload offset and source address.
 ///
 /// Returns `(header_length_bytes, source_addr)` or `None` if the buffer is too short.

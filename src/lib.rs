@@ -112,7 +112,6 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod asn;
-pub mod caches;
 pub mod config;
 pub mod services;
 /// Simple debug print macro for conditional debug output
@@ -136,15 +135,12 @@ macro_rules! trace_time {
     };
 }
 pub mod dns;
-pub mod enrichment;
+pub(crate) mod enrichment;
 #[cfg(feature = "async")]
 pub mod probe;
 pub mod public_ip;
 pub mod socket;
 pub mod traceroute;
-
-#[cfg(test)]
-mod tests;
 
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
