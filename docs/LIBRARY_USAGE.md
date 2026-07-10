@@ -1,6 +1,30 @@
-# Using ftr as a Library (v0.6.0)
+# Using ftr as a Library (v0.8.0)
 
-This guide covers how to use ftr v0.6.0 as a Rust library in your own applications.
+This guide covers how to use ftr v0.8.0 as a Rust library in your own applications.
+
+## Breaking Changes in v0.8.0
+
+Version 0.8.0 tightens the public API surface:
+
+- **CHANGED**: Public enums that may grow (`TracerouteError`, `SegmentType`,
+  `ProbeProtocol`, `SocketMode`, `IpVersion`, and the error enums of the
+  `asn`, `dns`, and `public_ip` modules) are now `#[non_exhaustive]` —
+  downstream `match` expressions must include a wildcard arm
+- **CHANGED**: `TracerouteConfigBuilder::build()` and
+  `TracerouteConfig::validate()` return a typed `ftr::ConfigError` instead of
+  `String`; `TracerouteError::ConfigError` carries `ConfigError` (and
+  implements `From<ConfigError>`)
+- **CHANGED**: `Ftr::services` is now a private field — use the
+  `ftr.services()` accessor instead
+- **REMOVED**: unused `ftr::caches::Caches` (use `Ftr::with_caches`),
+  the duplicate `TimingConfig` in `ftr::config::timing` (the live one is
+  `ftr::TimingConfig`; the `DEFAULT_*_MS` constants remain), the duplicate
+  `ProbeInfo`/`ProbeResponse`/`ResponseType` in `ftr::socket` (the live
+  types are in `ftr::probe`), and
+  `traceroute::isp_from_path::extract_isp_from_path`
+- **CHANGED**: internal modules (`ftr::enrichment`,
+  `ftr::socket::{factory, icmp}`, and the non-Linux platform socket
+  modules) are no longer public
 
 ## Breaking Changes in v0.6.0
 
@@ -28,7 +52,7 @@ Add ftr to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ftr = "0.6.0"
+ftr = "0.8"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -90,6 +114,24 @@ let ftr = Ftr::with_caches(
     Some(stun_cache)
 );
 ```
+
+### Direct Service Access
+
+For advanced use, the individual services (ASN lookup, reverse DNS, STUN)
+are available through the `services()` accessor:
+
+```rust
+use ftr::Ftr;
+
+let ftr = Ftr::new();
+
+// Direct ASN service access (e.g. for cache statistics)
+let stats = ftr.services().asn.cache_stats().await;
+println!("ASN cache has {} entries", stats.entries);
+```
+
+For one-off lookups, prefer the convenience methods `ftr.lookup_asn(ip)`,
+`ftr.lookup_rdns(ip)`, and `ftr.get_public_ip()`.
 
 ## Configuration
 
@@ -153,14 +195,15 @@ async fn analyze_trace(ftr: &Ftr, target: &str) -> Result<(), Box<dyn std::error
     println!("Target: {} ({})", result.target, result.target_ip);
     println!("Reached: {}", result.destination_reached);
     
-    // Analyze network segments (v0.6.0 refined segments)
+    // Analyze network segments (v0.6.0 refined segments).
+    // SegmentType is #[non_exhaustive], so a wildcard arm is required.
     for hop in &result.hops {
         match hop.segment {
             SegmentType::Lan => println!("LAN hop: {:?}", hop.addr),
             SegmentType::Isp => println!("ISP hop: {:?}", hop.addr),
             SegmentType::Transit => println!("Transit hop: {:?}", hop.addr),
             SegmentType::Destination => println!("Destination hop: {:?}", hop.addr),
-            SegmentType::Unknown => println!("Unknown hop: {:?}", hop.addr),
+            _ => println!("Unknown hop: {:?}", hop.addr),
         }
         
         // ASN information
@@ -237,7 +280,8 @@ Direct cache access is no longer available. All caching is handled internally by
 
 ## Error Handling
 
-Error handling remains the same with structured errors:
+Errors are structured. `TracerouteError` is `#[non_exhaustive]`, so always
+include a wildcard arm:
 
 ```rust
 use ftr::{Ftr, TracerouteError};
@@ -259,6 +303,16 @@ match ftr.trace("example.com").await {
         eprintln!("Error: {}", e);
     }
 }
+```
+
+Configuration validation failures are reported as the typed
+`ftr::ConfigError` enum:
+
+```rust
+use ftr::{ConfigError, TracerouteConfigBuilder};
+
+let result = TracerouteConfigBuilder::new().build();
+assert_eq!(result.unwrap_err(), ConfigError::MissingTarget);
 ```
 
 ## Thread Safety
