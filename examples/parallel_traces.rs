@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("valid traceroute config");
 
             let trace_start = Instant::now();
             let result = trace_with_config(config).await;
@@ -105,7 +105,7 @@ fn count_asn_changes(result: &ftr::TracerouteResult) -> usize {
                     changes += 1;
                 }
             }
-            last_asn = Some(asn_info.asn.clone());
+            last_asn = Some(asn_info.asn);
         }
     }
 

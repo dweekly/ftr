@@ -73,6 +73,13 @@ criterion = { version = "0.7", features = ["html_reports"] }
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
 libc = "0.2"
 
+# libc on macOS is used ONLY by the IPv6 validation spikes in examples/
+# (recvmsg cmsg parsing for IPV6_HOPLIMIT, ICMP6_FILTER setsockopt) —
+# see docs/IPV6_DESIGN.md. It is a dev-dependency so the shipped library
+# and binary are unaffected.
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+libc = "0.2"
+
 [lints.clippy]
 # Deny correctness issues (lower priority so specific lints can override)
 correctness = { level = "deny", priority = -1 }

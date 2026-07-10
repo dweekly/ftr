@@ -17,7 +17,7 @@ async fn main() {
         .target("google.com")
         .socket_mode(SocketMode::Raw) // Requires root
         .build()
-        .unwrap();
+        .expect("valid traceroute config");
 
     match ftr.trace_with_config(config).await {
         Ok(result) => {
@@ -43,7 +43,7 @@ async fn main() {
         .target("google.com")
         .protocol(ProbeProtocol::Tcp)
         .build()
-        .unwrap();
+        .expect("valid traceroute config");
 
     match ftr.trace_with_config(config).await {
         Ok(_) => println!("  Unexpected success!"),
@@ -111,7 +111,7 @@ async fn main() {
             .socket_mode(mode)
             .max_hops(10)
             .build()
-            .unwrap();
+            .expect("valid traceroute config");
 
         match ftr.trace_with_config(config).await {
             Ok(result) => {
@@ -139,7 +139,7 @@ async fn main() {
             .protocol(ProbeProtocol::Udp)
             .max_hops(10)
             .build()
-            .unwrap();
+            .expect("valid traceroute config");
 
         match ftr.trace_with_config(config).await {
             Ok(result) => {
