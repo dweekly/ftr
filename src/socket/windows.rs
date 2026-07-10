@@ -66,11 +66,21 @@ pub struct WindowsAsyncIcmpSocket {
     destination_reached: Arc<Mutex<bool>>,
     pending_count: Arc<Mutex<usize>>,
     timing_config: TimingConfig,
+    verbose: u8,
 }
 
 impl WindowsAsyncIcmpSocket {
     /// Create a new Windows async ICMP socket
     pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
+        Self::new_with_config_and_verbose(timing_config, 0)
+    }
+
+    /// Create a new Windows async ICMP socket with an explicit verbosity
+    /// level (replaces the former FTR_VERBOSE environment lookup)
+    pub fn new_with_config_and_verbose(
+        timing_config: TimingConfig,
+        verbose: u8,
+    ) -> Result<Self, TracerouteError> {
         let icmp_handle = unsafe { IcmpCreateFile() };
         if icmp_handle.is_null() {
             return Err(TracerouteError::SocketError(
@@ -83,6 +93,7 @@ impl WindowsAsyncIcmpSocket {
             destination_reached: Arc::new(Mutex::new(false)),
             pending_count: Arc::new(Mutex::new(0)),
             timing_config,
+            verbose,
         })
     }
 
@@ -334,12 +345,7 @@ impl ProbeSocket for WindowsAsyncIcmpSocket {
             let timeout_duration = self.timing_config.socket_read_timeout;
 
             // Debug logging for timeout analysis
-            let verbose = std::env::var("FTR_VERBOSE")
-                .ok()
-                .and_then(|v| v.parse::<u8>().ok())
-                .unwrap_or(0);
-
-            if verbose >= 3 {
+            if self.verbose >= 3 {
                 let windows_timeout_ms = {
                     let user_timeout_ms = self.timing_config.socket_read_timeout.as_millis() as u32;
                     let windows_timeout =

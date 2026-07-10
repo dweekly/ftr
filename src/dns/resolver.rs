@@ -5,7 +5,7 @@
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use tokio::net::UdpSocket;
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 
 /// DNS query types
 #[derive(Debug, Clone, Copy)]
@@ -41,11 +41,23 @@ pub enum DnsError {
     /// No records found
     #[error("no records found (NXDOMAIN or empty)")]
     NotFound,
+    /// Response was truncated (TC bit set)
+    ///
+    /// The answer did not fit in a UDP datagram. Retrying the query over
+    /// TCP is future work; callers currently treat this as a failed lookup.
+    #[error("truncated DNS response (TCP fallback not implemented)")]
+    Truncated,
 }
 
-/// Cloudflare DNS server
-const DNS_SERVER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 53);
-/// DNS query timeout
+/// Public resolvers tried in order: Cloudflare primary, Google fallback.
+/// The fallback is only consulted when the primary times out or errors,
+/// not on an authoritative NXDOMAIN.
+const DNS_SERVERS: &[SocketAddr] = &[
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 53),
+    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
+];
+/// Per-server DNS query timeout. If no response arrives halfway through
+/// this window, the query is retransmitted once (UDP datagrams may be lost).
 const DNS_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum DNS response size
 const MAX_RESPONSE: usize = 4096;
@@ -110,27 +122,99 @@ pub async fn resolve_txt(name: &str) -> Result<Vec<String>, DnsError> {
     Ok(txts)
 }
 
-/// Send a DNS query and parse the response.
+/// Send a DNS query and parse the response, trying each configured server
+/// in order until one yields an answer (or an authoritative NXDOMAIN).
 async fn query(name: &str, qtype: QType) -> Result<Vec<DnsRecord>, DnsError> {
-    let packet = build_query(name, qtype);
-
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
-    socket.send_to(&packet, DNS_SERVER).await?;
-
-    let mut buf = vec![0u8; MAX_RESPONSE];
-    let n = timeout(DNS_TIMEOUT, socket.recv(&mut buf))
-        .await
-        .map_err(|_| DnsError::Timeout)??;
-
-    parse_response(&buf[..n], qtype)
+    let mut last_err = DnsError::Timeout;
+    for server in DNS_SERVERS {
+        match query_server(name, qtype, *server).await {
+            Ok(records) => return Ok(records),
+            // NXDOMAIN is an authoritative answer; asking another
+            // recursive resolver would just repeat it.
+            Err(DnsError::NotFound) => return Err(DnsError::NotFound),
+            Err(e) => last_err = e,
+        }
+    }
+    Err(last_err)
 }
 
-/// Build a DNS query packet.
-fn build_query(name: &str, qtype: QType) -> Vec<u8> {
+/// Send a DNS query to a single server and parse the response.
+///
+/// Retransmits once halfway through [`DNS_TIMEOUT`] if no response has
+/// arrived, and discards datagrams whose header does not match our query
+/// (wrong ID, or not a response) until the deadline.
+async fn query_server(
+    name: &str,
+    qtype: QType,
+    server: SocketAddr,
+) -> Result<Vec<DnsRecord>, DnsError> {
+    let id = random_query_id();
+    let packet = build_query(name, qtype, id);
+
+    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    // Connecting also makes the OS drop datagrams from other source addresses
+    socket.connect(server).await?;
+    socket.send(&packet).await?;
+
+    let deadline = tokio::time::Instant::now() + DNS_TIMEOUT;
+    // One retransmission halfway through the timeout window
+    let mut retransmit_at = Some(tokio::time::Instant::now() + DNS_TIMEOUT / 2);
+    let mut buf = vec![0u8; MAX_RESPONSE];
+
+    loop {
+        let wait_until = retransmit_at.unwrap_or(deadline);
+        match tokio::time::timeout_at(wait_until, socket.recv(&mut buf)).await {
+            Ok(Ok(n)) => {
+                // Ignore datagrams that are not a response to our query
+                // (mismatched ID or QR bit clear); keep listening.
+                if !is_matching_response(&buf[..n], id) {
+                    continue;
+                }
+                return parse_response(&buf[..n], qtype);
+            }
+            Ok(Err(e)) => return Err(DnsError::Io(e)),
+            Err(_) => {
+                // Timer fired: retransmit once, then give up at the deadline
+                if retransmit_at.take().is_some() {
+                    socket.send(&packet).await?;
+                } else {
+                    return Err(DnsError::Timeout);
+                }
+            }
+        }
+    }
+}
+
+/// Generate a random DNS query ID, used to match responses to requests.
+fn random_query_id() -> u16 {
+    let mut bytes = [0u8; 2];
+    if getrandom::fill(&mut bytes).is_ok() {
+        u16::from_be_bytes(bytes)
+    } else {
+        // Fallback: derive from the clock. Matching responses to requests is
+        // the primary goal; the connected socket already restricts who can
+        // send us datagrams.
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos();
+        (nanos & 0xFFFF) as u16 ^ (nanos >> 16) as u16
+    }
+}
+
+/// Check whether a datagram is a response (QR bit set) to the query with
+/// the given ID. Datagrams failing this check should be discarded, not
+/// treated as errors.
+fn is_matching_response(data: &[u8], id: u16) -> bool {
+    data.len() >= 12 && u16::from_be_bytes([data[0], data[1]]) == id && data[2] & 0x80 != 0
+    // QR bit: must be a response, not a query
+}
+
+/// Build a DNS query packet with the given query ID.
+fn build_query(name: &str, qtype: QType, id: u16) -> Vec<u8> {
     let mut pkt = Vec::with_capacity(64);
 
     // Header: ID, flags, counts
-    let id: u16 = (std::process::id() as u16) ^ (qtype as u16);
     pkt.extend_from_slice(&id.to_be_bytes()); // ID
     pkt.extend_from_slice(&[0x01, 0x00]); // flags: RD=1
     pkt.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT=1
@@ -153,6 +237,13 @@ fn build_query(name: &str, qtype: QType) -> Vec<u8> {
 fn parse_response(data: &[u8], qtype: QType) -> Result<Vec<DnsRecord>, DnsError> {
     if data.len() < 12 {
         return Err(DnsError::Malformed);
+    }
+
+    // TC (truncation) bit: the full answer did not fit in this datagram.
+    // Silently parsing a partial answer set would be wrong; surface a
+    // distinct error instead (TCP fallback is future work).
+    if data[2] & 0x02 != 0 {
+        return Err(DnsError::Truncated);
     }
 
     // Check RCODE in flags
@@ -369,8 +460,9 @@ mod tests {
 
     #[test]
     fn test_build_query_structure() {
-        let pkt = build_query("example.com", QType::A);
+        let pkt = build_query("example.com", QType::A, 0x1234);
         assert!(pkt.len() > 12);
+        assert_eq!(&pkt[0..2], &[0x12, 0x34]); // ID
         assert_eq!(pkt[2], 0x01); // RD=1
         assert_eq!(pkt[5], 1); // QDCOUNT=1
                                // QTYPE at end - 4 should be A=1
@@ -380,7 +472,7 @@ mod tests {
 
     #[test]
     fn test_build_query_labels() {
-        let pkt = build_query("a.b.c", QType::Txt);
+        let pkt = build_query("a.b.c", QType::Txt, 0x1234);
         assert_eq!(pkt[12], 1);
         assert_eq!(pkt[13], b'a');
         assert_eq!(pkt[14], 1);
@@ -392,7 +484,7 @@ mod tests {
 
     #[test]
     fn test_build_query_single_label() {
-        let pkt = build_query("localhost", QType::A);
+        let pkt = build_query("localhost", QType::A, 0x1234);
         assert_eq!(pkt[12], 9); // "localhost" is 9 chars
         assert_eq!(&pkt[13..22], b"localhost");
         assert_eq!(pkt[22], 0); // root
@@ -492,6 +584,43 @@ mod tests {
             DnsRecord::Txt(s) => assert_eq!(s, ""),
             other => panic!("expected TXT record, got {other:?}"),
         }
+    }
+
+    // ---- response header validation ----
+
+    #[test]
+    fn test_response_id_mismatch_rejected() {
+        // build_response uses ID 0xABCD
+        let resp = build_response("example.com", QType::A, &[(1, &[1, 2, 3, 4])]);
+        assert!(is_matching_response(&resp, 0xABCD));
+        assert!(
+            !is_matching_response(&resp, 0x1234),
+            "a response with a mismatched ID must be discarded"
+        );
+    }
+
+    #[test]
+    fn test_query_packet_not_accepted_as_response() {
+        // A query (QR bit clear) must not be mistaken for a response,
+        // even when the ID matches
+        let pkt = build_query("example.com", QType::A, 0x1234);
+        assert!(!is_matching_response(&pkt, 0x1234));
+    }
+
+    #[test]
+    fn test_short_datagram_not_accepted_as_response() {
+        assert!(!is_matching_response(&[], 0xABCD));
+        assert!(!is_matching_response(&[0xAB, 0xCD], 0xABCD));
+    }
+
+    #[test]
+    fn test_truncated_response_detected() {
+        let mut resp = build_response("example.com", QType::A, &[(1, &[1, 2, 3, 4])]);
+        resp[2] |= 0x02; // set TC bit
+        assert!(matches!(
+            parse_response(&resp, QType::A),
+            Err(DnsError::Truncated)
+        ));
     }
 
     // ---- parse_response: error cases ----
@@ -675,6 +804,7 @@ mod tests {
         assert!(DnsError::Timeout.to_string().contains("timed out"));
         assert!(DnsError::Malformed.to_string().contains("malformed"));
         assert!(DnsError::NotFound.to_string().contains("no records"));
+        assert!(DnsError::Truncated.to_string().contains("truncated"));
         let io_err = DnsError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         assert!(io_err.to_string().contains("test"));
     }

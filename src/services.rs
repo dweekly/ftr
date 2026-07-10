@@ -115,10 +115,10 @@ impl Services {
         let stun = if let Some(cache) = stun_cache {
             StunClient::with_cache(
                 cache,
-                vec![
-                    "stun.l.google.com:19302".to_string(),
-                    "stun1.l.google.com:19302".to_string(),
-                ],
+                crate::public_ip::stun::STUN_SERVERS
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect(),
             )
         } else {
             StunClient::new()

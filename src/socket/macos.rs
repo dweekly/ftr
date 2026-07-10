@@ -44,10 +44,15 @@ impl MacOSAsyncIcmpSocket {
 
     /// Create a new macOS async ICMP socket with timing configuration
     pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
-        let verbose = std::env::var("FTR_VERBOSE")
-            .ok()
-            .and_then(|v| v.parse::<u8>().ok())
-            .unwrap_or(0);
+        Self::new_with_config_and_verbose(timing_config, 0)
+    }
+
+    /// Create a new macOS async ICMP socket with timing configuration and
+    /// an explicit verbosity level (replaces the former FTR_VERBOSE lookup)
+    pub fn new_with_config_and_verbose(
+        timing_config: TimingConfig,
+        verbose: u8,
+    ) -> Result<Self, TracerouteError> {
         trace_time!(
             verbose,
             "Creating macOS async ICMP socket (per-probe version)"

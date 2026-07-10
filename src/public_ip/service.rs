@@ -3,7 +3,7 @@
 //! This module provides a service-oriented API for STUN-based public IP detection,
 //! abstracting away the server address caching implementation details.
 
-use super::stun::{get_public_ip_stun_with_fallback_and_cache, StunError};
+use super::stun::{get_public_ip_stun_with_servers_and_cache, StunError, STUN_SERVERS};
 use super::stun_cache::StunCache;
 use super::PublicIpError;
 use std::net::IpAddr;
@@ -37,22 +37,22 @@ pub struct StunClient {
     cache: Arc<RwLock<StunCache>>,
     servers: Vec<String>,
     timeout: Duration,
+    verbose: u8,
 }
 
 impl StunClient {
-    /// Create a new STUN client with default servers
+    /// Create a new STUN client with the default servers
     ///
-    /// Uses Google's STUN servers by default:
-    /// - stun.l.google.com:19302
-    /// - stun1.l.google.com:19302
+    /// Uses the well-known public servers in [`STUN_SERVERS`]
+    /// (Google primary and backup, Cloudflare fallback).
     pub fn new() -> Self {
-        Self::with_servers(vec![
-            "stun.l.google.com:19302".to_string(),
-            "stun1.l.google.com:19302".to_string(),
-        ])
+        Self::with_servers(STUN_SERVERS.iter().map(|s| (*s).to_string()).collect())
     }
 
     /// Create a STUN client with custom servers
+    ///
+    /// Servers are tried in order: the first is the primary and the rest
+    /// are fallbacks used only if earlier servers fail.
     ///
     /// # Arguments
     ///
@@ -62,6 +62,7 @@ impl StunClient {
             cache: Arc::new(RwLock::new(StunCache::new())),
             servers,
             timeout: Duration::from_millis(500),
+            verbose: 0,
         }
     }
 
@@ -72,6 +73,19 @@ impl StunClient {
     /// * `timeout` - Maximum time to wait for a STUN response
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set the verbosity level for STUN diagnostics
+    ///
+    /// Levels 2 and above print per-server diagnostics to stderr.
+    /// This replaces the former FTR_VERBOSE environment variable lookup.
+    ///
+    /// # Arguments
+    ///
+    /// * `verbose` - Verbosity level (0 = silent)
+    pub fn with_verbose(mut self, verbose: u8) -> Self {
+        self.verbose = verbose;
         self
     }
 
@@ -86,32 +100,38 @@ impl StunClient {
             cache: Arc::new(RwLock::new(cache)),
             servers,
             timeout: Duration::from_millis(500),
+            verbose: 0,
         }
     }
 
     /// Get the public IP address
     ///
-    /// Queries STUN servers to determine the public IP address as seen
-    /// from the internet. This is useful for detecting the external IP
-    /// when behind NAT.
+    /// Queries the configured STUN servers (in order) to determine the
+    /// public IP address as seen from the internet. This is useful for
+    /// detecting the external IP when behind NAT.
     ///
     /// # Returns
     ///
     /// The public IP address (IPv4 or IPv6), or an error if all
     /// STUN servers fail or timeout.
     pub async fn get_public_ip(&self) -> Result<IpAddr, PublicIpError> {
-        get_public_ip_stun_with_fallback_and_cache(self.timeout, &self.cache)
-            .await
-            .map_err(|e| match e {
-                StunError::Timeout => PublicIpError::Timeout,
-                StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
-                StunError::InvalidResponse => {
-                    PublicIpError::ParseError("Invalid STUN response".to_string())
-                }
-                StunError::NoMappedAddress => {
-                    PublicIpError::ParseError("No mapped address in STUN response".to_string())
-                }
-            })
+        get_public_ip_stun_with_servers_and_cache(
+            &self.servers,
+            self.timeout,
+            &self.cache,
+            self.verbose,
+        )
+        .await
+        .map_err(|e| match e {
+            StunError::Timeout => PublicIpError::Timeout,
+            StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
+            StunError::InvalidResponse => {
+                PublicIpError::ParseError("Invalid STUN response".to_string())
+            }
+            StunError::NoMappedAddress => {
+                PublicIpError::ParseError("No mapped address in STUN response".to_string())
+            }
+        })
     }
 
     /// Get the list of configured STUN servers
@@ -181,8 +201,8 @@ mod tests {
     async fn test_stun_client_default() {
         let client = StunClient::new();
 
-        // Should have default Google STUN servers
-        assert_eq!(client.servers().len(), 2);
+        // Should have the default well-known STUN servers
+        assert_eq!(client.servers().len(), STUN_SERVERS.len());
         assert!(client.servers()[0].contains("google.com"));
     }
 
@@ -202,7 +222,23 @@ mod tests {
         let client = StunClient::new().with_timeout(Duration::from_secs(2));
 
         // Timeout is set internally, we can only test that the method works
-        assert_eq!(client.servers().len(), 2);
+        assert_eq!(client.servers().len(), STUN_SERVERS.len());
+    }
+
+    #[tokio::test]
+    async fn test_custom_servers_are_queried() {
+        // A client configured with only an unresolvable custom server must
+        // fail: if the query path ignored the configured servers (the old
+        // bug) and used the hardcoded defaults, this would succeed on any
+        // machine with internet access.
+        let client = StunClient::with_servers(vec!["stun.does-not-exist.invalid:3478".to_string()])
+            .with_timeout(Duration::from_millis(200));
+
+        let result = client.get_public_ip().await;
+        assert!(
+            result.is_err(),
+            "custom unresolvable server must not fall back to default servers"
+        );
     }
 
     #[tokio::test]
