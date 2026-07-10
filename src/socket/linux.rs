@@ -56,7 +56,8 @@ impl LinuxAsyncUdpSocket {
     unsafe fn check_icmp_error(fd: i32, _sequence: u16) -> IcmpCheckResult {
         let mut buf = [0u8; 512];
         let mut control_buf = [0u8; 512];
-        let mut from_addr: libc::sockaddr_in = std::mem::zeroed();
+        // SAFETY: sockaddr_in is a plain-old-data C struct; all-zeroes is a valid bit pattern.
+        let mut from_addr: libc::sockaddr_in = unsafe { std::mem::zeroed() };
         let from_len = std::mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
 
         // Debug logging in CI
@@ -84,7 +85,8 @@ impl LinuxAsyncUdpSocket {
         msg.msg_controllen = control_buf.len() as _; // Cast to handle u32 vs usize
         msg.msg_flags = 0;
 
-        let ret = libc::recvmsg(fd, &mut msg, libc::MSG_ERRQUEUE | libc::MSG_DONTWAIT);
+        // SAFETY: msg points at valid, live buffers (buf/control_buf/from_addr) set up above.
+        let ret = unsafe { libc::recvmsg(fd, &mut msg, libc::MSG_ERRQUEUE | libc::MSG_DONTWAIT) };
 
         if ret >= 0 {
             // Debug logging in CI
@@ -93,22 +95,29 @@ impl LinuxAsyncUdpSocket {
             }
 
             // Parse control messages to find IP_RECVERR
-            let mut cmsg: *const libc::cmsghdr = libc::CMSG_FIRSTHDR(&msg);
+            // SAFETY: msg was filled in by a successful recvmsg; CMSG_* walk its control buffer.
+            let mut cmsg: *const libc::cmsghdr = unsafe { libc::CMSG_FIRSTHDR(&msg) };
 
             while !cmsg.is_null() {
-                let cmsg_data = std::ptr::read_unaligned(cmsg);
+                // SAFETY: cmsg is non-null and points into control_buf per CMSG_FIRSTHDR/NXTHDR.
+                let cmsg_data = unsafe { std::ptr::read_unaligned(cmsg) };
 
                 if cmsg_data.cmsg_level == libc::IPPROTO_IP
                     && cmsg_data.cmsg_type == libc::IP_RECVERR
                 {
-                    let err_ptr = libc::CMSG_DATA(cmsg) as *const SockExtendedErr;
-                    let sock_err = std::ptr::read_unaligned(err_ptr);
+                    // SAFETY: for an IP_RECVERR cmsg the kernel guarantees the payload is a
+                    // sock_extended_err; read_unaligned tolerates any alignment.
+                    let err_ptr = unsafe { libc::CMSG_DATA(cmsg) } as *const SockExtendedErr;
+                    let sock_err = unsafe { std::ptr::read_unaligned(err_ptr) };
 
                     if sock_err.ee_origin == SO_EE_ORIGIN_ICMP {
                         // Get the offending address (follows the SockExtendedErr structure)
-                        let addr_ptr = (err_ptr as *const u8).add(mem::size_of::<SockExtendedErr>())
-                            as *const libc::sockaddr_in;
-                        let offender_addr = std::ptr::read_unaligned(addr_ptr);
+                        // SAFETY: SO_EE_OFFENDER — the kernel places the offender sockaddr
+                        // immediately after sock_extended_err within the cmsg payload.
+                        let addr_ptr = unsafe {
+                            (err_ptr as *const u8).add(mem::size_of::<SockExtendedErr>())
+                        } as *const libc::sockaddr_in;
+                        let offender_addr = unsafe { std::ptr::read_unaligned(addr_ptr) };
                         let from_ip =
                             IpAddr::V4(Ipv4Addr::from(u32::from_be(offender_addr.sin_addr.s_addr)));
 
@@ -129,7 +138,8 @@ impl LinuxAsyncUdpSocket {
                     }
                 }
 
-                cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
+                // SAFETY: msg/cmsg are valid per the loop invariant; returns null at the end.
+                cmsg = unsafe { libc::CMSG_NXTHDR(&msg, cmsg) };
             }
             IcmpCheckResult::NoData
         } else {
