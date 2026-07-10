@@ -7,41 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Next release is 0.8.0 (breaking change below); `Cargo.toml` already carries
-the bumped version so `cargo-semver-checks` gates against the right baseline.
+## [0.8.0] - 2026-07-10
+
+The API-stability release: Rust edition 2024, a breaking public-API cleanup
+so future features (IPv6, TCP probes) land non-breakingly, system DNS
+resolver support, and a hardened supply chain. MSRV unchanged at 1.85.
 
 ### Changed
-- Rust edition 2021 -> 2024 (MSRV unchanged at 1.85, which edition 2024
-  requires as a minimum; includes the 2024 style-edition reformat)
+- **BREAKING**: `#[non_exhaustive]` added to public enums that will grow:
+  `TracerouteError`, `SegmentType`, `ProbeProtocol`, `SocketMode`,
+  `IpVersion`, `ProbeMode`, `DnsError`, `StunError`, `PublicIpError`,
+  `PublicIpProvider`, `AsnLookupError`, and the new `ConfigError` —
+  downstream `match` needs a wildcard arm; new variants are no longer
+  breaking changes
+- **BREAKING**: `Ftr.services` is private; use the new `Ftr::services()`
+  accessor (convenience methods `lookup_asn`/`lookup_rdns`/`get_public_ip`
+  unchanged)
+- **BREAKING**: `TracerouteConfigBuilder::build()` and
+  `TracerouteConfig::validate()` return typed `ftr::ConfigError`
+  (was `String`)
 - **BREAKING**: `DnsError` gained a `Truncated` variant — truncated (TC-bit)
-  DNS responses are now rejected instead of silently parsed as partial data
-- Dependencies updated: tokio 1.52, clap 4.6, getrandom 0.4, windows-sys 0.61,
-  assert_cmd 2.2 (criterion held at 0.7 pending an MSRV raise past 1.86)
-- Verbosity and custom STUN server selection are threaded through explicit
+  DNS responses are rejected instead of silently parsed as partial data
+- **BREAKING**: internals narrowed to `pub(crate)`: `enrichment`,
+  `socket::{factory, icmp, macos, bsd, windows}` (`socket::{linux, traits,
+  utils}` and `probe` remain public)
+- Rust edition 2021 -> 2024 (MSRV stays 1.85, edition 2024's minimum)
+- Reverse DNS and ASN TXT lookups use the system's DNS resolvers
+  (`/etc/resolv.conf` on Unix, up to 3 servers, `options timeout`/`attempts`
+  honored) with 1.1.1.1/8.8.8.8 demoted to fallbacks; Windows keeps the
+  public-server defaults (system discovery there is future work). On macOS
+  this reads the configd-maintained global resolver set; scoped/split-DNS
+  resolvers are documented as out of scope in `ftr::dns::system`
+- Verbosity and custom STUN server selection thread through explicit
   configuration instead of `FTR_VERBOSE`/`FTR_STUN_SERVER` process-global
-  environment variables (removes races between concurrent traces; unblocks
-  edition 2024)
+  environment variables (fixes races between concurrent traces)
+- Dependencies updated: tokio 1.52, clap 4.6, getrandom 0.4, windows-sys
+  0.61, assert_cmd 2.2 (criterion held at 0.7 pending an MSRV raise
+  past 1.86)
 
-### Fixed
-- Per-hop enrichment now uses the injected `Services` — caches prewarmed via
-  `Ftr::with_caches` reach ASN/rDNS hop lookups instead of a second, disjoint
-  cache set
-- `StunClient::with_servers` custom servers are now used by the query path
-  (previously only prewarmed the cache while queries used the hardcoded list)
-- Engine errors propagate with their original typed variant instead of being
-  re-wrapped into `SocketError(String)`
-- DNS resolver hardening: response query ID and QR bit validated (spoofing
-  resistance), one retransmit at half-timeout, 8.8.8.8 fallback after 1.1.1.1
+### Removed
+- **BREAKING**: dead public API deleted — `ftr::caches::Caches`; the
+  duplicate `TimingConfig` in `config::timing` (its `DEFAULT_*_MS` constants
+  remain); the duplicate `ProbeInfo`/`ProbeResponse`/`ResponseType` in
+  `socket` (live types are `ftr::probe::*`); `extract_isp_from_path`; unused
+  socket-factory wrappers; `EnrichmentService`'s unused queue API
 
 ### Added
-- `Ftr::with_services`, `EnrichmentService::new_with_services`,
-  `StunClient::with_verbose`/`with_servers` composition APIs
+- `ftr::dns::refresh_system_dns()` — re-reads system DNS configuration;
+  call after network changes in long-running library consumers (queries
+  in flight keep their snapshot)
+- `resolve_{a,ptr,txt}_with_servers()` — pin explicit DNS servers,
+  bypassing system configuration
+- Composition APIs: `Ftr::with_services`,
+  `EnrichmentService::new_with_services`,
+  `StunClient::with_verbose`/`with_servers`
 - IPv6 groundwork: live-validated spike diagnostics
   (`examples/spike_{icmpv6_socket,traceroute6,stun6,asn6}.rs`) and
   `docs/IPV6_DESIGN.md` with observed Darwin ICMPv6 kernel behavior
 - CI/supply chain: SHA-pinned actions, cargo-deny (`deny.toml`),
-  cargo-semver-checks, coverage via cargo-llvm-cov, Dependabot, release
-  SHA256SUMS + GitHub build-provenance attestations
+  cargo-semver-checks, clippy `--all-targets` gate, coverage via
+  cargo-llvm-cov, Dependabot, release SHA256SUMS + GitHub build-provenance
+  attestations
+
+### Fixed
+- Per-hop enrichment uses the injected `Services` — caches prewarmed via
+  `Ftr::with_caches` reach ASN/rDNS hop lookups instead of a second,
+  disjoint cache set
+- `StunClient::with_servers` custom servers are used by the query path
+  (previously only prewarmed the cache)
+- Engine errors propagate with their original typed variant instead of
+  being re-wrapped into `SocketError(String)`
+- DNS resolver validates response query ID and QR bit (spoofing
+  resistance), retransmits once at half-timeout, and falls back across
+  servers; DNS query sockets bind the correct address family (IPv6
+  nameservers were previously unreachable)
+- Test suite: ~220 clippy findings fixed across tests and benches
+  (`unwrap` -> `expect` with messages, panic-free assertion patterns)
 
 ## [0.7.0] - 2026-04-05
 
@@ -512,7 +553,8 @@ let ftr = Ftr::with_caches(Some(asn_cache), None, None);
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/dweekly/ftr/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/dweekly/ftr/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dweekly/ftr/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dweekly/ftr/compare/v0.4.0...v0.5.0
