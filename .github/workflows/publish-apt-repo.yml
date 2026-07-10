@@ -32,7 +32,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           sparse-checkout: |
             Cargo.toml
@@ -75,7 +75,7 @@ jobs:
           rm -f /tmp/test-apt-workflow.txt
 
       - name: Import GPG Key
-        uses: crazy-max/ghaction-import-gpg@v6
+        uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7.0.0
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.GPG_PASSPHRASE }}
@@ -90,7 +90,7 @@ jobs:
           echo "Starting with fresh aptly database..."
           
           # Ensure aptly config exists
-          echo '{ "rootDir": "'$HOME'/.aptly" }' > ~/.aptly.conf
+          echo '{ "rootDir": "'"$HOME"'/.aptly" }' > ~/.aptly.conf
           echo "Created aptly.conf"
           
           aptly version # Verify aptly is working
@@ -118,7 +118,7 @@ jobs:
           
           # Extract package name from Cargo.toml
           CARGO_PKG_NAME=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].name')
-          echo "CARGO_PKG_NAME=$CARGO_PKG_NAME" >> $GITHUB_ENV
+          echo "CARGO_PKG_NAME=$CARGO_PKG_NAME" >> "$GITHUB_ENV"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -160,8 +160,6 @@ jobs:
           # Upload all .deb files to their appropriate pool locations
           for deb in release-debs/*.deb; do
             DEB_FILENAME=$(basename "$deb")
-            # Extract architecture from filename (e.g., ftr_0.1.2_amd64.deb -> amd64)
-            ARCH=$(echo "$DEB_FILENAME" | sed -n 's/.*_\([^_]*\)\.deb$/\1/p')
             POOL_PATH="pool/${APT_COMPONENT}/${DEB_FILENAME:0:1}/${CARGO_PKG_NAME}/"
             
             echo "Uploading $DEB_FILENAME to $POOL_PATH"
