@@ -43,8 +43,7 @@ pub struct StunClient {
 impl StunClient {
     /// Create a new STUN client with the default servers
     ///
-    /// Uses the well-known public servers in
-    /// [`STUN_SERVERS`](crate::public_ip::stun::STUN_SERVERS)
+    /// Uses the well-known public servers in [`STUN_SERVERS`]
     /// (Google primary and backup, Cloudflare fallback).
     pub fn new() -> Self {
         Self::with_servers(STUN_SERVERS.iter().map(|s| (*s).to_string()).collect())
