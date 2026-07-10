@@ -177,6 +177,12 @@ jobs:
     name: Create Release
     needs: [build-deb, build-windows]
     runs-on: ubuntu-latest
+    # Job-level permissions override the workflow default, so contents: write
+    # (release creation) must be restated alongside the attestation scopes.
+    permissions:
+      contents: write
+      id-token: write      # for Sigstore signing of the provenance attestation
+      attestations: write  # to store the attestation via the GitHub API
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -186,12 +192,27 @@ jobs:
           pattern: ftr-*
           merge-multiple: true
 
+      - name: Generate SHA256SUMS
+        run: |
+          sha256sum -- *.deb *.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      # Signed build provenance for every artifact; verifiable with:
+      #   gh attestation verify <file> --repo dweekly/ftr
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: |
+            *.deb
+            *.zip
+
       - name: Create Release
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
         with:
           files: |
             *.deb
             *.zip
+            SHA256SUMS
           draft: true  # Create as draft so release notes can be edited
           prerelease: false
           body: |
@@ -212,6 +233,10 @@ jobs:
             ### Other platforms
             - macOS: `brew tap dweekly/ftr && brew install ftr`
             - Cargo: `cargo install ftr` (available after this release is published)
+
+            ## Verifying downloads
+            Checksums for all artifacts are in `SHA256SUMS` (`sha256sum -c SHA256SUMS --ignore-missing`).
+            Each artifact also has signed build provenance: `gh attestation verify <file> --repo ${{ github.repository }}`
 
             ## Release Notes
             Please see [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for detailed changes.
