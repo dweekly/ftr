@@ -46,7 +46,7 @@ jobs:
         run: cargo test --all-features
 
       - name: Publish to crates.io
-        run: cargo publish --token ${CARGO_REGISTRY_TOKEN}
+        run: cargo publish --token "${CARGO_REGISTRY_TOKEN}"
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 

@@ -24,22 +24,22 @@ jobs:
           echo "Tag version: $TAG_VERSION"
           
           # Get the commit SHA that the tag points to
-          TAG_COMMIT=$(git rev-list -n 1 $GITHUB_REF)
+          TAG_COMMIT=$(git rev-list -n 1 "$GITHUB_REF")
           echo "Tag commit: $TAG_COMMIT"
           
           # Check if this commit exists on main branch
-          if ! git merge-base --is-ancestor $TAG_COMMIT origin/main; then
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
             echo "❌ Error: Tag does not point to a commit on main branch"
-            echo "valid=false" >> $GITHUB_OUTPUT
+            echo "valid=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "✅ Tag points to a commit on main branch"
           
           # Check Cargo.toml version matches tag
-          CARGO_VERSION=$(git show $TAG_COMMIT:Cargo.toml | grep "^version" | sed 's/.*"\(.*\)".*/\1/')
+          CARGO_VERSION=$(git show "$TAG_COMMIT:Cargo.toml" | grep "^version" | sed 's/.*"\(.*\)".*/\1/')
           if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
             echo "❌ Error: Tag version ($TAG_VERSION) does not match Cargo.toml version ($CARGO_VERSION)"
-            echo "valid=false" >> $GITHUB_OUTPUT
+            echo "valid=false" >> "$GITHUB_OUTPUT"
             exit 1
           fi
           echo "✅ Cargo.toml version matches tag"
@@ -65,7 +65,7 @@ jobs:
             if [ "$FAILED_CHECKS" -gt 0 ]; then
               echo "❌ Error: Some CI checks failed for this commit"
               echo "$RESPONSE" | jq -r '.check_runs[] | select((.conclusion == "failure" or .conclusion == "cancelled") and (.name | test("coverage"; "i") | not)) | "  - \(.name): \(.conclusion)"'
-              echo "valid=false" >> $GITHUB_OUTPUT
+              echo "valid=false" >> "$GITHUB_OUTPUT"
               exit 1
             fi
             
@@ -75,7 +75,7 @@ jobs:
           fi
           
           echo "✅ All validations passed"
-          echo "valid=true" >> $GITHUB_OUTPUT
+          echo "valid=true" >> "$GITHUB_OUTPUT"
 
   run-full-ci:
     name: Run Full CI Suite
