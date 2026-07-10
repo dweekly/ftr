@@ -44,7 +44,7 @@ async fn test_trace_with_custom_config() {
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
 
@@ -72,7 +72,11 @@ async fn test_config_validation() {
     // Empty target
     let result = TracerouteConfigBuilder::new().build();
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Target must be specified"));
+    assert!(
+        result
+            .expect_err("building config without a target should fail")
+            .contains("Target must be specified")
+    );
 
     // Invalid TTL values
     let result = TracerouteConfigBuilder::new()
@@ -101,7 +105,7 @@ async fn test_trace_with_ip_and_hostname() {
         .target_ip(ip)
         .max_hops(3)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
 
@@ -122,7 +126,7 @@ async fn test_hop_classification() {
         .max_hops(10)
         .enable_asn_lookup(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     match trace_with_config(config).await {
         Ok(trace_result) => {
@@ -219,7 +223,7 @@ async fn test_result_methods() {
     // Test destination_hop
     let dest_hop = result.destination_hop();
     assert!(dest_hop.is_some());
-    assert_eq!(dest_hop.unwrap().ttl, 3);
+    assert_eq!(dest_hop.expect("destination hop should exist").ttl, 3);
 
     // Test has_response_at_ttl
     assert!(result.has_response_at_ttl(1));
@@ -243,7 +247,7 @@ async fn test_result_methods() {
     // Test average_rtt_ms
     let avg_rtt = result.average_rtt_ms();
     assert!(avg_rtt.is_some());
-    assert_eq!(avg_rtt.unwrap(), 10.0); // (5 + 15) / 2, hop 3 has no RTT
+    assert_eq!(avg_rtt.expect("average RTT should be present"), 10.0); // (5 + 15) / 2, hop 3 has no RTT
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -252,12 +256,14 @@ async fn test_error_types() {
 
     // Invalid target (empty) - should get ConfigError
     let result = trace("").await;
-    match result {
-        Err(TracerouteError::ConfigError(msg)) => {
-            println!("Got expected ConfigError: {}", msg);
-            assert!(msg.contains("Target") || msg.contains("target"));
-        }
-        _ => panic!("Expected ConfigError for empty target"),
+    assert!(
+        matches!(&result, Err(TracerouteError::ConfigError(_))),
+        "Expected ConfigError for empty target, got: {:?}",
+        result
+    );
+    if let Err(TracerouteError::ConfigError(msg)) = &result {
+        println!("Got expected ConfigError: {}", msg);
+        assert!(msg.contains("Target") || msg.contains("target"));
     }
 
     // Test unimplemented TCP protocol
@@ -265,30 +271,31 @@ async fn test_error_types() {
         .target("127.0.0.1")
         .protocol(ProbeProtocol::Tcp)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
-    match result {
-        Err(TracerouteError::NotImplemented { feature }) => {
-            assert_eq!(feature, "TCP traceroute");
-        }
-        _ => panic!("Expected NotImplemented error for TCP"),
-    }
+    assert!(
+        matches!(
+            &result,
+            Err(TracerouteError::NotImplemented { feature }) if feature == "TCP traceroute"
+        ),
+        "Expected NotImplemented error for TCP, got: {:?}",
+        result
+    );
 
     // Test IPv6 not supported
     let result = trace("::1").await;
-    match result {
-        Err(TracerouteError::Ipv6NotSupported) => {
-            println!("Got expected Ipv6NotSupported error");
-        }
-        _ => panic!("Expected Ipv6NotSupported error"),
-    }
+    assert!(
+        matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
+        "Expected Ipv6NotSupported error, got: {:?}",
+        result
+    );
 
     // Test resolution error
     let config = TracerouteConfigBuilder::new()
         .target("invalid.host.that.does.not.exist.example")
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
     match result {
@@ -316,7 +323,7 @@ async fn test_caching_behavior() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let config2 = TracerouteConfigBuilder::new()
         .target("127.0.0.1")
@@ -324,7 +331,7 @@ async fn test_caching_behavior() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     // Clear caches before test
     // Cache clearing removed - each Ftr instance has its own caches
@@ -354,7 +361,7 @@ async fn test_public_ip_parameter() {
         .public_ip(public_ip)
         .enable_asn_lookup(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     match trace_with_config(config).await {
         Ok(result) => {
@@ -380,7 +387,7 @@ async fn test_different_protocols() {
             .protocol(protocol)
             .max_hops(3)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         let _ = trace_with_config(config).await;
         // We don't assert on results as different protocols have different permission requirements

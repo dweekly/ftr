@@ -20,7 +20,7 @@ async fn test_cache_improves_performance() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     // First trace - cold cache
     let start1 = Instant::now();
@@ -66,7 +66,7 @@ async fn test_multiple_targets_share_cache_benefits() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let _ = ftr.trace_with_config(config1).await;
 
@@ -77,7 +77,7 @@ async fn test_multiple_targets_share_cache_benefits() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let start = Instant::now();
     let result2 = ftr.trace_with_config(config2).await;
@@ -109,7 +109,7 @@ async fn test_cache_isolation_performance() {
         .enable_asn_lookup(true)
         .enable_rdns(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     // Warm up ftr1's cache
     let _ = ftr1.trace_with_config(config.clone()).await;

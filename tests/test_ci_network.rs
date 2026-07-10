@@ -18,7 +18,7 @@ mod tests {
         // Check basic connectivity with ping
         eprintln!("\nTesting ping to 8.8.8.8:");
         let output = Command::new("ping")
-            .args(&["-c", "1", "-W", "1", "8.8.8.8"])
+            .args(["-c", "1", "-W", "1", "8.8.8.8"])
             .output();
 
         match output {
@@ -37,7 +37,7 @@ mod tests {
         // Check traceroute
         eprintln!("\nTesting traceroute to 8.8.8.8:");
         let output = Command::new("traceroute")
-            .args(&["-n", "-m", "3", "-w", "1", "8.8.8.8"])
+            .args(["-n", "-m", "3", "-w", "1", "8.8.8.8"])
             .output();
 
         match output {
@@ -53,7 +53,7 @@ mod tests {
 
         // Check network interfaces
         eprintln!("\nNetwork interfaces:");
-        let output = Command::new("ip").args(&["addr", "show"]).output();
+        let output = Command::new("ip").args(["addr", "show"]).output();
 
         match output {
             Ok(output) => {
@@ -83,7 +83,7 @@ mod tests {
 
         // Check routing table
         eprintln!("\nRouting table:");
-        let output = Command::new("ip").args(&["route", "show"]).output();
+        let output = Command::new("ip").args(["route", "show"]).output();
 
         match output {
             Ok(output) => {
@@ -93,7 +93,7 @@ mod tests {
             }
             Err(_) => {
                 // Try netstat as fallback
-                if let Ok(output) = Command::new("netstat").args(&["-rn"]).output() {
+                if let Ok(output) = Command::new("netstat").args(["-rn"]).output() {
                     if output.status.success() {
                         eprintln!("  (via netstat -rn)");
                         eprintln!("{}", String::from_utf8_lossy(&output.stdout));

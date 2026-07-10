@@ -15,7 +15,7 @@ async fn test_traceroute_performance_localhost() {
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
     let elapsed = start.elapsed();
@@ -50,7 +50,7 @@ async fn test_traceroute_performance_remote() {
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let result = trace_with_config(config).await;
     let elapsed = start.elapsed();
@@ -101,7 +101,7 @@ async fn test_event_driven_efficiency() {
                 .enable_asn_lookup(false)
                 .enable_rdns(false)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
 
             trace_with_config(config).await
         });

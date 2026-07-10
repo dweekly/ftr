@@ -8,10 +8,10 @@ use predicates::prelude::*;
 #[test]
 fn test_freebsd_requires_root() {
     // On FreeBSD, non-root execution should fail with clear error
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if !is_running_as_root() {
         // Non-root should fail with specific error
@@ -41,7 +41,7 @@ fn test_freebsd_requires_root() {
 #[test]
 fn test_freebsd_no_dgram_icmp() {
     // FreeBSD does not support DGRAM ICMP
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
         "--socket-mode",
         "dgram",
@@ -52,7 +52,7 @@ fn test_freebsd_no_dgram_icmp() {
         "127.0.0.1",
     ]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if !is_running_as_root() {
         // Non-root: should get the root privilege error first
@@ -77,7 +77,7 @@ fn test_freebsd_raw_icmp_with_root() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["-v", "--socket-mode", "raw", "--max-hops", "1", "127.0.0.1"]);
 
     cmd.assert()
@@ -92,7 +92,7 @@ fn test_freebsd_localhost_trace_with_root() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "--no-enrich", "127.0.0.1"]);
 
     cmd.assert()
@@ -105,10 +105,10 @@ fn test_freebsd_localhost_trace_with_root() {
 fn test_freebsd_ca_cert_warning() {
     // Test that we get a warning about ca_root_nss if HTTPS fails
     // This test doesn't require root
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--max-hops", "1", "8.8.8.8"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     // If ca_root_nss is not installed, we should see the warning
@@ -124,10 +124,10 @@ fn test_freebsd_ca_cert_warning() {
 
 #[test]
 fn test_freebsd_udp_mode() {
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--protocol", "udp", "--max-hops", "1", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     if !is_running_as_root() {
         // Non-root: should get root privilege error
@@ -148,10 +148,10 @@ fn test_freebsd_udp_mode() {
 #[test]
 fn test_freebsd_tcp_mode() {
     // TCP mode is not yet implemented
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--protocol", "tcp", "--max-hops", "1", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
 
     // Should fail with invalid value error since TCP is not implemented yet
     assert!(!output.status.success());
@@ -170,10 +170,10 @@ fn test_freebsd_json_output_with_root() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["--json", "--max-hops", "1", "127.0.0.1"]);
 
-    let output = cmd.output().unwrap();
+    let output = cmd.output().expect("failed to run ftr");
     assert!(output.status.success());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -194,7 +194,7 @@ fn test_freebsd_setuid_suggestion() {
         return;
     }
 
-    let mut cmd = Command::cargo_bin("ftr").unwrap();
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args(["127.0.0.1"]);
 
     cmd.assert()

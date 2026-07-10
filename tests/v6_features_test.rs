@@ -1,11 +1,12 @@
-/// Integration tests for v0.6.0 features
+//! Integration tests for v0.6.0 features
+
 use ftr::{Ftr, SegmentType, TracerouteConfig};
 use std::net::Ipv4Addr;
 
 #[tokio::test]
 async fn test_v6_segment_types() {
     // Test that the new segment types are properly exposed in the API
-    let segments = vec![
+    let segments = [
         SegmentType::Lan,
         SegmentType::Isp,
         SegmentType::Transit,     // New in v0.6.0
@@ -38,9 +39,12 @@ async fn test_destination_asn_field() {
         .enable_asn_lookup(false) // Disable to make test faster
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
-    let result = ftr.trace_with_config(config).await.unwrap();
+    let result = ftr
+        .trace_with_config(config)
+        .await
+        .expect("localhost trace should succeed");
 
     // Verify the destination_asn field exists (will be None without enrichment)
     assert!(
@@ -65,9 +69,12 @@ async fn test_transit_segment_classification() {
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
-    let result = ftr.trace_with_config(config).await.unwrap();
+    let result = ftr
+        .trace_with_config(config)
+        .await
+        .expect("localhost trace should succeed");
 
     // Check that segment types are properly set
     for hop in &result.hops {
@@ -85,14 +92,12 @@ async fn test_transit_segment_classification() {
 #[test]
 fn test_segment_serialization() {
     // Test that segment types serialize correctly for JSON output
-    use serde_json;
-
     let transit = SegmentType::Transit;
     let destination = SegmentType::Destination;
 
     // These should serialize to strings
-    let transit_json = serde_json::to_string(&transit).unwrap();
-    let dest_json = serde_json::to_string(&destination).unwrap();
+    let transit_json = serde_json::to_string(&transit).expect("Transit should serialize");
+    let dest_json = serde_json::to_string(&destination).expect("Destination should serialize");
 
     assert_eq!(
         transit_json, "\"Transit\"",
@@ -164,9 +169,12 @@ async fn test_localhost_trace_segments() {
         .enable_asn_lookup(false)
         .enable_rdns(false)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
-    let result = ftr.trace_with_config(config).await.unwrap();
+    let result = ftr
+        .trace_with_config(config)
+        .await
+        .expect("localhost trace should succeed");
 
     // Localhost should have at least one hop
     assert!(!result.hops.is_empty(), "Localhost trace should have hops");

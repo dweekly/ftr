@@ -1,7 +1,5 @@
 //! Integration tests for ftr CLI functionality
 
-#![allow(clippy::unwrap_used)]
-
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;

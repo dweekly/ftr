@@ -33,7 +33,9 @@ mod tests {
                 eprintln!("  ✓ Set TTL to 1");
 
                 // Try to send a packet to 8.8.8.8
-                let dest = "8.8.8.8:33434".parse::<std::net::SocketAddr>().unwrap();
+                let dest = "8.8.8.8:33434"
+                    .parse::<std::net::SocketAddr>()
+                    .expect("valid socket address");
                 match socket.send_to(b"test", dest) {
                     Ok(n) => eprintln!("  ✓ Sent {} bytes to {}", n, dest),
                     Err(e) => eprintln!("  ✗ Failed to send: {}", e),
@@ -58,7 +60,7 @@ mod tests {
             Ok(socket) => {
                 eprintln!("  ✓ Created LinuxAsyncUdpSocket");
 
-                let dest: IpAddr = "8.8.8.8".parse().unwrap();
+                let dest: IpAddr = "8.8.8.8".parse().expect("valid IP address");
                 let probe = ProbeInfo {
                     ttl: 1,
                     sequence: 1,

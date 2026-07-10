@@ -1,9 +1,13 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+//! Criterion benchmarks for traceroute performance (localhost and remote,
+//! with and without ASN/rDNS enrichment).
+
+use criterion::{Criterion, criterion_main};
 use ftr::{TracerouteConfig, trace_with_config};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn benchmark_traceroute_local(c: &mut Criterion) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
 
     c.bench_function("traceroute_localhost", |b| {
         b.iter(|| {
@@ -16,7 +20,7 @@ fn benchmark_traceroute_local(c: &mut Criterion) {
                     .enable_asn_lookup(false)
                     .enable_rdns(false)
                     .build()
-                    .unwrap();
+                    .expect("failed to build traceroute config");
 
                 let _ = trace_with_config(black_box(config)).await;
             })
@@ -25,7 +29,7 @@ fn benchmark_traceroute_local(c: &mut Criterion) {
 }
 
 fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
 
     c.bench_function("traceroute_8.8.8.8_enriched", |b| {
         b.iter(|| {
@@ -38,7 +42,7 @@ fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
                     .enable_asn_lookup(true)
                     .enable_rdns(true)
                     .build()
-                    .unwrap();
+                    .expect("failed to build traceroute config");
 
                 let _ = trace_with_config(black_box(config)).await;
             })
@@ -47,7 +51,7 @@ fn benchmark_traceroute_with_enrichment(c: &mut Criterion) {
 }
 
 fn benchmark_traceroute_no_enrichment(c: &mut Criterion) {
-    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let runtime = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
 
     c.bench_function("traceroute_8.8.8.8_raw", |b| {
         b.iter(|| {
@@ -60,7 +64,7 @@ fn benchmark_traceroute_no_enrichment(c: &mut Criterion) {
                     .enable_asn_lookup(false)
                     .enable_rdns(false)
                     .build()
-                    .unwrap();
+                    .expect("failed to build traceroute config");
 
                 let _ = trace_with_config(black_box(config)).await;
             })
@@ -68,10 +72,21 @@ fn benchmark_traceroute_no_enrichment(c: &mut Criterion) {
     });
 }
 
-criterion_group!(
-    benches,
-    benchmark_traceroute_local,
-    benchmark_traceroute_no_enrichment,
-    benchmark_traceroute_with_enrichment
-);
-criterion_main!(benches);
+// criterion_group! expands to an undocumented `pub fn`, which trips the
+// missing_docs lint. Housing it in a private module keeps the generated
+// function out of the crate's public surface so no doc (or allow) is needed.
+mod groups {
+    use super::{
+        benchmark_traceroute_local, benchmark_traceroute_no_enrichment,
+        benchmark_traceroute_with_enrichment,
+    };
+    use criterion::criterion_group;
+
+    criterion_group!(
+        benches,
+        benchmark_traceroute_local,
+        benchmark_traceroute_no_enrichment,
+        benchmark_traceroute_with_enrichment
+    );
+}
+criterion_main!(groups::benches);

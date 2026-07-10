@@ -8,7 +8,7 @@ async fn test_ftr_convenience_methods() {
     let ftr = Ftr::new();
 
     // Test ASN lookup with a public IP
-    let ip: IpAddr = "8.8.8.8".parse().unwrap();
+    let ip: IpAddr = "8.8.8.8".parse().expect("valid IP address");
     let result = ftr.lookup_asn(ip).await;
 
     // Only skip in CI environments where network may be unreliable
@@ -21,7 +21,7 @@ async fn test_ftr_convenience_methods() {
     }
 
     assert!(result.is_ok(), "ASN lookup failed: {:?}", result.err());
-    let asn_info = result.unwrap();
+    let asn_info = result.expect("ASN lookup should succeed");
 
     // Print actual values for debugging CI issues
     eprintln!("DEBUG: ASN lookup for 8.8.8.8 returned:");
@@ -45,7 +45,7 @@ async fn test_ftr_convenience_methods() {
     );
 
     // Test reverse DNS lookup
-    let dns_ip: IpAddr = "8.8.8.8".parse().unwrap();
+    let dns_ip: IpAddr = "8.8.8.8".parse().expect("valid IP address");
     let result = ftr.lookup_rdns(dns_ip).await;
     if let Ok(hostname) = result {
         assert!(hostname.contains("dns.google") || hostname.contains("google"));
@@ -60,7 +60,7 @@ async fn test_service_isolation() {
     let ftr2 = Ftr::new();
 
     // Perform lookups on both
-    let ip: IpAddr = "1.1.1.1".parse().unwrap();
+    let ip: IpAddr = "1.1.1.1".parse().expect("valid IP address");
 
     let result1 = ftr1.lookup_asn(ip).await;
     let result2 = ftr2.lookup_asn(ip).await;
@@ -76,7 +76,10 @@ async fn test_service_isolation() {
     assert!(result2.is_ok(), "Second lookup failed: {:?}", result2.err());
 
     // Results should be the same (same IP = same ASN)
-    assert_eq!(result1.unwrap().asn, result2.unwrap().asn);
+    assert_eq!(
+        result1.expect("first lookup should succeed").asn,
+        result2.expect("second lookup should succeed").asn
+    );
 }
 
 #[tokio::test]
@@ -84,7 +87,7 @@ async fn test_cache_clearing() {
     let ftr = Ftr::new();
 
     // Perform a lookup to populate caches
-    let ip: IpAddr = "8.8.4.4".parse().unwrap();
+    let ip: IpAddr = "8.8.4.4".parse().expect("valid IP address");
     let first_result = ftr.lookup_asn(ip).await;
 
     // Only skip in CI environments where network may be unreliable
@@ -119,7 +122,7 @@ async fn test_direct_service_access() {
     // Access ASN service directly (no locking needed)
     let asn_service = &ftr.services.asn;
 
-    let ip: IpAddr = "1.1.1.1".parse().unwrap();
+    let ip: IpAddr = "1.1.1.1".parse().expect("valid IP address");
     let result = asn_service.lookup(ip).await;
 
     // Only skip in CI environments where network may be unreliable
@@ -143,11 +146,11 @@ async fn test_private_ip_handling() {
     let ftr = Ftr::new();
 
     // Test with private IP
-    let private_ip: IpAddr = "192.168.1.1".parse().unwrap();
+    let private_ip: IpAddr = "192.168.1.1".parse().expect("valid IP address");
     let result = ftr.lookup_asn(private_ip).await;
 
     assert!(result.is_ok());
-    let asn_info = result.unwrap();
+    let asn_info = result.expect("ASN lookup should succeed");
     assert_eq!(asn_info.asn, 0); // Private IPs have ASN 0
     assert_eq!(asn_info.name, "Private Network");
 }

@@ -8,7 +8,7 @@ use std::process::Command;
 fn test_freebsd_binary_runs() {
     // Basic smoke test - binary should at least show help
     let output = Command::new("cargo")
-        .args(&["run", "--", "--help"])
+        .args(["run", "--", "--help"])
         .output()
         .expect("Failed to execute command");
 
@@ -20,7 +20,7 @@ fn test_freebsd_binary_runs() {
 #[test]
 fn test_freebsd_version() {
     let output = Command::new("cargo")
-        .args(&["run", "--", "--version"])
+        .args(["run", "--", "--version"])
         .output()
         .expect("Failed to execute command");
 
@@ -37,7 +37,7 @@ fn test_freebsd_non_root_error() {
     }
 
     let output = Command::new("cargo")
-        .args(&["run", "--", "127.0.0.1"])
+        .args(["run", "--", "127.0.0.1"])
         .output()
         .expect("Failed to execute command");
 
@@ -61,7 +61,7 @@ fn test_freebsd_with_sudo() {
     }
 
     let output = Command::new("cargo")
-        .args(&["run", "--", "--max-hops", "1", "127.0.0.1"])
+        .args(["run", "--", "--max-hops", "1", "127.0.0.1"])
         .output()
         .expect("Failed to execute command");
 
@@ -74,7 +74,7 @@ fn test_freebsd_with_sudo() {
 fn test_freebsd_ca_certs_check() {
     // Check if ca_root_nss is installed by trying to resolve DNS
     let output = Command::new("cargo")
-        .args(&["run", "--", "--max-hops", "1", "google.com"])
+        .args(["run", "--", "--max-hops", "1", "google.com"])
         .output()
         .expect("Failed to execute command");
 
@@ -93,7 +93,7 @@ fn test_freebsd_ca_certs_check() {
 fn test_freebsd_socket_compatibility() {
     // Test that asking for DGRAM ICMP explicitly fails with correct error
     let output = Command::new("cargo")
-        .args(&[
+        .args([
             "run",
             "--",
             "--socket-mode",

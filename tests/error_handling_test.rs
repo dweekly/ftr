@@ -18,30 +18,29 @@ async fn test_insufficient_permissions_error() {
             .target("127.0.0.1")
             .socket_mode(SocketMode::Raw)
             .build()
-            .unwrap();
+            .expect("failed to build traceroute config");
 
         if !ftr::socket::utils::is_root() {
             let ftr_instance = ftr::Ftr::new();
             let result = ftr_instance.trace_with_config(config).await;
 
-            match result {
-                Err(TracerouteError::InsufficientPermissions {
-                    required,
-                    suggestion,
-                }) => {
-                    // Good! We got a structured error
-                    assert!(required.contains("root") || required.contains("CAP_NET_RAW"));
-                    assert!(!suggestion.is_empty());
-                    println!("Got expected structured error:");
-                    println!("  Required: {}", required);
-                    println!("  Suggestion: {}", suggestion);
-                }
-                Err(e) => {
-                    panic!("Expected InsufficientPermissions error, got: {:?}", e);
-                }
-                Ok(_) => {
-                    panic!("Expected permission error but operation succeeded");
-                }
+            let err = result.expect_err("Expected permission error but operation succeeded");
+            assert!(
+                matches!(err, TracerouteError::InsufficientPermissions { .. }),
+                "Expected InsufficientPermissions error, got: {:?}",
+                err
+            );
+            if let TracerouteError::InsufficientPermissions {
+                required,
+                suggestion,
+            } = err
+            {
+                // Good! We got a structured error
+                assert!(required.contains("root") || required.contains("CAP_NET_RAW"));
+                assert!(!suggestion.is_empty());
+                println!("Got expected structured error:");
+                println!("  Required: {}", required);
+                println!("  Suggestion: {}", suggestion);
             }
         }
     }
@@ -59,24 +58,18 @@ async fn test_tcp_not_implemented_error() {
         .target("127.0.0.1")
         .protocol(ProbeProtocol::Tcp)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let ftr_instance = ftr::Ftr::new();
     let result = ftr_instance.trace_with_config(config).await;
 
-    match result {
-        Err(TracerouteError::NotImplemented { feature }) => {
-            // Good! We got a structured error
-            assert_eq!(feature, "TCP traceroute");
-            println!("Got expected NotImplemented error for: {}", feature);
-        }
-        Err(e) => {
-            panic!("Expected NotImplemented error, got: {:?}", e);
-        }
-        Ok(_) => {
-            panic!("Expected NotImplemented error but operation succeeded");
-        }
-    }
+    let err = result.expect_err("Expected NotImplemented error but operation succeeded");
+    assert!(
+        matches!(&err, TracerouteError::NotImplemented { feature } if feature == "TCP traceroute"),
+        "Expected NotImplemented error for TCP traceroute, got: {:?}",
+        err
+    );
+    println!("Got expected NotImplemented error for TCP traceroute");
 }
 
 #[tokio::test]
@@ -84,23 +77,17 @@ async fn test_ipv6_not_supported_error() {
     let config = TracerouteConfigBuilder::new()
         .target("::1") // IPv6 localhost
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let ftr_instance = ftr::Ftr::new();
     let result = ftr_instance.trace_with_config(config).await;
 
-    match result {
-        Err(TracerouteError::Ipv6NotSupported) => {
-            // Good! We got a structured error
-            println!("Got expected Ipv6NotSupported error");
-        }
-        Err(e) => {
-            panic!("Expected Ipv6NotSupported error, got: {:?}", e);
-        }
-        Ok(_) => {
-            panic!("Expected Ipv6NotSupported error but operation succeeded");
-        }
-    }
+    assert!(
+        matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
+        "Expected Ipv6NotSupported error, got: {:?}",
+        result
+    );
+    println!("Got expected Ipv6NotSupported error");
 }
 
 #[tokio::test]
@@ -108,24 +95,22 @@ async fn test_resolution_error() {
     let config = TracerouteConfigBuilder::new()
         .target("this-is-definitely-not-a-valid-hostname-12345.invalid")
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let ftr_instance = ftr::Ftr::new();
     let result = ftr_instance.trace_with_config(config).await;
 
-    match result {
-        Err(TracerouteError::ResolutionError(msg)) => {
+    let err = result.expect_err("Expected resolution error but operation succeeded");
+    match err {
+        TracerouteError::ResolutionError(msg) => {
             // Good! We got a structured error
             println!("Got expected ResolutionError: {}", msg);
             // Just check that we got a non-empty error message
             assert!(!msg.is_empty());
         }
-        Err(e) => {
+        e => {
             // Could also be a socket error if DNS resolution somehow succeeded
             println!("Got different error (might be OK): {:?}", e);
-        }
-        Ok(_) => {
-            panic!("Expected resolution error but operation succeeded");
         }
     }
 }
@@ -139,7 +124,11 @@ async fn test_config_validation_errors() {
         .build();
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("start_ttl must be at least 1"));
+    assert!(
+        result
+            .expect_err("start_ttl of 0 should fail validation")
+            .contains("start_ttl must be at least 1")
+    );
 
     // Test max_hops < start_ttl
     let result = TracerouteConfigBuilder::new()
@@ -151,7 +140,7 @@ async fn test_config_validation_errors() {
     assert!(result.is_err());
     assert!(
         result
-            .unwrap_err()
+            .expect_err("max_hops < start_ttl should fail validation")
             .contains("max_hops must be greater than or equal to start_ttl")
     );
 
@@ -162,20 +151,15 @@ async fn test_config_validation_errors() {
 
     // When passed through trace_with_config, should become TracerouteError::ConfigError
     let config = TracerouteConfigBuilder::new().target("").build();
+    assert!(config.is_err(), "Expected config validation to fail");
 
-    match config {
-        Err(_msg) => {
-            let ftr_instance = ftr::Ftr::new();
-            let result = ftr_instance.trace(&"").await;
-            match result {
-                Err(TracerouteError::ConfigError(e)) => {
-                    println!("Got expected ConfigError: {}", e);
-                }
-                _ => panic!("Expected ConfigError"),
-            }
-        }
-        Ok(_) => panic!("Expected config validation to fail"),
-    }
+    let ftr_instance = ftr::Ftr::new();
+    let result = ftr_instance.trace("").await;
+    assert!(
+        matches!(&result, Err(TracerouteError::ConfigError(_))),
+        "Expected ConfigError, got: {:?}",
+        result
+    );
 }
 
 #[tokio::test]

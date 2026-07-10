@@ -18,7 +18,7 @@ async fn test_parallel_ftr_instances() {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
 
             let result = ftr.trace_with_config(config).await;
             (i, result.is_ok())
@@ -63,7 +63,7 @@ async fn test_cache_isolation_between_instances() {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
             ftr1_clone.trace_with_config(config).await
         },
         async move {
@@ -73,7 +73,7 @@ async fn test_cache_isolation_between_instances() {
                 .enable_asn_lookup(true)
                 .enable_rdns(true)
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
             ftr2_clone.trace_with_config(config).await
         }
     );
@@ -112,7 +112,7 @@ async fn test_high_concurrency_no_interference() {
                 .enable_asn_lookup(false) // Disable to speed up test
                 .enable_rdns(false) // Disable to speed up test
                 .build()
-                .unwrap();
+                .expect("failed to build traceroute config");
 
             let result = ftr_clone.trace_with_config(config).await;
             result.is_ok()
@@ -154,14 +154,14 @@ async fn test_separate_instances_separate_caches() {
         .max_hops(1)
         .enable_asn_lookup(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     let config2 = TracerouteConfigBuilder::new()
         .target("10.0.0.1") // Different private IP
         .max_hops(1)
         .enable_asn_lookup(true)
         .build()
-        .unwrap();
+        .expect("failed to build traceroute config");
 
     // Run traces on both instances
     let result1 = ftr1.trace_with_config(config1.clone()).await;
@@ -208,7 +208,7 @@ async fn test_stress_test_cache_isolation() {
                     .target(target)
                     .max_hops(1)
                     .build()
-                    .unwrap();
+                    .expect("failed to build traceroute config");
 
                 ftr_clone.trace_with_config(config).await.is_ok()
             });

@@ -11,7 +11,7 @@ async fn test_event_channel_overhead() {
     // Spawn a task to consume messages concurrently
     let consumer = tokio::spawn(async move {
         let mut count = 0;
-        while let Some(_) = rx.recv().await {
+        while rx.recv().await.is_some() {
             count += 1;
         }
         count
@@ -20,12 +20,12 @@ async fn test_event_channel_overhead() {
     // Measure channel send latency
     let start = Instant::now();
     for i in 0..1000 {
-        tx.send(i).await.unwrap();
+        tx.send(i).await.expect("channel send should succeed");
     }
     drop(tx); // Close the channel to signal completion
 
     // Wait for consumer to finish
-    let count = consumer.await.unwrap();
+    let count = consumer.await.expect("consumer task should not panic");
     let elapsed = start.elapsed();
 
     println!("Channel operations (1000 messages): {:?}", elapsed);
