@@ -134,7 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let avg_stress = stress_times.iter().sum::<u128>() as f64 / stress_times.len() as f64;
-    let max_stress = *stress_times.iter().max().unwrap() as f64;
+    let max_stress = *stress_times
+        .iter()
+        .max()
+        .expect("stress_times is non-empty") as f64;
     println!("  Average: {:.0}ms, Max: {:.0}ms", avg_stress, max_stress);
 
     if max_stress < avg_stress * 2.0 {
