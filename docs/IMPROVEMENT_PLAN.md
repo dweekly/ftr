@@ -7,16 +7,23 @@ they merge (git has the history).
 
 Context: ftr is in maintenance mode (SwiftFTR is the primary macOS client), but
 has external users (GitHub stars, crates.io, APT repo, one open issue — #22
-requesting IPv6). Docs accuracy, correctness fixes, dependency updates,
-CI/supply-chain hardening, and IPv6 validation spikes landed in PRs #23–#27;
-what remains is below.
+requesting IPv6). The v0.8.0 release (PRs #23–#35) covered docs accuracy,
+correctness fixes, dependency updates, CI/supply-chain hardening, IPv6
+validation spikes, the breaking API cleanup, edition 2024, system DNS
+resolvers, and the tests lint-debt payoff; what remains is below.
 
 ## Follow-ups from landed work (small, independent)
 
-- DNS resolver: read system resolvers (`/etc/resolv.conf` / platform
-  equivalents) instead of the hardcoded 1.1.1.1 → 8.8.8.8 chain — currently
-  degraded on split-horizon/VPN/filtered networks. TCP fallback on truncated
-  (TC) responses (`DnsError::Truncated` exists; nothing retries over TCP).
+- DNS: TCP fallback on truncated (TC) responses (`DnsError::Truncated`
+  exists; nothing retries over TCP). Windows system-resolver discovery
+  (`GetAdaptersAddresses`). Automatic DNS-config change watching to
+  complement `dns::refresh_system_dns()` — macOS via `notify(3)` on
+  `com.apple.system.SystemConfiguration.dns_configuration` (Chromium's
+  approach, <https://issues.chromium.org/issues/40182831>; the c-ares
+  maintainers catalog per-platform equivalents in c-ares/c-ares#613),
+  Linux via inotify on resolv.conf. `#[non_exhaustive]` on
+  `ReverseDnsError`/`DnsRecord` (skipped in #33 to avoid cross-PR
+  conflicts).
 - Releases: adopt crates.io Trusted Publishing (OIDC) — requires one-time
   configuration on crates.io by the maintainer, then swap the token step in
   `release.yml` for `rust-lang/crates-io-auth-action`. Restructure the
@@ -25,9 +32,6 @@ what remains is below.
   source).
 - Coverage: make the llvm-cov job blocking once it proves stable (it kept
   `continue-on-error: true` at introduction).
-- Lint debt: `cargo clippy --all-targets -- -D warnings` fails in `tests/`
-  (accumulated `unwrap_used` etc. — CI only lints lib+bin). Clean up, then add
-  `--all-targets` to the CI clippy job so it can't regress.
 - criterion is held at 0.7 because 0.8 declares `rust-version = 1.86` — bump
   together with the next MSRV raise.
 
