@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Next release is 0.8.0 (breaking change below); `Cargo.toml` already carries
+the bumped version so `cargo-semver-checks` gates against the right baseline.
+
+### Changed
+- **BREAKING**: `DnsError` gained a `Truncated` variant — truncated (TC-bit)
+  DNS responses are now rejected instead of silently parsed as partial data
+- Dependencies updated: tokio 1.52, clap 4.6, getrandom 0.4, windows-sys 0.61,
+  assert_cmd 2.2 (criterion held at 0.7 pending an MSRV raise past 1.86)
+- Verbosity and custom STUN server selection are threaded through explicit
+  configuration instead of `FTR_VERBOSE`/`FTR_STUN_SERVER` process-global
+  environment variables (removes races between concurrent traces; unblocks
+  edition 2024)
+
+### Fixed
+- Per-hop enrichment now uses the injected `Services` — caches prewarmed via
+  `Ftr::with_caches` reach ASN/rDNS hop lookups instead of a second, disjoint
+  cache set
+- `StunClient::with_servers` custom servers are now used by the query path
+  (previously only prewarmed the cache while queries used the hardcoded list)
+- Engine errors propagate with their original typed variant instead of being
+  re-wrapped into `SocketError(String)`
+- DNS resolver hardening: response query ID and QR bit validated (spoofing
+  resistance), one retransmit at half-timeout, 8.8.8.8 fallback after 1.1.1.1
+
+### Added
+- `Ftr::with_services`, `EnrichmentService::new_with_services`,
+  `StunClient::with_verbose`/`with_servers` composition APIs
+- IPv6 groundwork: live-validated spike diagnostics
+  (`examples/spike_{icmpv6_socket,traceroute6,stun6,asn6}.rs`) and
+  `docs/IPV6_DESIGN.md` with observed Darwin ICMPv6 kernel behavior
+- CI/supply chain: SHA-pinned actions, cargo-deny (`deny.toml`),
+  cargo-semver-checks, coverage via cargo-llvm-cov, Dependabot, release
+  SHA256SUMS + GitHub build-provenance attestations
+
 ## [0.7.0] - 2026-04-05
 
 ### Changed
