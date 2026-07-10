@@ -140,29 +140,29 @@ async fn get_public_ip_stun_addr(
     parse_stun_response(&buf[..size])
 }
 
-/// Get public IP using STUN with fallback to multiple servers (with injected cache)
+/// Get public IP using STUN with fallback to the default servers (with injected cache)
+///
+/// Tries each server in [`STUN_SERVERS`] in order. To use a custom server
+/// list, see [`get_public_ip_stun_with_servers_and_cache`].
 pub async fn get_public_ip_stun_with_fallback_and_cache(
     timeout: Duration,
     cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
 ) -> Result<IpAddr, StunError> {
-    // Pre-warm cache if not already done (this is fast if already cached)
-    let _ = crate::public_ip::stun_cache::prewarm_stun_cache_with_cache(cache).await;
+    let servers: Vec<String> = STUN_SERVERS.iter().map(|s| (*s).to_string()).collect();
+    get_public_ip_stun_with_servers_and_cache(&servers, timeout, cache).await
+}
 
-    // Check for custom STUN server from environment
-    if let Ok(custom_server) = std::env::var("FTR_STUN_SERVER") {
-        if let Ok(ip) = get_public_ip_stun_with_cache(&custom_server, timeout, cache).await {
-            return Ok(ip);
-        }
-        // If custom server fails, fall back to default servers
-    }
-
-    // Try primary server first (Google's is most reliable)
-    if let Ok(ip) = get_public_ip_stun_with_cache(STUN_SERVERS[0], timeout, cache).await {
-        return Ok(ip);
-    }
-
-    // Fall back to other servers
-    for server in &STUN_SERVERS[1..] {
+/// Get public IP using STUN, trying the provided servers in order (with injected cache)
+///
+/// The first server is the primary; the remaining servers are fallbacks
+/// tried only if earlier ones fail. Server addresses are resolved through
+/// (and cached in) the provided cache on demand.
+pub async fn get_public_ip_stun_with_servers_and_cache(
+    servers: &[String],
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+) -> Result<IpAddr, StunError> {
+    for server in servers {
         match get_public_ip_stun_with_cache(server, timeout, cache).await {
             Ok(ip) => return Ok(ip),
             Err(_) => continue, // Try next server

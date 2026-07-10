@@ -174,19 +174,25 @@ fn main() {
 async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    // Create Ftr instance with fresh caches
-    let ftr_instance = ftr::Ftr::new();
-
-    // Handle public IP option - skip STUN if provided
-    if args.public_ip.is_none() {
-        // Set custom STUN server if provided
-        if let Some(stun_server) = &args.stun_server {
-            std::env::set_var("FTR_STUN_SERVER", stun_server);
-        }
-
-        // Pre-warm STUN cache immediately for faster public IP detection
-        // (Cache warming is now handled internally by Ftr instance)
-    }
+    // Create Ftr instance with fresh caches. If a custom STUN server was
+    // provided, it is tried first with the default servers as fallback
+    // (STUN is only used when no public IP is supplied on the command line).
+    let ftr_instance = if let Some(stun_server) = &args.stun_server {
+        let mut stun_servers = vec![stun_server.clone()];
+        stun_servers.extend(
+            ftr::public_ip::stun::STUN_SERVERS
+                .iter()
+                .map(|s| (*s).to_string()),
+        );
+        let stun = ftr::public_ip::StunClient::with_servers(stun_servers);
+        ftr::Ftr::with_services(ftr::services::Services::with_services(
+            None,
+            None,
+            Some(stun),
+        ))
+    } else {
+        ftr::Ftr::new()
+    };
 
     // Initialize debug mode if requested
     // ftr::debug::init_debug(args.verbose);

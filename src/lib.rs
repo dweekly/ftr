@@ -195,6 +195,27 @@ impl Ftr {
         }
     }
 
+    /// Create a new Ftr instance using the provided services
+    ///
+    /// This allows customizing individual services, e.g. a
+    /// [`StunClient`](crate::public_ip::StunClient) configured with custom
+    /// STUN servers.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::services::Services;
+    /// use ftr::public_ip::StunClient;
+    /// use ftr::Ftr;
+    ///
+    /// let stun = StunClient::with_servers(vec!["stun.example.com:3478".to_string()]);
+    /// let services = Services::with_services(None, None, Some(stun));
+    /// let ftr = Ftr::with_services(services);
+    /// ```
+    pub fn with_services(services: Services) -> Self {
+        Self { services }
+    }
+
     /// Create a new Ftr instance with optional pre-initialized caches
     ///
     /// Any cache not provided will be created fresh.
