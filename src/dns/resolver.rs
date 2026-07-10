@@ -4,7 +4,7 @@
 //! Replaces hickory-resolver for the small set of queries ftr needs.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::OnceLock;
+use std::sync::{Arc, RwLock};
 use tokio::net::UdpSocket;
 use tokio::time::Duration;
 
@@ -101,7 +101,15 @@ struct ResolverConfig {
     timing: QueryTiming,
 }
 
-/// The default resolver configuration, computed once per process.
+/// Cached default resolver configuration; `None` until first use.
+///
+/// Guarded by an `RwLock` rather than a `OnceLock` so
+/// [`refresh_system_dns`] can swap in a re-read configuration after a
+/// network change. Queries snapshot an `Arc`, so a refresh never disturbs
+/// lookups already in flight.
+static DEFAULT_CONFIG: RwLock<Option<Arc<ResolverConfig>>> = RwLock::new(None);
+
+/// Compute the resolver configuration from system state.
 ///
 /// Server precedence: system resolvers from `/etc/resolv.conf` first
 /// (Unix only, up to [`crate::dns::system::MAXNS`]), then
@@ -109,36 +117,67 @@ struct ResolverConfig {
 /// from resolv.conf override the default timing. When no system resolvers
 /// are found — including always on Windows, where system-resolver discovery
 /// is future work — this is exactly the previous hardcoded behavior.
-fn default_config() -> &'static ResolverConfig {
-    static CONFIG: OnceLock<ResolverConfig> = OnceLock::new();
-    CONFIG.get_or_init(|| {
-        // The single place system configuration is consulted.
-        #[cfg(unix)]
-        let (mut servers, timing) = match crate::dns::system::load_system_resolv_conf() {
-            Some(conf) => {
-                let mut timing = QueryTiming::default();
-                if let Some(timeout) = conf.timeout {
-                    timing.attempt_timeout = timeout;
-                }
-                if let Some(attempts) = conf.attempts {
-                    timing.attempts = attempts;
-                }
-                (conf.nameservers, timing)
+fn compute_config() -> ResolverConfig {
+    // The single place system configuration is consulted.
+    #[cfg(unix)]
+    let (mut servers, timing) = match crate::dns::system::load_system_resolv_conf() {
+        Some(conf) => {
+            let mut timing = QueryTiming::default();
+            if let Some(timeout) = conf.timeout {
+                timing.attempt_timeout = timeout;
             }
-            None => (Vec::new(), QueryTiming::default()),
-        };
-        // Windows system-resolver discovery is future work; see crate::dns::system.
-        #[cfg(not(unix))]
-        let (mut servers, timing) = (Vec::<SocketAddr>::new(), QueryTiming::default());
-
-        for fallback in FALLBACK_DNS_SERVERS {
-            if !servers.contains(fallback) {
-                servers.push(*fallback);
+            if let Some(attempts) = conf.attempts {
+                timing.attempts = attempts;
             }
+            (conf.nameservers, timing)
         }
+        None => (Vec::new(), QueryTiming::default()),
+    };
+    // Windows system-resolver discovery is future work; see crate::dns::system.
+    #[cfg(not(unix))]
+    let (mut servers, timing) = (Vec::<SocketAddr>::new(), QueryTiming::default());
 
-        ResolverConfig { servers, timing }
-    })
+    for fallback in FALLBACK_DNS_SERVERS {
+        if !servers.contains(fallback) {
+            servers.push(*fallback);
+        }
+    }
+
+    ResolverConfig { servers, timing }
+}
+
+/// The default resolver configuration, computed on first use and cached
+/// until [`refresh_system_dns`] is called.
+fn default_config() -> Arc<ResolverConfig> {
+    if let Some(cfg) = DEFAULT_CONFIG
+        .read()
+        .expect("DNS config lock poisoned")
+        .as_ref()
+    {
+        return Arc::clone(cfg);
+    }
+    let mut slot = DEFAULT_CONFIG.write().expect("DNS config lock poisoned");
+    // Double-checked: another thread may have initialized while we waited.
+    if let Some(cfg) = slot.as_ref() {
+        return Arc::clone(cfg);
+    }
+    let cfg = Arc::new(compute_config());
+    *slot = Some(Arc::clone(&cfg));
+    cfg
+}
+
+/// Re-read system DNS configuration (e.g. `/etc/resolv.conf`).
+///
+/// Long-running library consumers should call this after a network change
+/// (VPN toggle, interface switch) so subsequent lookups use the current
+/// system resolvers; the process otherwise caches the configuration from
+/// first use. Queries already in flight are unaffected. Explicit-server
+/// lookups (`*_with_servers`) never consult this configuration.
+pub fn refresh_system_dns() {
+    // Compute outside the lock: filesystem I/O under a lock held across
+    // reads would stall concurrent lookups.
+    let cfg = Arc::new(compute_config());
+    *DEFAULT_CONFIG.write().expect("DNS config lock poisoned") = Some(cfg);
 }
 
 /// Resolve a hostname to IPv4 addresses (A record query).
@@ -1137,5 +1176,21 @@ mod tests {
             Ok(Err(e)) => eprintln!("TXT lookup failed (network unavailable): {e}"),
             Err(_) => eprintln!("TXT lookup timed out"),
         }
+    }
+
+    #[test]
+    fn test_refresh_system_dns_swaps_config() {
+        let before = default_config();
+        refresh_system_dns();
+        let after = default_config();
+        assert!(
+            !Arc::ptr_eq(&before, &after),
+            "refresh should install a freshly computed config"
+        );
+        // Content is equivalent when the underlying system config hasn't
+        // changed between the two reads.
+        assert_eq!(before.servers, after.servers);
+        assert_eq!(before.timing.attempts, after.timing.attempts);
+        assert_eq!(before.timing.attempt_timeout, after.timing.attempt_timeout);
     }
 }
