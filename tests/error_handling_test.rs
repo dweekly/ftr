@@ -5,7 +5,7 @@
 
 #[cfg(target_os = "linux")]
 use ftr::SocketMode;
-use ftr::{ProbeProtocol, TracerouteConfigBuilder, TracerouteError};
+use ftr::{ConfigError, ProbeProtocol, TracerouteConfigBuilder, TracerouteError};
 
 #[tokio::test]
 async fn test_insufficient_permissions_error() {
@@ -139,7 +139,10 @@ async fn test_config_validation_errors() {
         .build();
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("start_ttl must be at least 1"));
+    assert_eq!(
+        result.expect_err("start_ttl(0) must fail validation"),
+        ConfigError::InvalidStartTtl
+    );
 
     // Test max_hops < start_ttl
     let result = TracerouteConfigBuilder::new()
@@ -149,10 +152,12 @@ async fn test_config_validation_errors() {
         .build();
 
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("max_hops must be greater than or equal to start_ttl")
+    assert_eq!(
+        result.expect_err("max_hops < start_ttl must fail validation"),
+        ConfigError::MaxHopsLessThanStartTtl {
+            start_ttl: 10,
+            max_hops: 5,
+        }
     );
 
     // Test empty target
@@ -192,9 +197,7 @@ async fn test_error_display_formatting() {
         TracerouteError::Ipv6NotSupported,
         TracerouteError::ResolutionError("Failed to resolve host: example.com".to_string()),
         TracerouteError::SocketError("Failed to create socket: Permission denied".to_string()),
-        TracerouteError::ConfigError(
-            "Invalid configuration: start_ttl must be at least 1".to_string(),
-        ),
+        TracerouteError::ConfigError(ConfigError::InvalidStartTtl),
         TracerouteError::ProbeSendError("Failed to send probe: Network unreachable".to_string()),
     ];
 

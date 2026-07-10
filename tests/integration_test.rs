@@ -72,7 +72,10 @@ async fn test_config_validation() {
     // Empty target
     let result = TracerouteConfigBuilder::new().build();
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Target must be specified"));
+    assert_eq!(
+        result.expect_err("empty target must fail validation"),
+        ftr::ConfigError::MissingTarget
+    );
 
     // Invalid TTL values
     let result = TracerouteConfigBuilder::new()
@@ -253,9 +256,9 @@ async fn test_error_types() {
     // Invalid target (empty) - should get ConfigError
     let result = trace("").await;
     match result {
-        Err(TracerouteError::ConfigError(msg)) => {
-            println!("Got expected ConfigError: {}", msg);
-            assert!(msg.contains("Target") || msg.contains("target"));
+        Err(TracerouteError::ConfigError(err)) => {
+            println!("Got expected ConfigError: {}", err);
+            assert_eq!(err, ftr::ConfigError::MissingTarget);
         }
         _ => panic!("Expected ConfigError for empty target"),
     }

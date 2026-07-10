@@ -389,8 +389,8 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
             eprintln!("Please check the hostname and your network connection.");
             std::process::exit(1);
         }
-        Err(TracerouteError::ConfigError(msg)) => {
-            eprintln!("\nError: Invalid configuration - {}", msg);
+        Err(TracerouteError::ConfigError(err)) => {
+            eprintln!("\nError: Invalid configuration - {}", err);
             eprintln!("Run 'ftr --help' for usage information.");
             std::process::exit(1);
         }

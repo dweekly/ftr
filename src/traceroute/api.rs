@@ -123,10 +123,8 @@ impl Traceroute {
 
 /// Run an async traceroute with the given configuration
 pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteError> {
-    let config = TracerouteConfig::builder()
-        .target(target)
-        .build()
-        .map_err(TracerouteError::ConfigError)?;
+    // ConfigError converts into TracerouteError::ConfigError via #[from]
+    let config = TracerouteConfig::builder().target(target).build()?;
     trace_with_config_async(config).await
 }
 

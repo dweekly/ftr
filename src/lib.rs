@@ -145,8 +145,8 @@ pub mod traceroute;
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
-    AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType, TimingConfig, Traceroute,
-    TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
+    AsnInfo, ClassifiedHopInfo, ConfigError, IspInfo, RawHopInfo, SegmentType, TimingConfig,
+    Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
     TracerouteResult, trace, trace_with_config,
 };
 
@@ -279,10 +279,8 @@ impl Ftr {
     /// A [`TracerouteResult`] containing the trace results, or a [`TracerouteError`]
     /// if the trace fails.
     pub async fn trace(&self, target: &str) -> Result<TracerouteResult, TracerouteError> {
-        let config = TracerouteConfig::builder()
-            .target(target)
-            .build()
-            .map_err(TracerouteError::ConfigError)?;
+        // ConfigError converts into TracerouteError::ConfigError via #[from]
+        let config = TracerouteConfig::builder().target(target).build()?;
         self.trace_with_config(config).await
     }
 
