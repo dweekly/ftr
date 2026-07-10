@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Advanced Service Usage ===");
     {
         // Access the ASN service directly (no locking needed)
-        let asn_service = &ftr.services.asn;
+        let asn_service = &ftr.services().asn;
 
         // Check cache stats
         let stats = asn_service.cache_stats().await;

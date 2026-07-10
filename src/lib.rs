@@ -179,11 +179,36 @@ use services::Services;
 /// }
 /// ```
 pub struct Ftr {
-    /// The services container for direct access to individual services
-    pub services: Services,
+    /// The services container owning all external service clients
+    services: Services,
 }
 
 impl Ftr {
+    /// Access the services container for direct use of individual services
+    ///
+    /// This provides direct access to the ASN lookup, reverse DNS, and STUN
+    /// services (and their caches) owned by this `Ftr` instance. Prefer the
+    /// convenience methods ([`lookup_asn`](Self::lookup_asn),
+    /// [`lookup_rdns`](Self::lookup_rdns),
+    /// [`get_public_ip`](Self::get_public_ip)) for one-off lookups.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let asn_info = ftr.services().asn.lookup("8.8.8.8".parse()?).await?;
+    ///     println!("AS{}", asn_info.asn);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn services(&self) -> &Services {
+        &self.services
+    }
+
     /// Create a new Ftr instance with fresh services
     pub fn new() -> Self {
         Self {
