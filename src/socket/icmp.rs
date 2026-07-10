@@ -72,6 +72,9 @@ pub struct IcmpHeader {
     /// ICMP message type
     pub icmp_type: u8,
     /// ICMP message code
+    // Only the macOS receive path inspects the code today; the field stays for
+    // protocol completeness now that this module is crate-private.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub icmp_code: u8,
 }
 
