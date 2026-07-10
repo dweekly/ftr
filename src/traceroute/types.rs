@@ -120,7 +120,7 @@ mod tests {
         };
         assert_eq!(hop.ttl, 5);
         assert!(hop.addr.is_some());
-        assert_eq!(hop.rtt.unwrap().as_millis(), 10);
+        assert_eq!(hop.rtt.expect("rtt should be set").as_millis(), 10);
     }
 
     #[test]

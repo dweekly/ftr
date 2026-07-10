@@ -498,10 +498,11 @@ mod tests {
         let resp = build_response("example.com", QType::A, &[(1, &[93, 184, 216, 34])]);
         let records = parse_response(&resp, QType::A).expect("should parse");
         assert_eq!(records.len(), 1);
-        match &records[0] {
-            DnsRecord::A(addr) => assert_eq!(*addr, Ipv4Addr::new(93, 184, 216, 34)),
-            other => panic!("expected A record, got {other:?}"),
-        }
+        assert!(
+            matches!(&records[0], DnsRecord::A(addr) if *addr == Ipv4Addr::new(93, 184, 216, 34)),
+            "expected A record 93.184.216.34, got {:?}",
+            records[0]
+        );
     }
 
     #[test]
@@ -531,10 +532,11 @@ mod tests {
         let resp = build_response("8.8.8.8.in-addr.arpa", QType::Ptr, &[(12, &name_data)]);
         let records = parse_response(&resp, QType::Ptr).expect("should parse");
         assert_eq!(records.len(), 1);
-        match &records[0] {
-            DnsRecord::Ptr(name) => assert_eq!(name, "dns.google"),
-            other => panic!("expected PTR record, got {other:?}"),
-        }
+        assert!(
+            matches!(&records[0], DnsRecord::Ptr(name) if name == "dns.google"),
+            "expected PTR record dns.google, got {:?}",
+            records[0]
+        );
     }
 
     // ---- parse_response: TXT records ----
@@ -549,10 +551,11 @@ mod tests {
         let resp = build_response("8.8.8.8.origin.asn.cymru.com", QType::Txt, &[(16, &rdata)]);
         let records = parse_response(&resp, QType::Txt).expect("should parse");
         assert_eq!(records.len(), 1);
-        match &records[0] {
-            DnsRecord::Txt(s) => assert_eq!(s, "15169 | 8.8.8.0/24 | US"),
-            other => panic!("expected TXT record, got {other:?}"),
-        }
+        assert!(
+            matches!(&records[0], DnsRecord::Txt(s) if s == "15169 | 8.8.8.0/24 | US"),
+            "expected TXT record, got {:?}",
+            records[0]
+        );
     }
 
     #[test]
@@ -568,10 +571,11 @@ mod tests {
         let resp = build_response("test.example", QType::Txt, &[(16, &rdata)]);
         let records = parse_response(&resp, QType::Txt).expect("should parse");
         assert_eq!(records.len(), 1);
-        match &records[0] {
-            DnsRecord::Txt(s) => assert_eq!(s, "hello world"),
-            other => panic!("expected TXT record, got {other:?}"),
-        }
+        assert!(
+            matches!(&records[0], DnsRecord::Txt(s) if s == "hello world"),
+            "expected TXT record, got {:?}",
+            records[0]
+        );
     }
 
     #[test]
@@ -581,10 +585,11 @@ mod tests {
         let resp = build_response("test.example", QType::Txt, &[(16, &rdata)]);
         let records = parse_response(&resp, QType::Txt).expect("should parse");
         assert_eq!(records.len(), 1);
-        match &records[0] {
-            DnsRecord::Txt(s) => assert_eq!(s, ""),
-            other => panic!("expected TXT record, got {other:?}"),
-        }
+        assert!(
+            matches!(&records[0], DnsRecord::Txt(s) if s.is_empty()),
+            "expected empty TXT record, got {:?}",
+            records[0]
+        );
     }
 
     // ---- response header validation ----
@@ -806,7 +811,7 @@ mod tests {
         assert!(DnsError::Malformed.to_string().contains("malformed"));
         assert!(DnsError::NotFound.to_string().contains("no records"));
         assert!(DnsError::Truncated.to_string().contains("truncated"));
-        let io_err = DnsError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let io_err = DnsError::Io(std::io::Error::other("test"));
         assert!(io_err.to_string().contains("test"));
     }
 
@@ -835,11 +840,15 @@ mod tests {
             resolve_a("thisdomaindoesnotexist.invalid"),
         )
         .await;
+        assert!(
+            !matches!(&result, Ok(Ok(_))),
+            "should not resolve nonexistent domain, got: {:?}",
+            result
+        );
         match result {
             Ok(Err(DnsError::NotFound)) => {} // expected
             Ok(Err(e)) => eprintln!("Got different error (acceptable): {e}"),
-            Ok(Ok(_)) => panic!("should not resolve nonexistent domain"),
-            Err(_) => eprintln!("timed out"),
+            _ => eprintln!("timed out"),
         }
     }
 

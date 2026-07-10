@@ -90,7 +90,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_enrich_addresses() {
-        let service = EnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new()
+            .await
+            .expect("enrichment service creation should succeed");
         let addresses = vec![
             IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
             IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
@@ -144,15 +146,17 @@ mod tests {
         assert_eq!(result.hostname, Some("dns.google".to_string()));
         assert!(result.asn_info.is_some());
 
-        let asn = result.asn_info.unwrap();
+        let asn = result.asn_info.expect("asn_info should be set");
         assert_eq!(asn.asn, 15169);
         assert_eq!(asn.name, "GOOGLE");
     }
 
     #[tokio::test]
     async fn test_ipv6_enrichment() {
-        let service = EnrichmentService::new().await.unwrap();
-        let ipv6_addr: IpAddr = "2001:4860:4860::8888".parse().unwrap();
+        let service = EnrichmentService::new()
+            .await
+            .expect("enrichment service creation should succeed");
+        let ipv6_addr: IpAddr = "2001:4860:4860::8888".parse().expect("valid IPv6 address");
 
         let results = service.enrich_addresses(vec![ipv6_addr]).await;
 
@@ -211,7 +215,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_private_ip_enrichment() {
-        let service = EnrichmentService::new().await.unwrap();
+        let service = EnrichmentService::new()
+            .await
+            .expect("enrichment service creation should succeed");
         let private_addrs = vec![
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
@@ -227,7 +233,10 @@ mod tests {
         for addr in &private_addrs {
             let result = &results[addr];
             assert!(result.asn_info.is_some());
-            let asn_info = result.asn_info.as_ref().unwrap();
+            let asn_info = result
+                .asn_info
+                .as_ref()
+                .expect("private IP should have ASN info");
             assert_eq!(asn_info.asn, 0); // Private IPs get ASN 0
             assert_eq!(asn_info.name, "Private Network");
         }

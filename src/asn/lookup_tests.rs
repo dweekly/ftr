@@ -83,9 +83,9 @@ async fn test_lookup_public_ip() {
 
         for (ip_str, expected_asn, expected_name_prefix) in test_cases {
             let ip: Ipv4Addr = ip_str.parse().expect("valid IP");
-            let asn_info = lookup_asn_with_cache(ip, &cache)
-                .await
-                .unwrap_or_else(|e| panic!("ASN lookup failed for {ip_str}: {e:?}"));
+            let result = lookup_asn_with_cache(ip, &cache).await;
+            assert!(result.is_ok(), "ASN lookup failed for {ip_str}: {result:?}");
+            let asn_info = result.expect("ASN lookup should succeed");
 
             assert_eq!(asn_info.asn, expected_asn, "Wrong ASN for {ip_str}");
             assert!(

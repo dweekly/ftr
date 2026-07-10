@@ -16,7 +16,6 @@ mod tests {
         AsnInfo, ClassifiedHopInfo, IspInfo, ProbeProtocol, SegmentType, SocketMode,
         TracerouteResult,
     };
-    use serde_json;
     use std::net::{IpAddr, Ipv4Addr};
     use std::time::Duration;
 
@@ -79,7 +78,8 @@ mod tests {
             "hops": []
         });
 
-        let json_str = serde_json::to_string(&json_output).unwrap();
+        let json_str =
+            serde_json::to_string(&json_output).expect("JSON serialization should succeed");
         assert!(
             json_str.contains("\"destination_asn\":15169"),
             "JSON should contain destination_asn field with value 15169"

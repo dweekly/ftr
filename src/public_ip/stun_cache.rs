@@ -126,7 +126,10 @@ mod tests {
         assert!(!addrs1.is_empty(), "Should resolve at least one address");
 
         // Second call should return cached data
-        let addrs2 = cache.get_stun_server_addrs(test_server).await.unwrap();
+        let addrs2 = cache
+            .get_stun_server_addrs(test_server)
+            .await
+            .expect("second call should return cached data");
         assert_eq!(
             addrs1, addrs2,
             "Second call should return identical cached result"
@@ -145,11 +148,11 @@ mod tests {
     async fn test_stun_cache_ttl() {
         let cache = StunCache::new();
         let test_server = "test.example.com:3478";
-        let test_addresses = vec!["127.0.0.1:3478".parse().unwrap()];
+        let test_addresses = vec!["127.0.0.1:3478".parse().expect("valid socket address")];
 
         // First, verify a fresh entry is returned from cache
         {
-            let mut cache_lock = cache.cache.lock().unwrap();
+            let mut cache_lock = cache.cache.lock().expect("cache lock poisoned");
             cache_lock.insert(
                 test_server.to_string(),
                 CacheEntry {
@@ -163,7 +166,7 @@ mod tests {
         let result = cache.get_stun_server_addrs(test_server).await;
         assert!(result.is_ok(), "Should return cached entry");
         assert_eq!(
-            result.unwrap(),
+            result.expect("cached entry should be returned"),
             test_addresses,
             "Should return correct addresses"
         );
@@ -172,7 +175,7 @@ mod tests {
         // We'll create an expired entry by using the earliest Instant we can safely create
         // The key insight: we just need any instant that's > CACHE_TTL ago
         {
-            let mut cache_lock = cache.cache.lock().unwrap();
+            let mut cache_lock = cache.cache.lock().expect("cache lock poisoned");
 
             // Try to create an instant that's CACHE_TTL + 1 second in the past
             // If that fails (e.g., on Windows with recent boot), we'll just clear the cache
