@@ -37,6 +37,7 @@ pub struct StunClient {
     cache: Arc<RwLock<StunCache>>,
     servers: Vec<String>,
     timeout: Duration,
+    verbose: u8,
 }
 
 impl StunClient {
@@ -62,6 +63,7 @@ impl StunClient {
             cache: Arc::new(RwLock::new(StunCache::new())),
             servers,
             timeout: Duration::from_millis(500),
+            verbose: 0,
         }
     }
 
@@ -72,6 +74,19 @@ impl StunClient {
     /// * `timeout` - Maximum time to wait for a STUN response
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    /// Set the verbosity level for STUN diagnostics
+    ///
+    /// Levels 2 and above print per-server diagnostics to stderr.
+    /// This replaces the former FTR_VERBOSE environment variable lookup.
+    ///
+    /// # Arguments
+    ///
+    /// * `verbose` - Verbosity level (0 = silent)
+    pub fn with_verbose(mut self, verbose: u8) -> Self {
+        self.verbose = verbose;
         self
     }
 
@@ -86,6 +101,7 @@ impl StunClient {
             cache: Arc::new(RwLock::new(cache)),
             servers,
             timeout: Duration::from_millis(500),
+            verbose: 0,
         }
     }
 
@@ -100,18 +116,23 @@ impl StunClient {
     /// The public IP address (IPv4 or IPv6), or an error if all
     /// STUN servers fail or timeout.
     pub async fn get_public_ip(&self) -> Result<IpAddr, PublicIpError> {
-        get_public_ip_stun_with_servers_and_cache(&self.servers, self.timeout, &self.cache)
-            .await
-            .map_err(|e| match e {
-                StunError::Timeout => PublicIpError::Timeout,
-                StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
-                StunError::InvalidResponse => {
-                    PublicIpError::ParseError("Invalid STUN response".to_string())
-                }
-                StunError::NoMappedAddress => {
-                    PublicIpError::ParseError("No mapped address in STUN response".to_string())
-                }
-            })
+        get_public_ip_stun_with_servers_and_cache(
+            &self.servers,
+            self.timeout,
+            &self.cache,
+            self.verbose,
+        )
+        .await
+        .map_err(|e| match e {
+            StunError::Timeout => PublicIpError::Timeout,
+            StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
+            StunError::InvalidResponse => {
+                PublicIpError::ParseError("Invalid STUN response".to_string())
+            }
+            StunError::NoMappedAddress => {
+                PublicIpError::ParseError("No mapped address in STUN response".to_string())
+            }
+        })
     }
 
     /// Get the list of configured STUN servers

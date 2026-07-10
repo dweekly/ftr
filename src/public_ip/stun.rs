@@ -60,11 +60,17 @@ pub async fn get_public_ip_stun_with_cache(
     timeout: Duration,
     cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
 ) -> Result<IpAddr, StunError> {
-    let verbose = std::env::var("FTR_VERBOSE")
-        .ok()
-        .and_then(|v| v.parse::<u8>().ok())
-        .unwrap_or(0);
+    get_public_ip_stun_with_cache_and_verbose(server, timeout, cache, 0).await
+}
 
+/// Get public IP using STUN protocol with injected cache and an explicit
+/// verbosity level (2+ prints per-server diagnostics to stderr)
+pub async fn get_public_ip_stun_with_cache_and_verbose(
+    server: &str,
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+    verbose: u8,
+) -> Result<IpAddr, StunError> {
     if verbose >= 2 {
         eprintln!("[STUN] Attempting to contact STUN server: {}", server);
     }
@@ -149,21 +155,23 @@ pub async fn get_public_ip_stun_with_fallback_and_cache(
     cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
 ) -> Result<IpAddr, StunError> {
     let servers: Vec<String> = STUN_SERVERS.iter().map(|s| (*s).to_string()).collect();
-    get_public_ip_stun_with_servers_and_cache(&servers, timeout, cache).await
+    get_public_ip_stun_with_servers_and_cache(&servers, timeout, cache, 0).await
 }
 
 /// Get public IP using STUN, trying the provided servers in order (with injected cache)
 ///
 /// The first server is the primary; the remaining servers are fallbacks
 /// tried only if earlier ones fail. Server addresses are resolved through
-/// (and cached in) the provided cache on demand.
+/// (and cached in) the provided cache on demand. `verbose` levels 2+
+/// print per-server diagnostics to stderr.
 pub async fn get_public_ip_stun_with_servers_and_cache(
     servers: &[String],
     timeout: Duration,
     cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+    verbose: u8,
 ) -> Result<IpAddr, StunError> {
     for server in servers {
-        match get_public_ip_stun_with_cache(server, timeout, cache).await {
+        match get_public_ip_stun_with_cache_and_verbose(server, timeout, cache, verbose).await {
             Ok(ip) => return Ok(ip),
             Err(_) => continue, // Try next server
         }

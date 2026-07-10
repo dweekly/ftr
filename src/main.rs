@@ -177,21 +177,25 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
     // Create Ftr instance with fresh caches. If a custom STUN server was
     // provided, it is tried first with the default servers as fallback
     // (STUN is only used when no public IP is supplied on the command line).
-    let ftr_instance = if let Some(stun_server) = &args.stun_server {
-        let mut stun_servers = vec![stun_server.clone()];
+    // Verbosity is threaded through explicitly, never via environment
+    // variables.
+    let ftr_instance = {
+        let mut stun_servers: Vec<String> = Vec::new();
+        if let Some(stun_server) = &args.stun_server {
+            stun_servers.push(stun_server.clone());
+        }
         stun_servers.extend(
             ftr::public_ip::stun::STUN_SERVERS
                 .iter()
                 .map(|s| (*s).to_string()),
         );
-        let stun = ftr::public_ip::StunClient::with_servers(stun_servers);
+        let stun =
+            ftr::public_ip::StunClient::with_servers(stun_servers).with_verbose(args.verbose);
         ftr::Ftr::with_services(ftr::services::Services::with_services(
             None,
             None,
             Some(stun),
         ))
-    } else {
-        ftr::Ftr::new()
     };
 
     // Initialize debug mode if requested

@@ -18,11 +18,30 @@ pub async fn create_probe_socket(
 }
 
 /// Create a probe socket with protocol and mode preferences
+///
+/// Equivalent to [`create_probe_socket_with_options_and_verbose`] with
+/// verbosity disabled.
 pub async fn create_probe_socket_with_options(
     target: IpAddr,
     timing_config: TimingConfig,
     protocol: Option<ProbeProtocol>,
     socket_mode: Option<SocketMode>,
+) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
+    create_probe_socket_with_options_and_verbose(target, timing_config, protocol, socket_mode, 0)
+        .await
+}
+
+/// Create a probe socket with protocol and mode preferences and a verbosity level
+///
+/// `verbose` controls diagnostic output on stderr (0 = silent, 1+ = print
+/// the selected socket mode); it is threaded through explicitly rather than
+/// read from the environment so concurrent traces cannot affect each other.
+pub async fn create_probe_socket_with_options_and_verbose(
+    target: IpAddr,
+    timing_config: TimingConfig,
+    protocol: Option<ProbeProtocol>,
+    socket_mode: Option<SocketMode>,
+    verbose: u8,
 ) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
     // Check for unsupported protocols
     if let Some(ProbeProtocol::Tcp) = protocol {
@@ -38,12 +57,9 @@ pub async fn create_probe_socket_with_options(
                 let _ = protocol;
                 let _ = socket_mode;
                 use super::windows::WindowsAsyncIcmpSocket;
-                let socket = WindowsAsyncIcmpSocket::new_with_config(timing_config)?;
+                let socket =
+                    WindowsAsyncIcmpSocket::new_with_config_and_verbose(timing_config, verbose)?;
 
-                let verbose = std::env::var("FTR_VERBOSE")
-                    .ok()
-                    .and_then(|v| v.parse::<u8>().ok())
-                    .unwrap_or(0);
                 if verbose > 0 {
                     eprintln!("Using Windows ICMP API mode for traceroute");
                 }
@@ -56,12 +72,9 @@ pub async fn create_probe_socket_with_options(
                 let _ = protocol;
                 let _ = socket_mode;
                 use super::macos::MacOSAsyncIcmpSocket;
-                let socket = MacOSAsyncIcmpSocket::new_with_config(timing_config)?;
+                let socket =
+                    MacOSAsyncIcmpSocket::new_with_config_and_verbose(timing_config, verbose)?;
 
-                let verbose = std::env::var("FTR_VERBOSE")
-                    .ok()
-                    .and_then(|v| v.parse::<u8>().ok())
-                    .unwrap_or(0);
                 if verbose > 0 {
                     eprintln!("Using DGRAM ICMP mode for traceroute (per-probe version)");
                 }
@@ -81,10 +94,6 @@ pub async fn create_probe_socket_with_options(
                             use super::linux::LinuxAsyncIcmpSocket;
                             let socket = LinuxAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                            let verbose = std::env::var("FTR_VERBOSE")
-                                .ok()
-                                .and_then(|v| v.parse::<u8>().ok())
-                                .unwrap_or(0);
                             if verbose > 0 {
                                 eprintln!("Using Raw ICMP mode for traceroute");
                             }
@@ -105,10 +114,6 @@ pub async fn create_probe_socket_with_options(
                     use super::linux::LinuxAsyncUdpSocket;
                     let socket = LinuxAsyncUdpSocket::new_with_config(timing_config)?;
 
-                    let verbose = std::env::var("FTR_VERBOSE")
-                        .ok()
-                        .and_then(|v| v.parse::<u8>().ok())
-                        .unwrap_or(0);
                     if verbose > 0 {
                         eprintln!("Using UDP with IP_RECVERR (no root required)");
                     }
@@ -129,10 +134,6 @@ pub async fn create_probe_socket_with_options(
                 use super::bsd::BsdAsyncIcmpSocket;
                 let socket = BsdAsyncIcmpSocket::new_with_config(timing_config)?;
 
-                let verbose = std::env::var("FTR_VERBOSE")
-                    .ok()
-                    .and_then(|v| v.parse::<u8>().ok())
-                    .unwrap_or(0);
                 if verbose > 0 {
                     eprintln!("Using Raw ICMP mode for traceroute");
                 }
@@ -151,6 +152,7 @@ pub async fn create_probe_socket_with_options(
             )))]
             {
                 let _ = protocol;
+                let _ = verbose;
                 Err(TracerouteError::SocketError(
                     "Socket implementation not available for this platform".to_string(),
                 ))

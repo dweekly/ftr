@@ -5,7 +5,7 @@
 
 use crate::dns::resolver;
 use crate::services::Services;
-use crate::socket::factory::create_probe_socket_with_options;
+use crate::socket::factory::create_probe_socket_with_options_and_verbose;
 use crate::traceroute::engine::TracerouteEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
 use std::net::IpAddr;
@@ -87,17 +87,15 @@ impl Traceroute {
         let mut timing_config = self.config.timing.clone();
         timing_config.socket_read_timeout = self.config.probe_timeout;
 
-        // Set verbose flag in environment for socket to pick up
-        if self.config.verbose > 0 {
-            std::env::set_var("FTR_VERBOSE", self.config.verbose.to_string());
-        }
-
-        // Create socket with protocol preference
-        let socket = create_probe_socket_with_options(
+        // Create socket with protocol preference; verbosity is passed
+        // explicitly (never via environment variables, which would race
+        // between concurrent traces in the same process)
+        let socket = create_probe_socket_with_options_and_verbose(
             self.target_ip,
             timing_config,
             self.config.protocol,
             self.config.socket_mode,
+            self.config.verbose,
         )
         .await?;
 
@@ -293,7 +291,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_verbose_environment_setting() {
+    async fn test_verbose_config_does_not_touch_environment() {
         let config = TracerouteConfig::builder()
             .target("127.0.0.1")
             .verbose(2)
@@ -301,22 +299,15 @@ mod tests {
             .probe_timeout(Duration::from_millis(100))
             .build()
             .unwrap();
+        assert_eq!(config.verbose, 2);
 
         let traceroute = Traceroute::new(config).await.unwrap();
 
-        // Store original value
-        let original = std::env::var("FTR_VERBOSE").ok();
-
-        // This will set the environment variable (with timeout)
+        // Verbosity is threaded through explicitly; running a trace must not
+        // mutate process-global environment state (which would race between
+        // concurrent traces)
+        let before = std::env::var("FTR_VERBOSE").ok();
         let _ = tokio::time::timeout(Duration::from_secs(5), traceroute.run()).await;
-
-        // Check it was set
-        assert_eq!(std::env::var("FTR_VERBOSE").ok(), Some("2".to_string()));
-
-        // Restore original
-        match original {
-            Some(val) => std::env::set_var("FTR_VERBOSE", val),
-            None => std::env::remove_var("FTR_VERBOSE"),
-        }
+        assert_eq!(std::env::var("FTR_VERBOSE").ok(), before);
     }
 }
