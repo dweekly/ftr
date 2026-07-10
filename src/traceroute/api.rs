@@ -99,7 +99,9 @@ impl Traceroute {
         )
         .await?;
 
-        // Create and run fully parallel async engine
+        // Create and run fully parallel async engine. Engine errors are
+        // already TracerouteError values; propagate them unchanged so typed
+        // variants (e.g. Ipv6NotSupported, InsufficientPermissions) survive.
         let engine = if let Some(services) = self.services {
             TracerouteEngine::new_with_services(
                 socket,
@@ -107,18 +109,12 @@ impl Traceroute {
                 self.target_ip,
                 std::sync::Arc::new(services),
             )
-            .await
-            .map_err(|e| TracerouteError::SocketError(e.to_string()))?
+            .await?
         } else {
-            TracerouteEngine::new(socket, self.config.clone(), self.target_ip)
-                .await
-                .map_err(|e| TracerouteError::SocketError(e.to_string()))?
+            TracerouteEngine::new(socket, self.config.clone(), self.target_ip).await?
         };
 
-        let result = engine
-            .run()
-            .await
-            .map_err(|e| TracerouteError::SocketError(e.to_string()))?;
+        let result = engine.run().await?;
 
         // The fully parallel engine handles enrichment internally, so we can just return
         Ok(result)
