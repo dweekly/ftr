@@ -68,7 +68,7 @@ assert_cmd = "2.2"
 predicates = "3.1"
 serde_json = "1.0"
 # criterion 0.8.x requires Rust 1.86; held at 0.7 to preserve MSRV 1.85
-criterion = { version = "0.7", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
 libc = "0.2"
