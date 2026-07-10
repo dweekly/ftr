@@ -2,7 +2,6 @@
 
 ## Dependency Reduction
 
-- [ ] Custom DNS client to replace `hickory-resolver` (TXT queries for Team Cymru ASN, PTR queries for rDNS — ~200 lines of UDP DNS over tokio, eliminates ~100 transitive crates)
 - [ ] Evaluate replacing `clap` with manual arg parsing (clap brings ~10 crates)
 - [ ] Evaluate replacing `serde`/`serde_json` with `miniserde` or manual JSON (serde brings ~5 crates)
 

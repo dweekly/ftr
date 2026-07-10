@@ -1,6 +1,5 @@
-// Test program to exercise the v0.6.0 library API and verify JSON output
+//! Example exercising the library API and verifying JSON output
 use ftr::{Ftr, SegmentType, TracerouteConfig};
-use serde_json;
 use std::error::Error;
 
 #[derive(serde::Serialize)]

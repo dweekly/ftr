@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **ftr** (Fast TRaceroute) is a high-performance parallel ICMP traceroute written in Rust. It sends probes concurrently for ~10x speedup over traditional traceroute, with automatic ASN lookup, reverse DNS, public IP detection via STUN, and network segment classification. Available as both a CLI tool and a Rust library. Cross-platform: Linux, macOS, Windows, FreeBSD, OpenBSD.
 
-- **Version**: 0.6.0
-- **MSRV**: 1.82.0
+- **Version**: 0.7.0 (keep in sync with `Cargo.toml`)
+- **MSRV**: 1.85.0 (keep in sync with `rust-version` in `Cargo.toml`)
 - **Rust Edition**: 2021
 - **License**: MIT
 - **Repo**: github.com/dweekly/ftr
@@ -53,7 +53,7 @@ git config core.hooksPath .githooks
 - **`traceroute/`** — Engine: async probe sending, parallel execution, config, result types, segment classification (LAN/ISP/TRANSIT/DESTINATION), ISP detection
 - **`socket/`** — Platform-abstracted socket layer with automatic fallback (Raw ICMP -> DGRAM -> privileged UDP). Each platform has its own implementation file (`linux.rs`, `macos.rs`, `bsd.rs`, `windows.rs`). Factory pattern in `factory.rs`, manual ICMP parsing in `icmp.rs`
 - **`asn/`** — ASN lookup via WHOIS API with in-memory cache
-- **`dns/`** — Reverse DNS via hickory-resolver with in-memory cache
+- **`dns/`** — Custom UDP DNS client (PTR for reverse DNS, TXT for Cymru ASN lookups) with in-memory cache; replaced hickory-resolver in v0.7.0
 - **`public_ip/`** — Public IP detection via STUN protocol with cache
 - **`enrichment/`** — Parallel enrichment service (ASN + DNS lookups on hop results)
 - **`services.rs`** — Service container owning ASN, DNS, STUN services
@@ -80,7 +80,7 @@ git config core.hooksPath .githooks
 
 ## CI Pipeline
 
-GitHub Actions runs on push/PR to main: tests (Ubuntu stable + MSRV 1.82.0, macOS, Windows), formatting, clippy, code coverage (tarpaulin -> Codecov), security audit, unused deps (machete), outdated deps, doc build, and FreeBSD VM tests.
+GitHub Actions runs on push/PR to main: tests (Ubuntu stable + MSRV per `Cargo.toml` `rust-version`, macOS, Windows), formatting, clippy, code coverage (tarpaulin -> Codecov), security audit, unused deps (machete), outdated deps, doc build, and FreeBSD VM tests.
 
 ## Clippy Configuration
 
