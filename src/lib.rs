@@ -118,7 +118,7 @@ pub mod services;
 /// Simple debug print macro for conditional debug output
 #[macro_export]
 macro_rules! debug_print {
-    ($level:expr, $($arg:tt)*) => {
+    ($level:expr_2021, $($arg:tt)*) => {
         #[cfg(debug_assertions)]
         {
             eprintln!("[DEBUG {}] {}", $level, format!($($arg)*));
@@ -129,7 +129,7 @@ macro_rules! debug_print {
 /// Macro for timing traces in very verbose mode
 #[macro_export]
 macro_rules! trace_time {
-    ($verbose:expr, $($arg:tt)*) => {
+    ($verbose:expr_2021, $($arg:tt)*) => {
         if $verbose >= 2 {
             eprintln!("[TIMING {:?}] {}", std::time::Instant::now(), format!($($arg)*));
         }
@@ -149,9 +149,9 @@ mod tests;
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
-    trace, trace_with_config, AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType,
-    TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
-    TracerouteProgress, TracerouteResult,
+    AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType, TimingConfig, Traceroute,
+    TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
+    TracerouteResult, trace, trace_with_config,
 };
 
 // Re-export API

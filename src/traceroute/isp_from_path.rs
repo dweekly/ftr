@@ -3,7 +3,7 @@
 //! This module provides functionality to extract ISP information directly
 //! from the traceroute path, avoiding expensive external API calls.
 
-use crate::traceroute::{is_cgnat, is_internal_ip, ClassifiedHopInfo, IspInfo};
+use crate::traceroute::{ClassifiedHopInfo, IspInfo, is_cgnat, is_internal_ip};
 use std::net::IpAddr;
 
 /// Extract ISP information from the traceroute path

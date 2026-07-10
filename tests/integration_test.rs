@@ -1,8 +1,8 @@
 //! Integration tests for the ftr library
 
 use ftr::{
-    trace, trace_with_config, AsnInfo, ProbeProtocol, SegmentType, SocketMode,
-    TracerouteConfigBuilder, TracerouteError, TracerouteResult,
+    AsnInfo, ProbeProtocol, SegmentType, SocketMode, TracerouteConfigBuilder, TracerouteError,
+    TracerouteResult, trace, trace_with_config,
 };
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;

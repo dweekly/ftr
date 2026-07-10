@@ -1,6 +1,6 @@
 //! Example of running multiple traces in parallel
 
-use ftr::{trace_with_config, TracerouteConfigBuilder};
+use ftr::{TracerouteConfigBuilder, trace_with_config};
 use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 

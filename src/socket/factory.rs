@@ -5,8 +5,8 @@
 
 use super::traits::{ProbeMode, ProbeSocket};
 use super::{ProbeProtocol, SocketMode};
-use crate::traceroute::TracerouteError;
 use crate::TimingConfig;
+use crate::traceroute::TracerouteError;
 use std::net::IpAddr;
 
 /// Create a probe socket for the given target

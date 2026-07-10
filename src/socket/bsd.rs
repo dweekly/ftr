@@ -7,17 +7,17 @@
 //! The BSD raw ICMP implementation is essentially the same across all BSD variants,
 //! using the standard POSIX socket API with raw sockets.
 
+use crate::TimingConfig;
 use crate::probe::{ProbeInfo, ProbeResponse};
 use crate::socket::icmp;
 use crate::socket::traits::{ProbeMode, ProbeSocket};
 use crate::traceroute::TracerouteError;
-use crate::TimingConfig;
 use socket2::{Domain, Protocol, Socket as Socket2, Type};
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 

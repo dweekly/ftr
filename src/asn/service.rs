@@ -4,7 +4,7 @@
 //! abstracting away the caching implementation details.
 
 use super::cache::AsnCache;
-use super::lookup::{lookup_asn_with_cache, AsnLookupError};
+use super::lookup::{AsnLookupError, lookup_asn_with_cache};
 use crate::traceroute::AsnInfo;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;

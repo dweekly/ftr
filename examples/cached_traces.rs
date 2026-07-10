@@ -5,7 +5,7 @@
 //! 2. Leverage ASN and rDNS caching for repeated traces
 //! 3. Measure the performance improvement
 
-use ftr::{trace_with_config, TracerouteConfigBuilder};
+use ftr::{TracerouteConfigBuilder, trace_with_config};
 use std::time::Instant;
 
 #[tokio::main]

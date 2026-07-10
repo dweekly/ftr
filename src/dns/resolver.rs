@@ -465,7 +465,7 @@ mod tests {
         assert_eq!(&pkt[0..2], &[0x12, 0x34]); // ID
         assert_eq!(pkt[2], 0x01); // RD=1
         assert_eq!(pkt[5], 1); // QDCOUNT=1
-                               // QTYPE at end - 4 should be A=1
+        // QTYPE at end - 4 should be A=1
         let qtype_pos = pkt.len() - 4;
         assert_eq!(u16::from_be_bytes([pkt[qtype_pos], pkt[qtype_pos + 1]]), 1);
     }
@@ -663,7 +663,7 @@ mod tests {
         let mut resp = vec![0u8; 12];
         resp[2] = 0x81;
         resp[3] = 0x80; // QR=1, NOERROR
-                        // QDCOUNT=0, ANCOUNT=0
+        // QDCOUNT=0, ANCOUNT=0
         let records = parse_response(&resp, QType::A).expect("should parse");
         assert!(records.is_empty());
     }

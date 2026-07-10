@@ -8,7 +8,7 @@ use crate::traceroute::TracerouteError;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tokio::task::JoinSet;
 
 /// Enrichment result for an IP address

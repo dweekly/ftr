@@ -49,7 +49,9 @@ mod tests {
                                 "This is expected - GitHub Actions runners have restricted ICMP."
                             );
                             eprintln!("Windows: Azure blocks inbound ICMP packets.");
-                            eprintln!("Linux: Unreliable ICMP due to virtualization/network restrictions.");
+                            eprintln!(
+                                "Linux: Unreliable ICMP due to virtualization/network restrictions."
+                            );
                             eprintln!("Skipping test on GitHub Actions {}.", os);
                             return;
                         }

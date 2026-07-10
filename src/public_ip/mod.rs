@@ -9,7 +9,7 @@ use crate::services::Services;
 use crate::traceroute::IspInfo;
 use std::net::IpAddr;
 
-pub use providers::{get_public_ip, PublicIpError, PublicIpProvider};
+pub use providers::{PublicIpError, PublicIpProvider, get_public_ip};
 pub use service::StunClient;
 pub use stun::StunError;
 
