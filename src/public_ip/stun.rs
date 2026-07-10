@@ -230,17 +230,12 @@ fn parse_stun_response(data: &[u8]) -> Result<IpAddr, StunError> {
         }
 
         match attr_type {
-            XOR_MAPPED_ADDRESS => {
-                // Parse XOR-MAPPED-ADDRESS
-                if attr_length >= 8 {
-                    return parse_xor_mapped_address(&data[offset + 4..offset + 4 + attr_length]);
-                }
+            XOR_MAPPED_ADDRESS if attr_length >= 8 => {
+                return parse_xor_mapped_address(&data[offset + 4..offset + 4 + attr_length]);
             }
-            MAPPED_ADDRESS => {
-                // Parse legacy MAPPED-ADDRESS
-                if attr_length >= 8 {
-                    return parse_mapped_address(&data[offset + 4..offset + 4 + attr_length]);
-                }
+            MAPPED_ADDRESS if attr_length >= 8 => {
+                // Legacy MAPPED-ADDRESS
+                return parse_mapped_address(&data[offset + 4..offset + 4 + attr_length]);
             }
             _ => {}
         }

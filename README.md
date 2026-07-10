@@ -56,7 +56,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-See [docs/LIBRARY_USAGE.md](docs/LIBRARY_USAGE.md) for comprehensive library documentation.
+See [docs/LIBRARY_USAGE.md](docs/LIBRARY_USAGE.md) for comprehensive library documentation, and the [`examples/`](examples/) directory for runnable programs covering simple traces, custom configuration, parallel traces, cache reuse, custom socket selection, error handling, the service API, and JSON output. Run one with:
+
+```bash
+cargo run --example simple_trace
+```
 
 ## Installation
 
@@ -257,8 +261,6 @@ ftr google.com
 cargo install ftr
 ```
 
-*Note: Cargo installation will be available once ftr is published to crates.io.*
-
 ## Usage
 
 Basic usage:
@@ -276,10 +278,18 @@ ftr example.com -m 20 -W 5000
 - `-s, --start-ttl <START_TTL>` - Starting TTL value (default: 1)
 - `-m, --max-hops <MAX_HOPS>` - Maximum number of hops (default: 30)
 - `--probe-timeout-ms <MS>` - Timeout for individual probes in milliseconds (default: 1000)
-- `-i, --send-launch-interval-ms <MS>` - Interval between launching probes (default: 5)
+- `-i, --send-launch-interval-ms <MS>` - Interval between launching probes, applies to both inter-TTL and inter-query delays (default: 0)
 - `-W, --overall-timeout-ms <MS>` - Overall timeout for the traceroute (default: 3000)
+- `-q, --queries <N>` - Number of probes per hop (default: 1)
+- `--protocol <PROTOCOL>` - Protocol to use: `icmp` or `udp` (default: auto-select)
+- `--socket-mode <MODE>` - Socket mode to use: `raw` or `dgram` (default: auto-select)
+- `-p, --port <PORT>` - Target port for UDP/TCP modes (default: 33434)
 - `--no-enrich` - Disable ASN lookup and segment classification
 - `--no-rdns` - Disable reverse DNS lookups
+- `--json` - Output results in JSON format
+- `--public-ip <IP>` - Specify public IP address (skips STUN detection)
+- `--stun-server <ADDR>` - Custom STUN server address (e.g., `stun.l.google.com:19302`)
+- `-v, --verbose` - Enable verbose output (use `-vv` for debug timestamps)
 
 ## Example Output
 
@@ -331,7 +341,7 @@ sudo sysctl -w net.ipv4.ping_group_range="0 65535"
 
 ### Prerequisites
 
-- **Rust**: Version 1.82.0 or later (install from [rustup.rs](https://rustup.rs/))
+- **Rust**: Version 1.85.0 or later (install from [rustup.rs](https://rustup.rs/))
 - **Platform-specific dependencies**:
   - **Linux**: Standard build tools (gcc/clang, make)
   - **macOS**: Xcode Command Line Tools
@@ -401,6 +411,7 @@ When enrichment is enabled (default), each hop is labeled:
 | [TODO.md](TODO.md) | Active development tasks and roadmap |
 | [CLAUDE.md](CLAUDE.md) | AI agent instructions for working with this codebase |
 | [docs/LIBRARY_USAGE.md](docs/LIBRARY_USAGE.md) | Using ftr as a Rust library (API examples, configuration) |
+| [docs/IMPROVEMENT_PLAN.md](docs/IMPROVEMENT_PLAN.md) | Sequenced improvement roadmap from full-project review (fresh as of 2026-07-09) |
 | [docs/RELEASE_PROCESS.md](docs/RELEASE_PROCESS.md) | Secure release workflow |
 | [docs/MULTI_MODE.md](docs/MULTI_MODE.md) | Multi-probe per hop feature |
 | [docs/UDP_TRACEROUTE_LINUX.md](docs/UDP_TRACEROUTE_LINUX.md) | Linux UDP traceroute and IP_RECVERR |

@@ -12,24 +12,29 @@ use std::time::Duration;
 /// while maintaining reliability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimingConfig {
-    /// Receiver thread polling interval (default: 100ms)
-    /// How often the receiver thread checks for incoming packets
+    /// Receiver thread polling interval; how often the receiver thread
+    /// checks for incoming packets.
+    /// Default: [`crate::config::timing::DEFAULT_RECEIVER_POLL_INTERVAL_MS`]
     pub receiver_poll_interval: Duration,
 
-    /// Main wait loop polling interval (default: 10ms)
-    /// How often we check if all probes have completed
+    /// Main wait loop polling interval; how often we check if all probes
+    /// have completed.
+    /// Default: [`crate::config::timing::DEFAULT_MAIN_LOOP_POLL_INTERVAL_MS`]
     pub main_loop_poll_interval: Duration,
 
-    /// Enrichment completion wait time (default: 100ms)
-    /// How long to wait for ASN/rDNS lookups to complete after all probes finish
+    /// Enrichment completion wait time; how long to wait for ASN/rDNS
+    /// lookups to complete after all probes finish.
+    /// Default: [`crate::config::timing::DEFAULT_ENRICHMENT_WAIT_TIME_MS`]
     pub enrichment_wait_time: Duration,
 
-    /// Socket read timeout (default: 100ms)
-    /// Maximum time to wait for a single socket read operation
+    /// Socket read timeout; maximum time to wait for a single socket read
+    /// operation.
+    /// Default: [`crate::config::timing::DEFAULT_SOCKET_READ_TIMEOUT_MS`]
     pub socket_read_timeout: Duration,
 
-    /// UDP socket retry delay (default: 10ms)
-    /// Delay between retries when UDP socket operations fail
+    /// UDP socket retry delay; delay between retries when UDP socket
+    /// operations fail.
+    /// Default: [`crate::config::timing::DEFAULT_UDP_RETRY_DELAY_MS`]
     pub udp_retry_delay: Duration,
 }
 
