@@ -26,7 +26,7 @@
 //! configuration *changes*, long-running consumers should call
 //! [`crate::dns::refresh_system_dns`]; automatic change notification (the
 //! `notify(3)` key `com.apple.system.SystemConfiguration.dns_configuration`,
-//! as used by Chromium — see https://issues.chromium.org/issues/40182831)
+//! as used by Chromium — see <https://issues.chromium.org/issues/40182831>)
 //! is a possible future enhancement.
 
 use std::net::{IpAddr, SocketAddr};
