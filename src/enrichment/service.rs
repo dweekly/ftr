@@ -31,9 +31,17 @@ pub struct EnrichmentService {
 }
 
 impl EnrichmentService {
-    /// Create a new async enrichment service
+    /// Create a new async enrichment service with fresh default services
     pub async fn new() -> Result<Self, TracerouteError> {
-        let services = Arc::new(Services::new());
+        Self::new_with_services(Arc::new(Services::new())).await
+    }
+
+    /// Create a new async enrichment service backed by the provided services
+    ///
+    /// All DNS and ASN lookups performed during enrichment go through
+    /// `services`, so any caches owned by those services (e.g. pre-warmed
+    /// via [`crate::Ftr::with_caches`]) are honored.
+    pub async fn new_with_services(services: Arc<Services>) -> Result<Self, TracerouteError> {
         let (enrichment_tx, enrichment_rx) = mpsc::unbounded_channel();
 
         Ok(Self {
@@ -276,6 +284,49 @@ mod tests {
 
         // But DNS lookup should work
         assert_eq!(result.addr, ipv6_addr);
+    }
+
+    #[tokio::test]
+    async fn test_enrichment_uses_injected_services() {
+        use crate::asn::cache::AsnCache;
+        use crate::dns::cache::RdnsCache;
+
+        let addr: IpAddr = "8.8.8.8".parse().expect("valid IP");
+
+        // Pre-warm caches with sentinel values. Cache hits are served before
+        // any network I/O, so this test is deterministic and offline-safe:
+        // if the injected services were ignored (the old bug), enrichment
+        // would perform live lookups and never return these sentinels.
+        let asn_cache = AsnCache::new();
+        asn_cache.insert(
+            "8.8.8.0/24".parse().expect("valid prefix"),
+            AsnInfo {
+                asn: 64512,
+                name: "SENTINEL-AS".to_string(),
+                prefix: "8.8.8.0/24".to_string(),
+                country_code: "ZZ".to_string(),
+                registry: "test".to_string(),
+            },
+        );
+        let rdns_cache = RdnsCache::with_default_ttl();
+        rdns_cache.insert(addr, "sentinel.rdns.test".to_string());
+
+        let services = Arc::new(Services::with_caches(
+            Some(asn_cache),
+            Some(rdns_cache),
+            None,
+        ));
+        let service = EnrichmentService::new_with_services(services)
+            .await
+            .expect("service creation");
+
+        let results = service.enrich_addresses(vec![addr]).await;
+        let result = results.get(&addr).expect("result for address");
+
+        assert_eq!(result.hostname.as_deref(), Some("sentinel.rdns.test"));
+        let asn = result.asn_info.as_ref().expect("ASN info from cache");
+        assert_eq!(asn.asn, 64512);
+        assert_eq!(asn.name, "SENTINEL-AS");
     }
 
     #[tokio::test]

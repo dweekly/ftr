@@ -53,9 +53,10 @@ impl TracerouteEngine {
         target: IpAddr,
         services: Arc<Services>,
     ) -> Result<Self, TracerouteError> {
-        // Create enrichment service upfront
+        // Create enrichment service upfront, backed by the injected services
+        // so per-hop enrichment shares their (possibly pre-warmed) caches
         let enrichment_service = Arc::new(
-            EnrichmentService::new()
+            EnrichmentService::new_with_services(Arc::clone(&services))
                 .await
                 .map_err(|e| TracerouteError::Other(e.to_string()))?,
         );

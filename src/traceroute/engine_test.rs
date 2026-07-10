@@ -281,3 +281,81 @@ async fn test_engine_overall_timeout() {
     // Should complete without error, but won't have all hops
     assert!(!result.destination_reached);
 }
+
+#[tokio::test]
+async fn test_engine_uses_injected_services_for_enrichment() {
+    use crate::asn::cache::AsnCache;
+    use crate::dns::cache::RdnsCache;
+    use crate::services::Services;
+    use crate::traceroute::AsnInfo;
+    use std::sync::Arc;
+
+    let dest = Ipv4Addr::new(8, 8, 8, 8);
+    let mut responses = HashMap::new();
+    responses.insert(1, (dest, true));
+    let socket = MockSocket::new(responses, Duration::from_millis(1));
+
+    // Pre-warm the injected services' caches with sentinel values. Cache hits
+    // are served before any network I/O, so all enrichment (per-hop ASN/rDNS,
+    // destination ASN, ISP detection from the provided public IP) resolves
+    // from the cache. If the engine ignored the injected services (the old
+    // bug), hop enrichment would perform live lookups and the sentinels would
+    // never appear.
+    let asn_cache = AsnCache::new();
+    asn_cache.insert(
+        "8.8.8.0/24".parse().expect("valid prefix"),
+        AsnInfo {
+            asn: 64512,
+            name: "SENTINEL-AS".to_string(),
+            prefix: "8.8.8.0/24".to_string(),
+            country_code: "ZZ".to_string(),
+            registry: "test".to_string(),
+        },
+    );
+    let rdns_cache = RdnsCache::with_default_ttl();
+    rdns_cache.insert(IpAddr::V4(dest), "sentinel.rdns.test".to_string());
+
+    let services = Arc::new(Services::with_caches(
+        Some(asn_cache),
+        Some(rdns_cache),
+        None,
+    ));
+
+    let config = TracerouteConfig::builder()
+        .target("8.8.8.8")
+        .max_hops(2)
+        .probe_timeout(Duration::from_millis(200))
+        .overall_timeout(Duration::from_secs(2))
+        .enable_asn_lookup(true)
+        .enable_rdns(true)
+        // Providing the public IP avoids STUN; its ASN/rDNS hit the cache too
+        .public_ip(IpAddr::V4(dest))
+        .build()
+        .expect("valid config");
+
+    let target: IpAddr = IpAddr::V4(dest);
+    let engine =
+        super::TracerouteEngine::new_with_services(Box::new(socket), config, target, services)
+            .await
+            .expect("engine creation");
+
+    let result = engine.run().await.expect("traceroute should succeed");
+
+    let hop = result
+        .hops
+        .iter()
+        .find(|h| h.addr == Some(target))
+        .expect("destination hop present");
+    let asn = hop
+        .asn_info
+        .as_ref()
+        .expect("hop ASN info should come from the injected cache");
+    assert_eq!(asn.asn, 64512);
+    assert_eq!(asn.name, "SENTINEL-AS");
+    assert_eq!(hop.hostname.as_deref(), Some("sentinel.rdns.test"));
+
+    // ISP info is resolved through the same injected services
+    let isp = result.isp_info.expect("ISP info present");
+    assert_eq!(isp.asn, 64512);
+    assert_eq!(isp.hostname.as_deref(), Some("sentinel.rdns.test"));
+}
