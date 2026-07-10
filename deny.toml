@@ -1,0 +1,48 @@
+# cargo-deny configuration for ftr
+# https://embarkstudios.github.io/cargo-deny/
+#
+# Run locally with: cargo deny check
+# CI runs this via EmbarkStudios/cargo-deny-action in .github/workflows/ci.yml
+
+[graph]
+# Check every target we build for (see release.yml build matrix + CI matrix).
+all-features = true
+
+[advisories]
+# Deny security vulnerabilities and unmaintained/unsound crates.
+# The default (version 2) behavior errors on vulnerabilities, unmaintained,
+# unsound, and yanked crates.
+db-path = "$CARGO_HOME/advisory-dbs"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+[licenses]
+# Allowlist of licenses actually present in the dependency tree
+# (verified via `cargo deny list`). Everything here is permissive and
+# compatible with ftr's MIT license.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "0BSD",
+    "BSD-2-Clause",
+    "BSL-1.0",                 # ryu
+    "CDLA-Permissive-2.0",     # webpki-root-certs (Mozilla CA bundle data)
+    "Unicode-3.0",             # unicode-ident
+    "Unlicense",               # memchr
+    "Zlib",                    # miniz_oxide
+]
+# Confidence threshold for detecting a license from a license text file.
+# 0.8 is the cargo-deny default.
+confidence-threshold = 0.8
+
+[bans]
+# Warn (don't fail) on multiple versions of the same crate — common and
+# usually harmless in transitive deps; we track them via `cargo outdated`.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+# Only allow crates from crates.io — no git dependencies or alternate registries.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

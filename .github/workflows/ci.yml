@@ -103,14 +103,19 @@ jobs:
         fail_ci_if_error: true
         verbose: true
 
-  security-audit:
-    name: Security audit
+  # cargo-deny subsumes the previous cargo-audit job: its advisories check
+  # uses the same RustSec database, and it additionally enforces the license
+  # allowlist, duplicate-crate policy, and crates.io-only sources (deny.toml).
+  # The pre-push git hook still runs cargo audit locally.
+  cargo-deny:
+    name: Cargo deny (advisories, licenses, bans, sources)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: actions-rust-lang/audit@72c09e02f132669d52284a3323acdb503cfc1a24 # v1.2.7
+    - uses: EmbarkStudios/cargo-deny-action@bb137d7af7e4fb67e5f82a49c4fce4fad40782fe # v2.0.20
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
+        command: check
+        arguments: --all-features
 
   unused-deps:
     name: Check unused dependencies
