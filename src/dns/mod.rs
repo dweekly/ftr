@@ -11,8 +11,8 @@ pub mod test_utils;
 
 pub use cache::RdnsCache;
 pub use resolver::{
-    resolve_a, resolve_a_with_servers, resolve_ptr, resolve_ptr_with_servers, resolve_txt,
-    resolve_txt_with_servers,
+    refresh_system_dns, resolve_a, resolve_a_with_servers, resolve_ptr, resolve_ptr_with_servers,
+    resolve_txt, resolve_txt_with_servers,
 };
 pub use reverse::ReverseDnsError;
 pub use service::RdnsLookup;

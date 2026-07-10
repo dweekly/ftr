@@ -13,8 +13,21 @@
 //!
 //! Note for macOS: `/etc/resolv.conf` carries a notice that most processes
 //! resolve names through the system routing layer instead. It is still
-//! auto-generated with the current primary resolvers, which is exactly what
-//! a hand-rolled UDP resolver like ours needs.
+//! configd-maintained with the current *global default* resolvers, which is
+//! the right set for the public zones this resolver queries (`in-addr.arpa`
+//! / `ip6.arpa` PTR, `asn.cymru.com` TXT). What it deliberately does NOT
+//! capture are macOS *scoped* resolvers — per-interface and per-domain
+//! entries (split-DNS VPN configurations; compare `scutil --dns` against
+//! resolv.conf). Reading those requires `dns_configuration_copy()` from
+//! `dnsinfo.h`, private SPI that Apple removed from the public SDK, and
+//! honoring them would mean reimplementing mDNSResponder's per-domain query
+//! routing — deliberately out of scope. Callers on split-DNS networks can
+//! pin resolvers explicitly via the `*_with_servers` functions. On DNS
+//! configuration *changes*, long-running consumers should call
+//! [`crate::dns::refresh_system_dns`]; automatic change notification (the
+//! `notify(3)` key `com.apple.system.SystemConfiguration.dns_configuration`,
+//! as used by Chromium — see https://issues.chromium.org/issues/40182831)
+//! is a possible future enhancement.
 
 use std::net::{IpAddr, SocketAddr};
 use std::time::Duration;
