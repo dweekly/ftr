@@ -3,7 +3,8 @@
 //! Implements A, PTR, and TXT queries over UDP using Tokio.
 //! Replaces hickory-resolver for the small set of queries ftr needs.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::OnceLock;
 use tokio::net::UdpSocket;
 use tokio::time::Duration;
 
@@ -49,22 +50,155 @@ pub enum DnsError {
     Truncated,
 }
 
-/// Public resolvers tried in order: Cloudflare primary, Google fallback.
-/// The fallback is only consulted when the primary times out or errors,
-/// not on an authoritative NXDOMAIN.
-const DNS_SERVERS: &[SocketAddr] = &[
+/// Public fallback resolvers tried in order: Cloudflare, then Google.
+/// On Unix these come after any system resolvers from `/etc/resolv.conf`
+/// (see [`crate::dns::system`]); on Windows, or when resolv.conf is
+/// missing/unreadable/empty, they are the whole list. A later server is
+/// only consulted when an earlier one times out or errors, not on an
+/// authoritative NXDOMAIN.
+const FALLBACK_DNS_SERVERS: &[SocketAddr] = &[
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 53),
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
 ];
-/// Per-server DNS query timeout. If no response arrives halfway through
-/// this window, the query is retransmitted once (UDP datagrams may be lost).
+/// Per-server DNS query window when resolv.conf specifies no
+/// `options timeout`. Split evenly across [`DEFAULT_ATTEMPTS`] transmissions
+/// (UDP datagrams may be lost), preserving the pre-system-resolver behavior
+/// of one retransmit halfway through a 5-second window.
 const DNS_TIMEOUT: Duration = Duration::from_secs(5);
+/// Transmissions per server (1 initial + 1 retransmit) when resolv.conf
+/// specifies no `options attempts`. Matches the glibc resolver default
+/// (RES_DFLRETRY in glibc's `<resolv.h>` is 2).
+const DEFAULT_ATTEMPTS: u32 = 2;
 /// Maximum DNS response size
 const MAX_RESPONSE: usize = 4096;
 
+/// Per-attempt timeout and per-server attempt count for queries.
+#[derive(Debug, Clone, Copy)]
+struct QueryTiming {
+    /// How long to wait for a response after each transmission.
+    attempt_timeout: Duration,
+    /// Total transmissions per server (initial send + retransmits).
+    attempts: u32,
+}
+
+impl Default for QueryTiming {
+    /// Default timing: [`DNS_TIMEOUT`] total per server, split across
+    /// [`DEFAULT_ATTEMPTS`] transmissions — identical to the behavior
+    /// before system-resolver support was added.
+    fn default() -> Self {
+        Self {
+            attempt_timeout: DNS_TIMEOUT / DEFAULT_ATTEMPTS,
+            attempts: DEFAULT_ATTEMPTS,
+        }
+    }
+}
+
+/// Resolved global configuration: server list plus timing.
+#[derive(Debug)]
+struct ResolverConfig {
+    servers: Vec<SocketAddr>,
+    timing: QueryTiming,
+}
+
+/// The default resolver configuration, computed once per process.
+///
+/// Server precedence: system resolvers from `/etc/resolv.conf` first
+/// (Unix only, up to [`crate::dns::system::MAXNS`]), then
+/// [`FALLBACK_DNS_SERVERS`] (deduplicated). `options timeout`/`attempts`
+/// from resolv.conf override the default timing. When no system resolvers
+/// are found — including always on Windows, where system-resolver discovery
+/// is future work — this is exactly the previous hardcoded behavior.
+fn default_config() -> &'static ResolverConfig {
+    static CONFIG: OnceLock<ResolverConfig> = OnceLock::new();
+    CONFIG.get_or_init(|| {
+        // The single place system configuration is consulted.
+        #[cfg(unix)]
+        let (mut servers, timing) = match crate::dns::system::load_system_resolv_conf() {
+            Some(conf) => {
+                let mut timing = QueryTiming::default();
+                if let Some(timeout) = conf.timeout {
+                    timing.attempt_timeout = timeout;
+                }
+                if let Some(attempts) = conf.attempts {
+                    timing.attempts = attempts;
+                }
+                (conf.nameservers, timing)
+            }
+            None => (Vec::new(), QueryTiming::default()),
+        };
+        // Windows system-resolver discovery is future work; see crate::dns::system.
+        #[cfg(not(unix))]
+        let (mut servers, timing) = (Vec::<SocketAddr>::new(), QueryTiming::default());
+
+        for fallback in FALLBACK_DNS_SERVERS {
+            if !servers.contains(fallback) {
+                servers.push(*fallback);
+            }
+        }
+
+        ResolverConfig { servers, timing }
+    })
+}
+
 /// Resolve a hostname to IPv4 addresses (A record query).
 pub async fn resolve_a(hostname: &str) -> Result<Vec<Ipv4Addr>, DnsError> {
-    let records = query(hostname, QType::A).await?;
+    let cfg = default_config();
+    let records = query(hostname, QType::A, &cfg.servers, cfg.timing).await?;
+    collect_a(records)
+}
+
+/// Resolve a hostname to IPv4 addresses using explicitly provided DNS
+/// servers, bypassing system resolver configuration entirely.
+///
+/// Servers are tried in order; an empty slice yields [`DnsError::Timeout`].
+pub async fn resolve_a_with_servers(
+    hostname: &str,
+    servers: &[SocketAddr],
+) -> Result<Vec<Ipv4Addr>, DnsError> {
+    let records = query(hostname, QType::A, servers, QueryTiming::default()).await?;
+    collect_a(records)
+}
+
+/// Perform a reverse DNS lookup (PTR query).
+pub async fn resolve_ptr(ip: IpAddr) -> Result<String, DnsError> {
+    let cfg = default_config();
+    let records = query(&ptr_name(ip), QType::Ptr, &cfg.servers, cfg.timing).await?;
+    collect_ptr(records)
+}
+
+/// Perform a reverse DNS lookup using explicitly provided DNS servers,
+/// bypassing system resolver configuration entirely.
+///
+/// Servers are tried in order; an empty slice yields [`DnsError::Timeout`].
+pub async fn resolve_ptr_with_servers(
+    ip: IpAddr,
+    servers: &[SocketAddr],
+) -> Result<String, DnsError> {
+    let records = query(&ptr_name(ip), QType::Ptr, servers, QueryTiming::default()).await?;
+    collect_ptr(records)
+}
+
+/// Perform a TXT record lookup.
+pub async fn resolve_txt(name: &str) -> Result<Vec<String>, DnsError> {
+    let cfg = default_config();
+    let records = query(name, QType::Txt, &cfg.servers, cfg.timing).await?;
+    collect_txt(records)
+}
+
+/// Perform a TXT record lookup using explicitly provided DNS servers,
+/// bypassing system resolver configuration entirely.
+///
+/// Servers are tried in order; an empty slice yields [`DnsError::Timeout`].
+pub async fn resolve_txt_with_servers(
+    name: &str,
+    servers: &[SocketAddr],
+) -> Result<Vec<String>, DnsError> {
+    let records = query(name, QType::Txt, servers, QueryTiming::default()).await?;
+    collect_txt(records)
+}
+
+/// Extract A records, mapping an empty result to [`DnsError::NotFound`].
+fn collect_a(records: Vec<DnsRecord>) -> Result<Vec<Ipv4Addr>, DnsError> {
     let addrs: Vec<Ipv4Addr> = records
         .into_iter()
         .filter_map(|r| match r {
@@ -78,9 +212,36 @@ pub async fn resolve_a(hostname: &str) -> Result<Vec<Ipv4Addr>, DnsError> {
     Ok(addrs)
 }
 
-/// Perform a reverse DNS lookup (PTR query).
-pub async fn resolve_ptr(ip: IpAddr) -> Result<String, DnsError> {
-    let name = match ip {
+/// Extract the first PTR record, mapping absence to [`DnsError::NotFound`].
+fn collect_ptr(records: Vec<DnsRecord>) -> Result<String, DnsError> {
+    records
+        .into_iter()
+        .find_map(|r| match r {
+            DnsRecord::Ptr(name) => Some(name),
+            _ => None,
+        })
+        .ok_or(DnsError::NotFound)
+}
+
+/// Extract TXT records, mapping an empty result to [`DnsError::NotFound`].
+fn collect_txt(records: Vec<DnsRecord>) -> Result<Vec<String>, DnsError> {
+    let txts: Vec<String> = records
+        .into_iter()
+        .filter_map(|r| match r {
+            DnsRecord::Txt(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    if txts.is_empty() {
+        return Err(DnsError::NotFound);
+    }
+    Ok(txts)
+}
+
+/// Build the reverse-lookup name for an IP address
+/// (`in-addr.arpa` for IPv4, nibble-reversed `ip6.arpa` for IPv6).
+fn ptr_name(ip: IpAddr) -> String {
+    match ip {
         IpAddr::V4(v4) => {
             let o = v4.octets();
             format!("{}.{}.{}.{}.in-addr.arpa", o[3], o[2], o[1], o[0])
@@ -95,39 +256,20 @@ pub async fn resolve_ptr(ip: IpAddr) -> Result<String, DnsError> {
             nibbles.push_str("ip6.arpa");
             nibbles
         }
-    };
-    let records = query(&name, QType::Ptr).await?;
-    records
-        .into_iter()
-        .find_map(|r| match r {
-            DnsRecord::Ptr(name) => Some(name),
-            _ => None,
-        })
-        .ok_or(DnsError::NotFound)
-}
-
-/// Perform a TXT record lookup.
-pub async fn resolve_txt(name: &str) -> Result<Vec<String>, DnsError> {
-    let records = query(name, QType::Txt).await?;
-    let txts: Vec<String> = records
-        .into_iter()
-        .filter_map(|r| match r {
-            DnsRecord::Txt(s) => Some(s),
-            _ => None,
-        })
-        .collect();
-    if txts.is_empty() {
-        return Err(DnsError::NotFound);
     }
-    Ok(txts)
 }
 
-/// Send a DNS query and parse the response, trying each configured server
+/// Send a DNS query and parse the response, trying each given server
 /// in order until one yields an answer (or an authoritative NXDOMAIN).
-async fn query(name: &str, qtype: QType) -> Result<Vec<DnsRecord>, DnsError> {
+async fn query(
+    name: &str,
+    qtype: QType,
+    servers: &[SocketAddr],
+    timing: QueryTiming,
+) -> Result<Vec<DnsRecord>, DnsError> {
     let mut last_err = DnsError::Timeout;
-    for server in DNS_SERVERS {
-        match query_server(name, qtype, *server).await {
+    for server in servers {
+        match query_server(name, qtype, *server, timing).await {
             Ok(records) => return Ok(records),
             // NXDOMAIN is an authoritative answer; asking another
             // recursive resolver would just repeat it.
@@ -140,29 +282,35 @@ async fn query(name: &str, qtype: QType) -> Result<Vec<DnsRecord>, DnsError> {
 
 /// Send a DNS query to a single server and parse the response.
 ///
-/// Retransmits once halfway through [`DNS_TIMEOUT`] if no response has
-/// arrived, and discards datagrams whose header does not match our query
-/// (wrong ID, or not a response) until the deadline.
+/// Transmits up to `timing.attempts` times, waiting `timing.attempt_timeout`
+/// after each send (UDP datagrams may be lost), and discards datagrams whose
+/// header does not match our query (wrong ID, or not a response).
 async fn query_server(
     name: &str,
     qtype: QType,
     server: SocketAddr,
+    timing: QueryTiming,
 ) -> Result<Vec<DnsRecord>, DnsError> {
     let id = random_query_id();
     let packet = build_query(name, qtype, id);
 
-    let socket = UdpSocket::bind("0.0.0.0:0").await?;
+    // The local socket family must match the server's address family:
+    // a socket bound to 0.0.0.0 cannot connect to an IPv6 server.
+    let bind_addr: SocketAddr = match server {
+        SocketAddr::V4(_) => (Ipv4Addr::UNSPECIFIED, 0).into(),
+        SocketAddr::V6(_) => (Ipv6Addr::UNSPECIFIED, 0).into(),
+    };
+    let socket = UdpSocket::bind(bind_addr).await?;
     // Connecting also makes the OS drop datagrams from other source addresses
     socket.connect(server).await?;
     socket.send(&packet).await?;
 
-    let deadline = tokio::time::Instant::now() + DNS_TIMEOUT;
-    // One retransmission halfway through the timeout window
-    let mut retransmit_at = Some(tokio::time::Instant::now() + DNS_TIMEOUT / 2);
+    let start = tokio::time::Instant::now();
+    let mut attempt: u32 = 1;
     let mut buf = vec![0u8; MAX_RESPONSE];
 
     loop {
-        let wait_until = retransmit_at.unwrap_or(deadline);
+        let wait_until = start + timing.attempt_timeout * attempt;
         match tokio::time::timeout_at(wait_until, socket.recv(&mut buf)).await {
             Ok(Ok(n)) => {
                 // Ignore datagrams that are not a response to our query
@@ -174,8 +322,9 @@ async fn query_server(
             }
             Ok(Err(e)) => return Err(DnsError::Io(e)),
             Err(_) => {
-                // Timer fired: retransmit once, then give up at the deadline
-                if retransmit_at.take().is_some() {
+                // Timer fired: retransmit until attempts are exhausted
+                if attempt < timing.attempts {
+                    attempt += 1;
                     socket.send(&packet).await?;
                 } else {
                     return Err(DnsError::Timeout);
@@ -809,7 +958,110 @@ mod tests {
         assert!(io_err.to_string().contains("test"));
     }
 
+    // ---- Server list construction ----
+
+    #[test]
+    fn test_default_config_includes_fallbacks_without_duplicates() {
+        let cfg = default_config();
+        for fallback in FALLBACK_DNS_SERVERS {
+            assert!(
+                cfg.servers.contains(fallback),
+                "fallback {fallback} missing from {:?}",
+                cfg.servers
+            );
+        }
+        // System resolvers (<= MAXNS) come first, fallbacks last, no dupes.
+        assert!(cfg.servers.len() <= crate::dns::system::MAXNS + FALLBACK_DNS_SERVERS.len());
+        for (i, server) in cfg.servers.iter().enumerate() {
+            assert!(
+                !cfg.servers[i + 1..].contains(server),
+                "duplicate server {server} in {:?}",
+                cfg.servers
+            );
+        }
+        // On Unix with a usable resolv.conf, the system resolvers must be
+        // the leading entries, in file order.
+        #[cfg(unix)]
+        if let Some(conf) = crate::dns::system::load_system_resolv_conf() {
+            assert!(
+                cfg.servers.starts_with(&conf.nameservers),
+                "servers {:?} should start with system resolvers {:?}",
+                cfg.servers,
+                conf.nameservers
+            );
+        }
+        println!("default DNS server order: {:?}", cfg.servers);
+    }
+
+    #[test]
+    fn test_default_timing_matches_previous_behavior() {
+        // Pre-system-resolver behavior: 5s total window, one retransmit
+        // halfway through. With per-attempt timing that is 2 attempts of
+        // DNS_TIMEOUT / 2 each.
+        let timing = QueryTiming::default();
+        assert_eq!(timing.attempts, DEFAULT_ATTEMPTS);
+        assert_eq!(
+            timing.attempt_timeout * timing.attempts,
+            DNS_TIMEOUT,
+            "total per-server window changed"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_with_empty_server_list_times_out() {
+        // An explicit empty server list never sends anything and reports
+        // Timeout (the initialized last_err) immediately.
+        let result = resolve_a_with_servers("example.com", &[]).await;
+        assert!(matches!(result, Err(DnsError::Timeout)));
+    }
+
     // ---- Live network tests (gracefully skip on failure) ----
+
+    #[tokio::test]
+    async fn test_resolve_ptr_with_explicit_ipv6_server() {
+        // Exercises the IPv6 socket-family path against Cloudflare's
+        // resolver. Requires IPv6 connectivity; skips gracefully without it.
+        let server: SocketAddr = "[2606:4700:4700::1111]:53".parse().expect("valid addr");
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            resolve_ptr_with_servers(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), &[server]),
+        )
+        .await;
+        match result {
+            Ok(Ok(name)) => {
+                println!("PTR via IPv6 server {server}: {name}");
+                assert!(name.contains("dns.google"), "got: {name}");
+            }
+            Ok(Err(e)) => eprintln!("IPv6 PTR lookup failed (no v6 connectivity?): {e}"),
+            Err(_) => eprintln!("IPv6 PTR lookup timed out"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_resolve_via_first_system_resolver() {
+        // Pin the query to the first system resolver from /etc/resolv.conf
+        // (bypassing fallbacks) to demonstrate system-resolver support
+        // end to end. Skips gracefully when no system resolver exists.
+        let Some(conf) = crate::dns::system::load_system_resolv_conf() else {
+            eprintln!("no system resolvers configured; skipping");
+            return;
+        };
+        let server = conf.nameservers[0];
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            resolve_ptr_with_servers(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), &[server]),
+        )
+        .await;
+        match result {
+            Ok(Ok(name)) => {
+                println!("PTR via system resolver {server}: {name}");
+                assert!(name.contains("dns.google"), "got: {name}");
+            }
+            Ok(Err(e)) => eprintln!("system resolver lookup failed (network?): {e}"),
+            Err(_) => eprintln!("system resolver lookup timed out"),
+        }
+    }
 
     #[tokio::test]
     async fn test_resolve_a_google() {
