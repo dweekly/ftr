@@ -3,33 +3,11 @@
 //! This module provides factory functions for creating probe sockets
 //! that use Tokio for immediate response notification.
 
-use super::traits::{ProbeMode, ProbeSocket};
+use super::traits::ProbeSocket;
 use super::{ProbeProtocol, SocketMode};
 use crate::TimingConfig;
 use crate::traceroute::TracerouteError;
 use std::net::IpAddr;
-
-/// Create a probe socket for the given target
-pub async fn create_probe_socket(
-    target: IpAddr,
-    timing_config: TimingConfig,
-) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
-    create_probe_socket_with_options(target, timing_config, None, None).await
-}
-
-/// Create a probe socket with protocol and mode preferences
-///
-/// Equivalent to [`create_probe_socket_with_options_and_verbose`] with
-/// verbosity disabled.
-pub async fn create_probe_socket_with_options(
-    target: IpAddr,
-    timing_config: TimingConfig,
-    protocol: Option<ProbeProtocol>,
-    socket_mode: Option<SocketMode>,
-) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
-    create_probe_socket_with_options_and_verbose(target, timing_config, protocol, socket_mode, 0)
-        .await
-}
 
 /// Create a probe socket with protocol and mode preferences and a verbosity level
 ///
@@ -160,54 +138,4 @@ pub async fn create_probe_socket_with_options_and_verbose(
         }
         IpAddr::V6(_) => Err(TracerouteError::Ipv6NotSupported),
     }
-}
-
-/// Create a probe socket with specific mode preference
-pub async fn create_probe_socket_with_mode(
-    target: IpAddr,
-    timing_config: TimingConfig,
-    preferred_mode: Option<ProbeMode>,
-) -> Result<Box<dyn ProbeSocket>, TracerouteError> {
-    #[cfg(target_os = "windows")]
-    if let Some(mode) = preferred_mode {
-        if mode != ProbeMode::WindowsIcmp {
-            return Err(TracerouteError::SocketError(
-                "Only Windows ICMP mode is supported on Windows".to_string(),
-            ));
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    if let Some(mode) = preferred_mode {
-        if mode != ProbeMode::DgramIcmp {
-            return Err(TracerouteError::SocketError(
-                "Only DGRAM ICMP mode is supported on macOS".to_string(),
-            ));
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    if let Some(mode) = preferred_mode {
-        if mode != ProbeMode::UdpWithRecverr {
-            return Err(TracerouteError::SocketError(
-                "Only UDP with IP_RECVERR mode is supported on Linux".to_string(),
-            ));
-        }
-    }
-
-    #[cfg(any(
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "netbsd",
-        target_os = "dragonfly"
-    ))]
-    if let Some(mode) = preferred_mode {
-        if mode != ProbeMode::RawIcmp {
-            return Err(TracerouteError::SocketError(
-                "Only Raw ICMP mode is supported on BSD systems".to_string(),
-            ));
-        }
-    }
-
-    create_probe_socket(target, timing_config).await
 }

@@ -117,7 +117,7 @@ async fn test_direct_service_access() {
     let ftr = Ftr::new();
 
     // Access ASN service directly (no locking needed)
-    let asn_service = &ftr.services.asn;
+    let asn_service = &ftr.services().asn;
 
     let ip: IpAddr = "1.1.1.1".parse().unwrap();
     let result = asn_service.lookup(ip).await;

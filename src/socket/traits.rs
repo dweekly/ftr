@@ -10,7 +10,11 @@ use std::net::IpAddr;
 use std::pin::Pin;
 
 /// Probe mode supported by the socket
+///
+/// This enum is `#[non_exhaustive]`: new probe modes (e.g. for IPv6) may be
+/// added in minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ProbeMode {
     /// ICMP echo requests using DGRAM sockets (Linux/macOS)
     DgramIcmp,

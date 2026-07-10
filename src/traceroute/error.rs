@@ -2,8 +2,48 @@
 
 use thiserror::Error;
 
+/// Errors from validating a [`TracerouteConfig`](crate::TracerouteConfig)
+///
+/// Returned by [`TracerouteConfigBuilder::build`](crate::TracerouteConfigBuilder::build)
+/// and [`TracerouteConfig::validate`](crate::TracerouteConfig::validate).
+///
+/// This enum is `#[non_exhaustive]`: new validation rules may be added in
+/// minor releases, so downstream matches must include a wildcard arm.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum ConfigError {
+    /// Neither `target` nor `target_ip` was provided
+    #[error("Target must be specified")]
+    MissingTarget,
+
+    /// `start_ttl` must be at least 1
+    #[error("start_ttl must be at least 1")]
+    InvalidStartTtl,
+
+    /// `max_hops` must be greater than or equal to `start_ttl`
+    #[error("max_hops ({max_hops}) must be greater than or equal to start_ttl ({start_ttl})")]
+    MaxHopsLessThanStartTtl {
+        /// The configured starting TTL
+        start_ttl: u8,
+        /// The configured maximum hop count
+        max_hops: u8,
+    },
+
+    /// `probe_timeout` must be greater than zero
+    #[error("probe_timeout must be greater than 0")]
+    ZeroProbeTimeout,
+
+    /// `queries_per_hop` must be at least 1
+    #[error("queries_per_hop must be at least 1")]
+    ZeroQueriesPerHop,
+}
+
 /// Errors that can occur during traceroute operations
+///
+/// This enum is `#[non_exhaustive]`: new error variants may be added in
+/// minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum TracerouteError {
     /// Socket creation failed due to insufficient permissions
     ///
@@ -42,7 +82,7 @@ pub enum TracerouteError {
 
     /// Invalid configuration provided
     #[error("Invalid configuration: {0}")]
-    ConfigError(String),
+    ConfigError(#[from] ConfigError),
 
     /// Failed to send probe packet
     #[error("Failed to send probe: {0}")]

@@ -26,7 +26,6 @@ pub mod api;
 pub mod config;
 pub mod engine;
 pub mod error;
-pub mod isp_from_path;
 pub mod result;
 pub mod types;
 
@@ -40,7 +39,7 @@ use std::net::Ipv4Addr;
 // Re-export commonly used types
 pub use api::{Traceroute, trace_async as trace, trace_with_config_async as trace_with_config};
 pub use config::{TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
-pub use error::TracerouteError;
+pub use error::{ConfigError, TracerouteError};
 pub use result::{TracerouteProgress, TracerouteResult};
 pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
 
@@ -57,7 +56,11 @@ pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
 /// let segment = SegmentType::Isp;
 /// println!("Hop is in the {} segment", segment);
 /// ```
+///
+/// This enum is `#[non_exhaustive]`: new segment classifications may be
+/// added in minor releases, so downstream matches must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum SegmentType {
     /// Local area network (private IP ranges like 192.168.x.x)
     Lan,

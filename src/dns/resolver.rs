@@ -29,6 +29,7 @@ pub enum DnsRecord {
 
 /// DNS resolver error
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum DnsError {
     /// Network I/O error
     #[error("DNS I/O error: {0}")]

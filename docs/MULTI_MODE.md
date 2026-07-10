@@ -83,13 +83,15 @@ pub trait ProbeSocket: Send + Sync {
 
 ### Factory Pattern
 
-The `create_probe_socket` function handles mode selection:
+Mode selection is handled by an internal factory (`src/socket/factory.rs`).
+Library users select a protocol and socket mode through the public
+configuration API instead:
 
 ```rust
-let socket = create_probe_socket(
-    target_ip,
-    Some(ProbeProtocol::Udp)  // Preferred protocol
-)?;
+let config = TracerouteConfig::builder()
+    .target("google.com")
+    .protocol(ProbeProtocol::Udp) // Preferred protocol
+    .build()?;
 ```
 
 ## Implementation Status

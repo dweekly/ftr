@@ -71,14 +71,21 @@ async fn test_transit_segment_classification() {
 
     // Check that segment types are properly set
     for hop in &result.hops {
-        // Verify segment type is one of the valid values
-        match hop.segment {
-            SegmentType::Lan
-            | SegmentType::Isp
-            | SegmentType::Transit
-            | SegmentType::Destination
-            | SegmentType::Unknown => {}
-        }
+        // Verify segment type is one of the valid values.
+        // SegmentType is #[non_exhaustive], so use matches! rather than an
+        // exhaustive match.
+        assert!(
+            matches!(
+                hop.segment,
+                SegmentType::Lan
+                    | SegmentType::Isp
+                    | SegmentType::Transit
+                    | SegmentType::Destination
+                    | SegmentType::Unknown
+            ),
+            "unexpected segment type: {:?}",
+            hop.segment
+        );
     }
 }
 

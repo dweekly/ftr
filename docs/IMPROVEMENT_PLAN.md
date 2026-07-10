@@ -31,21 +31,6 @@ what remains is below.
 - criterion is held at 0.7 because 0.8 declares `rust-version = 1.86` — bump
   together with the next MSRV raise.
 
-## API cleanup & modernization (one PR, minor release v0.8.0)
-
-Bundle the breaking changes:
-
-- Edition 2021 → 2024 (unblocked: `env::set_var` signaling was removed in #26);
-  consider raising MSRV 1.85 → 1.86+ at the same time (unblocks criterion 0.8).
-- `#[non_exhaustive]` on public enums that will grow (`TracerouteError`,
-  `SegmentType`, `ProbeProtocol`, `SocketMode`, `IpVersion`, error enums) —
-  prerequisite for adding IPv6/TCP variants non-breakingly later.
-- Remove dead/duplicate public surface: unused `Caches` (`src/caches.rs`),
-  duplicate `TimingConfig` (`src/config/timing.rs` vs `src/traceroute/config.rs`),
-  duplicate `ProbeInfo`/`ProbeResponse` (`src/socket/mod.rs` vs `src/probe.rs`);
-  make `Ftr.services` non-pub; narrow `pub mod socket`/`probe`.
-- `TracerouteConfigBuilder::build()` → typed `ConfigError` instead of `String`.
-
 ## Performance & reliability (two PRs)
 
 - Replace 1ms busy-poll receive loops (`linux.rs`, `macos.rs`, `bsd.rs`) with

@@ -104,7 +104,8 @@ mod tests {
             SegmentType::Isp => "ISP",
             SegmentType::Transit => "TRANSIT",
             SegmentType::Destination => "DESTINATION",
-            SegmentType::Unknown => "UNKNOWN",
+            // SegmentType is #[non_exhaustive]
+            _ => "UNKNOWN",
         };
 
         assert_eq!(
@@ -141,7 +142,8 @@ mod tests {
             SegmentType::Isp => "ISP",
             SegmentType::Transit => "TRANSIT",
             SegmentType::Destination => "DESTINATION",
-            SegmentType::Unknown => "UNKNOWN",
+            // SegmentType is #[non_exhaustive]
+            _ => "UNKNOWN",
         };
 
         assert_eq!(

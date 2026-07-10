@@ -389,8 +389,8 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
             eprintln!("Please check the hostname and your network connection.");
             std::process::exit(1);
         }
-        Err(TracerouteError::ConfigError(msg)) => {
-            eprintln!("\nError: Invalid configuration - {}", msg);
+        Err(TracerouteError::ConfigError(err)) => {
+            eprintln!("\nError: Invalid configuration - {}", err);
             eprintln!("Run 'ftr --help' for usage information.");
             std::process::exit(1);
         }
@@ -460,7 +460,9 @@ fn display_json_results(result: TracerouteResult) -> Result<(), Box<dyn std::err
             ftr::SegmentType::Isp => Some("ISP".to_string()),
             ftr::SegmentType::Transit => Some("TRANSIT".to_string()),
             ftr::SegmentType::Destination => Some("DESTINATION".to_string()),
-            ftr::SegmentType::Unknown => None,
+            // SegmentType is #[non_exhaustive]; treat Unknown and any future
+            // variants this binary predates as unclassified.
+            _ => None,
         };
         json_output.hops.push(JsonHop {
             ttl: hop.ttl,

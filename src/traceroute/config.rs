@@ -1,6 +1,7 @@
 //! Configuration types for traceroute operations
 
 use crate::socket::{ProbeProtocol, SocketMode};
+use crate::traceroute::error::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::net::IpAddr;
 use std::time::Duration;
@@ -158,27 +159,32 @@ impl TracerouteConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if:
+    /// Returns a [`ConfigError`] if:
     /// - Target is empty and no target_ip is provided
-    /// - start_ttl is less than 1
+    ///   ([`ConfigError::MissingTarget`])
+    /// - start_ttl is less than 1 ([`ConfigError::InvalidStartTtl`])
     /// - max_hops is less than start_ttl
-    /// - probe_timeout is 0
-    /// - queries_per_hop is less than 1
-    pub fn validate(&self) -> Result<(), String> {
+    ///   ([`ConfigError::MaxHopsLessThanStartTtl`])
+    /// - probe_timeout is 0 ([`ConfigError::ZeroProbeTimeout`])
+    /// - queries_per_hop is less than 1 ([`ConfigError::ZeroQueriesPerHop`])
+    pub fn validate(&self) -> Result<(), ConfigError> {
         if self.target.is_empty() && self.target_ip.is_none() {
-            return Err("Target must be specified".to_string());
+            return Err(ConfigError::MissingTarget);
         }
         if self.start_ttl < 1 {
-            return Err("start_ttl must be at least 1".to_string());
+            return Err(ConfigError::InvalidStartTtl);
         }
         if self.max_hops < self.start_ttl {
-            return Err("max_hops must be greater than or equal to start_ttl".to_string());
+            return Err(ConfigError::MaxHopsLessThanStartTtl {
+                start_ttl: self.start_ttl,
+                max_hops: self.max_hops,
+            });
         }
         if self.probe_timeout.as_millis() == 0 {
-            return Err("probe_timeout must be greater than 0".to_string());
+            return Err(ConfigError::ZeroProbeTimeout);
         }
         if self.queries_per_hop < 1 {
-            return Err("queries_per_hop must be at least 1".to_string());
+            return Err(ConfigError::ZeroQueriesPerHop);
         }
         Ok(())
     }
@@ -372,8 +378,9 @@ impl TracerouteConfigBuilder {
     ///
     /// # Errors
     ///
-    /// Returns an error if validation fails (see [`TracerouteConfig::validate`]).
-    pub fn build(self) -> Result<TracerouteConfig, String> {
+    /// Returns a [`ConfigError`] if validation fails (see
+    /// [`TracerouteConfig::validate`]).
+    pub fn build(self) -> Result<TracerouteConfig, ConfigError> {
         self.config.validate()?;
         Ok(self.config)
     }

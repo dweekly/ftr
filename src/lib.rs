@@ -112,7 +112,6 @@
 #![allow(clippy::uninlined_format_args)]
 
 pub mod asn;
-pub mod caches;
 pub mod config;
 pub mod services;
 /// Simple debug print macro for conditional debug output
@@ -136,21 +135,18 @@ macro_rules! trace_time {
     };
 }
 pub mod dns;
-pub mod enrichment;
+pub(crate) mod enrichment;
 #[cfg(feature = "async")]
 pub mod probe;
 pub mod public_ip;
 pub mod socket;
 pub mod traceroute;
 
-#[cfg(test)]
-mod tests;
-
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
-    AsnInfo, ClassifiedHopInfo, IspInfo, RawHopInfo, SegmentType, TimingConfig, Traceroute,
-    TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
+    AsnInfo, ClassifiedHopInfo, ConfigError, IspInfo, RawHopInfo, SegmentType, TimingConfig,
+    Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
     TracerouteResult, trace, trace_with_config,
 };
 
@@ -183,11 +179,36 @@ use services::Services;
 /// }
 /// ```
 pub struct Ftr {
-    /// The services container for direct access to individual services
-    pub services: Services,
+    /// The services container owning all external service clients
+    services: Services,
 }
 
 impl Ftr {
+    /// Access the services container for direct use of individual services
+    ///
+    /// This provides direct access to the ASN lookup, reverse DNS, and STUN
+    /// services (and their caches) owned by this `Ftr` instance. Prefer the
+    /// convenience methods ([`lookup_asn`](Self::lookup_asn),
+    /// [`lookup_rdns`](Self::lookup_rdns),
+    /// [`get_public_ip`](Self::get_public_ip)) for one-off lookups.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let asn_info = ftr.services().asn.lookup("8.8.8.8".parse()?).await?;
+    ///     println!("AS{}", asn_info.asn);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub fn services(&self) -> &Services {
+        &self.services
+    }
+
     /// Create a new Ftr instance with fresh services
     pub fn new() -> Self {
         Self {
@@ -258,10 +279,8 @@ impl Ftr {
     /// A [`TracerouteResult`] containing the trace results, or a [`TracerouteError`]
     /// if the trace fails.
     pub async fn trace(&self, target: &str) -> Result<TracerouteResult, TracerouteError> {
-        let config = TracerouteConfig::builder()
-            .target(target)
-            .build()
-            .map_err(TracerouteError::ConfigError)?;
+        // ConfigError converts into TracerouteError::ConfigError via #[from]
+        let config = TracerouteConfig::builder().target(target).build()?;
         self.trace_with_config(config).await
     }
 
