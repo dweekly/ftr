@@ -73,7 +73,7 @@ async fn test_tcp_not_implemented_error() {
 }
 
 #[tokio::test]
-async fn test_ipv6_not_supported_error() {
+async fn test_ipv6_target_platform_behavior() {
     let config = TracerouteConfigBuilder::new()
         .target("::1") // IPv6 localhost
         .build()
@@ -82,12 +82,28 @@ async fn test_ipv6_not_supported_error() {
     let ftr_instance = ftr::Ftr::new();
     let result = ftr_instance.trace_with_config(config).await;
 
-    assert!(
-        matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
-        "Expected Ipv6NotSupported error, got: {:?}",
-        result
-    );
-    println!("Got expected Ipv6NotSupported error");
+    // macOS has unprivileged DGRAM ICMPv6 traceroute; a loopback trace
+    // reaches ::1 in one hop, classified as LAN. Platforms without IPv6
+    // probe support must surface the typed Ipv6NotSupported error.
+    #[cfg(target_os = "macos")]
+    {
+        let trace = result.expect("IPv6 loopback trace should succeed unprivileged on macOS");
+        assert!(trace.destination_reached, "::1 must be reachable");
+        assert_eq!(
+            trace.hops.first().and_then(|h| h.addr),
+            Some("::1".parse().expect("valid IPv6")),
+        );
+        println!("IPv6 loopback trace succeeded on macOS");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        assert!(
+            matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
+            "Expected Ipv6NotSupported error, got: {:?}",
+            result
+        );
+        println!("Got expected Ipv6NotSupported error");
+    }
 }
 
 #[tokio::test]

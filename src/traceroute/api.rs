@@ -6,6 +6,7 @@
 use crate::dns::resolver;
 use crate::services::Services;
 use crate::socket::factory::create_probe_socket_with_options_and_verbose;
+use crate::traceroute::config::PreferredFamily;
 use crate::traceroute::engine::TracerouteEngine;
 use crate::traceroute::{TracerouteConfig, TracerouteError, TracerouteResult};
 use std::net::IpAddr;
@@ -33,39 +34,24 @@ impl Traceroute {
         })
     }
 
-    /// Resolve the target hostname/IP to an IpAddr
+    /// Resolve the target hostname/IP to an IpAddr, honoring the
+    /// configuration's family preference
     async fn resolve_target(config: &mut TracerouteConfig) -> Result<IpAddr, TracerouteError> {
-        // Check if target is an IP address literal
-        if let Ok(ip) = config.target.parse::<IpAddr>() {
-            if ip.is_ipv6() {
-                return Err(TracerouteError::Ipv6NotSupported);
+        // IP literals and "localhost" resolve deterministically and take
+        // precedence over a pre-set target_ip (pre-0.9 precedence order).
+        let target_is_literal =
+            config.target.parse::<IpAddr>().is_ok() || config.target == "localhost";
+
+        if !target_is_literal {
+            // Already resolved (skips DNS): validate the family preference
+            // still holds, then use it.
+            if let Some(ip) = config.target_ip {
+                check_family(ip, config.preferred_family, &config.target)?;
+                return Ok(ip);
             }
-            config.target_ip = Some(ip);
-            return Ok(ip);
         }
 
-        // Handle well-known hostnames
-        if config.target == "localhost" {
-            let ip = IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-            config.target_ip = Some(ip);
-            return Ok(ip);
-        }
-
-        // Already resolved
-        if let Some(ip) = config.target_ip {
-            return Ok(ip);
-        }
-
-        // Resolve hostname to IPv4 via DNS
-        let addrs = resolver::resolve_a(&config.target)
-            .await
-            .map_err(|e| TracerouteError::ResolutionError(e.to_string()))?;
-
-        let ip =
-            IpAddr::V4(*addrs.first().ok_or_else(|| {
-                TracerouteError::ResolutionError("No addresses found".to_string())
-            })?);
-
+        let ip = resolve_target_with_family(&config.target, config.preferred_family).await?;
         config.target_ip = Some(ip);
         Ok(ip)
     }
@@ -121,6 +107,113 @@ impl Traceroute {
     }
 }
 
+/// Validate that a resolved/literal address matches an explicit family
+/// preference. `Auto` accepts either family; the family always lives in the
+/// error *message* (context), never in a distinct error type.
+fn check_family(ip: IpAddr, family: PreferredFamily, target: &str) -> Result<(), TracerouteError> {
+    match (family, ip) {
+        (PreferredFamily::V4, IpAddr::V6(_)) => Err(TracerouteError::ResolutionError(format!(
+            "{target} is an IPv6 address but IPv4 was requested (-4)"
+        ))),
+        (PreferredFamily::V6, IpAddr::V4(_)) => Err(TracerouteError::ResolutionError(format!(
+            "{target} is an IPv4 address but IPv6 was requested (-6)"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// Resolve a traceroute target (IP literal or hostname) to a single address
+/// of the preferred family.
+///
+/// - **IP literals** are used directly; an explicit `V4`/`V6` preference
+///   that contradicts the literal's family is a
+///   [`TracerouteError::ResolutionError`].
+/// - **`localhost`** short-circuits to `127.0.0.1` (or `::1` under
+///   [`PreferredFamily::V6`]) without touching DNS.
+/// - **Hostnames** resolve per the preference. `V4` uses ftr's own DNS
+///   resolver (A query) exactly as previous releases did. `V6` uses the
+///   system resolver (`getaddrinfo` via tokio's `lookup_host`) and keeps
+///   only IPv6 addresses; the system resolver is used deliberately so OS
+///   facilities like macOS NAT64/DNS64 synthesis apply. `Auto` prefers
+///   IPv4 and only falls back to IPv6 when no A records exist (see
+///   [`PreferredFamily`] for why this conservative default was chosen).
+///
+/// Zone-scoped literals (`fe80::1%en0`) are rejected with a clear error
+/// rather than silently stripping the zone: `IpAddr` cannot carry a scope
+/// id, and tracerouting a link-local neighbor is a single-hop affair.
+/// First-class scoped-target support needs an API extension (deferred).
+pub async fn resolve_target_with_family(
+    target: &str,
+    family: PreferredFamily,
+) -> Result<IpAddr, TracerouteError> {
+    // Zone-scoped IPv6 literal: refuse loudly, never strip the zone.
+    if let Some((addr_part, zone)) = target.split_once('%') {
+        if addr_part.parse::<std::net::Ipv6Addr>().is_ok() {
+            return Err(TracerouteError::ResolutionError(format!(
+                "zone-scoped IPv6 targets ({addr_part}%{zone}) are not yet supported"
+            )));
+        }
+    }
+
+    // IP literal: use as-is (after family validation).
+    if let Ok(ip) = target.parse::<IpAddr>() {
+        check_family(ip, family, target)?;
+        return Ok(ip);
+    }
+
+    // Well-known hostname, no DNS needed.
+    if target == "localhost" {
+        return Ok(match family {
+            PreferredFamily::V6 => IpAddr::V6(std::net::Ipv6Addr::LOCALHOST),
+            _ => IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        });
+    }
+
+    match family {
+        PreferredFamily::V4 => resolve_first_a(target).await,
+        PreferredFamily::V6 => resolve_first_aaaa(target).await,
+        _ => {
+            // Auto: IPv4 first — identical mechanism and result to pre-0.9
+            // releases for any host with A records — then IPv6.
+            match resolve_first_a(target).await {
+                Ok(ip) => Ok(ip),
+                Err(v4_err) => match resolve_first_aaaa(target).await {
+                    Ok(ip) => Ok(ip),
+                    Err(_) => Err(v4_err),
+                },
+            }
+        }
+    }
+}
+
+/// Resolve a hostname's first A record via ftr's own DNS resolver — the
+/// exact IPv4 mechanism used by previous releases.
+async fn resolve_first_a(target: &str) -> Result<IpAddr, TracerouteError> {
+    let addrs = resolver::resolve_a(target)
+        .await
+        .map_err(|e| TracerouteError::ResolutionError(format!("{target}: {e}")))?;
+    addrs
+        .first()
+        .map(|a| IpAddr::V4(*a))
+        .ok_or_else(|| TracerouteError::ResolutionError(format!("{target}: no IPv4 addresses")))
+}
+
+/// Resolve a hostname's first IPv6 address via the system resolver
+/// (`getaddrinfo`), so OS-level behaviors (NAT64/DNS64 synthesis,
+/// /etc/hosts entries) apply to IPv6 targets.
+async fn resolve_first_aaaa(target: &str) -> Result<IpAddr, TracerouteError> {
+    let addrs = tokio::net::lookup_host((target, 0))
+        .await
+        .map_err(|e| TracerouteError::ResolutionError(format!("{target}: {e}")))?;
+    addrs
+        .into_iter()
+        .find(std::net::SocketAddr::is_ipv6)
+        .map(|a| a.ip())
+        .ok_or_else(|| {
+            TracerouteError::ResolutionError(format!("{target}: no IPv6 (AAAA) addresses"))
+        })
+}
+
 /// Run an async traceroute with the given configuration
 pub async fn trace_async(target: &str) -> Result<TracerouteResult, TracerouteError> {
     // ConfigError converts into TracerouteError::ConfigError via #[from]
@@ -168,18 +261,89 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_async_traceroute_ipv6_error() {
+    async fn test_async_traceroute_ipv6_literal_resolves() {
+        // IPv6 literals now resolve at creation time; platforms without
+        // IPv6 probe support surface Ipv6NotSupported later, from the
+        // socket factory, when the trace runs.
         let config = TracerouteConfig::builder()
             .target("::1")
             .target_ip(IpAddr::V6("::1".parse().expect("valid IPv6 address")))
             .build()
             .expect("failed to build traceroute config");
 
-        let result = Traceroute::new(config).await;
+        let traceroute = Traceroute::new(config)
+            .await
+            .expect("IPv6 literal must resolve");
+        assert_eq!(
+            traceroute.target_ip,
+            IpAddr::V6("::1".parse().expect("valid IPv6 address"))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_ip_literals_by_family() {
+        use crate::traceroute::config::PreferredFamily;
+
+        // Literals pass through untouched under Auto and their own family.
+        for family in [PreferredFamily::Auto, PreferredFamily::V4] {
+            let ip = resolve_target_with_family("8.8.8.8", family)
+                .await
+                .expect("v4 literal resolves");
+            assert_eq!(ip, IpAddr::V4("8.8.8.8".parse().expect("valid IPv4")));
+        }
+        for family in [PreferredFamily::Auto, PreferredFamily::V6] {
+            let ip = resolve_target_with_family("2001:4860:4860::8888", family)
+                .await
+                .expect("v6 literal resolves");
+            assert_eq!(
+                ip,
+                IpAddr::V6("2001:4860:4860::8888".parse().expect("valid IPv6"))
+            );
+        }
+
+        // Family/literal contradictions are resolution errors whose message
+        // carries the family context (no dedicated error type).
+        let err = resolve_target_with_family("8.8.8.8", PreferredFamily::V6)
+            .await
+            .expect_err("v4 literal under -6 must fail");
+        assert!(matches!(&err, TracerouteError::ResolutionError(m) if m.contains("IPv6")));
+
+        let err = resolve_target_with_family("2001:4860:4860::8888", PreferredFamily::V4)
+            .await
+            .expect_err("v6 literal under -4 must fail");
+        assert!(matches!(&err, TracerouteError::ResolutionError(m) if m.contains("IPv4")));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_localhost_by_family() {
+        use crate::traceroute::config::PreferredFamily;
+
+        assert_eq!(
+            resolve_target_with_family("localhost", PreferredFamily::Auto)
+                .await
+                .expect("localhost resolves"),
+            IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
+        );
+        assert_eq!(
+            resolve_target_with_family("localhost", PreferredFamily::V6)
+                .await
+                .expect("localhost -6 resolves"),
+            IpAddr::V6(std::net::Ipv6Addr::LOCALHOST)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_rejects_zone_scoped_literal() {
+        use crate::traceroute::config::PreferredFamily;
+
+        // The zone must never be silently stripped; scoped targets are a
+        // clear, typed error until the API can carry a scope id end-to-end.
+        let err = resolve_target_with_family("fe80::1%en0", PreferredFamily::Auto)
+            .await
+            .expect_err("zone-scoped literal must be rejected");
         assert!(
-            matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
-            "Expected IPv6 not supported error, got: {:?}",
-            result
+            matches!(&err, TracerouteError::ResolutionError(m) if m.contains("zone-scoped")),
+            "unexpected error: {err:?}"
         );
     }
 

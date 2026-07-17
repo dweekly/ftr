@@ -22,13 +22,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_target_ip_address() {
+        use ftr::PreferredFamily;
+
         // Test with IPv4 address
-        let result = resolve_target("8.8.8.8").await;
+        let result = ftr::resolve_target_with_family("8.8.8.8", PreferredFamily::Auto).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "8.8.8.8".parse::<IpAddr>().unwrap());
 
         // Test with IPv6 address
-        let result = resolve_target("::1").await;
+        let result = ftr::resolve_target_with_family("::1", PreferredFamily::Auto).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "::1".parse::<IpAddr>().unwrap());
     }
@@ -36,7 +38,7 @@ mod tests {
     #[tokio::test]
     async fn test_resolve_target_hostname() {
         // Test with localhost
-        let result = resolve_target("localhost").await;
+        let result = ftr::resolve_target_with_family("localhost", ftr::PreferredFamily::Auto).await;
         assert!(result.is_ok());
         let ip = result.unwrap();
         assert!(ip.is_loopback());
@@ -44,14 +46,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolve_target_invalid() {
-        let result = resolve_target("this.domain.definitely.does.not.exist.invalid").await;
+        let result = ftr::resolve_target_with_family(
+            "this.domain.definitely.does.not.exist.invalid",
+            ftr::PreferredFamily::Auto,
+        )
+        .await;
         assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Error resolving host")
-        );
+        assert!(matches!(
+            result.unwrap_err(),
+            ftr::TracerouteError::ResolutionError(_)
+        ));
+    }
+
+    #[test]
+    fn test_family_flags_parsing() {
+        use ftr::PreferredFamily;
+
+        // No flag: Auto
+        let args = Args::parse_from(["ftr", "google.com"]);
+        assert_eq!(args.preferred_family(), PreferredFamily::Auto);
+
+        // -4 forces IPv4 (short and long forms)
+        let args = Args::parse_from(["ftr", "-4", "google.com"]);
+        assert_eq!(args.preferred_family(), PreferredFamily::V4);
+        let args = Args::parse_from(["ftr", "--ipv4", "google.com"]);
+        assert_eq!(args.preferred_family(), PreferredFamily::V4);
+
+        // -6 forces IPv6 (short and long forms)
+        let args = Args::parse_from(["ftr", "-6", "google.com"]);
+        assert_eq!(args.preferred_family(), PreferredFamily::V6);
+        let args = Args::parse_from(["ftr", "--ipv6", "google.com"]);
+        assert_eq!(args.preferred_family(), PreferredFamily::V6);
+
+        // -4 and -6 conflict
+        let result = Args::try_parse_from(["ftr", "-4", "-6", "google.com"]);
+        assert!(result.is_err(), "-4 and -6 must be mutually exclusive");
     }
 
     #[test]

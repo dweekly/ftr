@@ -52,6 +52,31 @@ impl Default for TimingConfig {
     }
 }
 
+/// Address family preference for hostname resolution
+///
+/// Controls which IP family a hostname target resolves to. IP-literal
+/// targets are used as-is (an explicit `V4`/`V6` preference that
+/// contradicts the literal's family is a resolution error).
+///
+/// # Default (`Auto`)
+///
+/// `Auto` prefers IPv4 when a host has both A and AAAA records, and uses
+/// IPv6 only when the host is v6-only. This is a deliberately conservative
+/// default while IPv6 probing is new (currently macOS-only): a dual-stack
+/// host keeps yielding exactly the same trace as previous ftr releases on
+/// every platform, and platforms without IPv6 probe support quietly keep
+/// working. Pass `V6` (CLI `-6`) to opt in for dual-stack hosts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum PreferredFamily {
+    /// Only resolve to IPv4; error if the host has no A records
+    V4,
+    /// Only resolve to IPv6; error if the host has no AAAA records
+    V6,
+    /// Prefer IPv4 when available, fall back to IPv6 (see type-level docs)
+    #[default]
+    Auto,
+}
+
 /// Configuration for a traceroute operation
 ///
 /// This struct contains all the parameters needed to control a traceroute operation.
@@ -105,6 +130,12 @@ pub struct TracerouteConfig {
     /// When running multiple traceroutes, you can provide the public IP
     /// to avoid repeated detection calls, improving performance.
     pub public_ip: Option<IpAddr>,
+    /// Address family preference for hostname resolution (default: Auto)
+    ///
+    /// `#[serde(default)]` keeps configurations serialized by pre-0.9
+    /// versions deserializable.
+    #[serde(default)]
+    pub preferred_family: PreferredFamily,
     /// Internal timing configuration
     /// Most users should not need to modify these values
     pub timing: TimingConfig,
@@ -128,6 +159,7 @@ impl Default for TracerouteConfig {
             enable_rdns: true,
             verbose: 0,
             public_ip: None,
+            preferred_family: PreferredFamily::default(),
             timing: TimingConfig::default(),
         }
     }
@@ -360,6 +392,16 @@ impl TracerouteConfigBuilder {
     /// multiple traceroutes to improve performance.
     pub fn public_ip(mut self, ip: IpAddr) -> Self {
         self.config.public_ip = Some(ip);
+        self
+    }
+
+    /// Set the address family preference for hostname resolution
+    ///
+    /// See [`PreferredFamily`] for the semantics of each option; the
+    /// default is [`PreferredFamily::Auto`] (IPv4 preferred when a host
+    /// has both families).
+    pub fn preferred_family(mut self, family: PreferredFamily) -> Self {
+        self.config.preferred_family = family;
         self
     }
 

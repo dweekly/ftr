@@ -8,7 +8,10 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use clap::Parser;
-use ftr::{ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError, TracerouteResult};
+use ftr::{
+    PreferredFamily, ProbeProtocol, SocketMode, TracerouteConfigBuilder, TracerouteError,
+    TracerouteResult,
+};
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
@@ -87,6 +90,30 @@ struct Args {
     /// Custom STUN server address (e.g., stun.l.google.com:19302)
     #[clap(long)]
     stun_server: Option<String>,
+
+    /// Force IPv4: only resolve the target to IPv4 addresses
+    #[clap(short = '4', long = "ipv4", conflicts_with = "force_ipv6")]
+    force_ipv4: bool,
+
+    /// Force IPv6: only resolve the target to IPv6 addresses
+    #[clap(short = '6', long = "ipv6")]
+    force_ipv6: bool,
+}
+
+impl Args {
+    /// Address family preference from the -4/-6 flags (clap enforces they
+    /// are mutually exclusive). Without either flag, Auto prefers IPv4 for
+    /// dual-stack hosts and uses IPv6 only for v6-only hosts — see
+    /// [`PreferredFamily`] for the rationale.
+    fn preferred_family(&self) -> PreferredFamily {
+        if self.force_ipv4 {
+            PreferredFamily::V4
+        } else if self.force_ipv6 {
+            PreferredFamily::V6
+        } else {
+            PreferredFamily::Auto
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -241,8 +268,10 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
         SocketModeArg::Dgram => SocketMode::Dgram,
     });
 
-    // Resolve target early to use in config
-    let target_ip = resolve_target(&args.host).await?;
+    // Resolve target early to use in config, honoring -4/-6
+    let target_ip = ftr::resolve_target_with_family(&args.host, args.preferred_family())
+        .await
+        .map_err(|e| format!("Error resolving host: {e}"))?;
 
     // Pre-fetch destination IP's rDNS and ASN lookups in the background
     {
@@ -284,6 +313,7 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
         .enable_asn_lookup(!args.no_enrich)
         .enable_rdns(!args.no_rdns)
         .verbose(args.verbose)
+        .preferred_family(args.preferred_family())
         .port(args.port);
 
     // Add public IP if provided
@@ -380,8 +410,11 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
             std::process::exit(1);
         }
         Err(TracerouteError::Ipv6NotSupported) => {
-            eprintln!("\nError: IPv6 targets are not yet supported");
-            eprintln!("Please use an IPv4 address or hostname that resolves to IPv4.");
+            eprintln!(
+                "\nError: IPv6 traceroute is not yet supported on {}",
+                std::env::consts::OS
+            );
+            eprintln!("Use an IPv4 target (or -4 to force IPv4 resolution).");
             std::process::exit(1);
         }
         Err(TracerouteError::ResolutionError(msg)) => {
@@ -409,26 +442,6 @@ async fn async_main(_process_start: Instant) -> Result<(), Box<dyn std::error::E
 
     // Quick exit to avoid cleanup overhead on Windows
     std::process::exit(0);
-}
-
-/// Resolve target hostname to IP address
-async fn resolve_target(host: &str) -> Result<IpAddr, Box<dyn std::error::Error>> {
-    // Try parsing as IP first
-    if let Ok(ip) = host.parse::<IpAddr>() {
-        return Ok(ip);
-    }
-
-    // Handle localhost without DNS
-    if host == "localhost" {
-        return Ok(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST));
-    }
-
-    // Use our DNS resolver
-    let addrs = ftr::dns::resolve_a(host)
-        .await
-        .map_err(|e| format!("Error resolving host: {e}"))?;
-
-    Ok(IpAddr::V4(addrs[0]))
 }
 
 /// Display results in JSON format

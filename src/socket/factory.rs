@@ -136,6 +136,36 @@ pub async fn create_probe_socket_with_options_and_verbose(
                 ))
             }
         }
-        IpAddr::V6(_) => Err(TracerouteError::Ipv6NotSupported),
+        IpAddr::V6(_) => {
+            // Explicit UDP was requested but only ICMPv6 probing exists so far.
+            if let Some(ProbeProtocol::Udp) = protocol {
+                return Err(TracerouteError::NotImplemented {
+                    feature: "UDP IPv6 traceroute".to_string(),
+                });
+            }
+
+            #[cfg(target_os = "macos")]
+            {
+                let _ = socket_mode;
+                use super::macos_v6::MacOSAsyncIcmpV6Socket;
+                let socket =
+                    MacOSAsyncIcmpV6Socket::new_with_config_and_verbose(timing_config, verbose)?;
+
+                if verbose > 0 {
+                    eprintln!("Using DGRAM ICMPv6 mode for traceroute (per-probe version)");
+                }
+
+                Ok(Box::new(socket))
+            }
+
+            // Linux/Windows/BSD IPv6 probing is planned (see
+            // docs/IPV6_DESIGN.md open questions); until each platform's
+            // behavior is spike-validated, report the typed error.
+            #[cfg(not(target_os = "macos"))]
+            {
+                let _ = (timing_config, socket_mode, verbose);
+                Err(TracerouteError::Ipv6NotSupported)
+            }
+        }
     }
 }

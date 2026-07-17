@@ -73,11 +73,11 @@ criterion = { version = "0.7", features = ["html_reports"] }
 [target.'cfg(target_os = "freebsd")'.dev-dependencies]
 libc = "0.2"
 
-# libc on macOS is used ONLY by the IPv6 validation spikes in examples/
-# (recvmsg cmsg parsing for IPV6_HOPLIMIT, ICMP6_FILTER setsockopt) —
-# see docs/IPV6_DESIGN.md. It is a dev-dependency so the shipped library
-# and binary are unaffected.
-[target.'cfg(target_os = "macos")'.dev-dependencies]
+# libc on macOS is used by the ICMPv6 DGRAM receive path (recvmsg cmsg
+# parsing for IPV6_HOPLIMIT, ICMP6_FILTER setsockopt) — see
+# docs/IPV6_DESIGN.md — as well as by the IPv6 validation spikes in
+# examples/. Promoted from a dev-dependency when IPv6 traceroute landed.
+[target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
 
 [lints.clippy]
