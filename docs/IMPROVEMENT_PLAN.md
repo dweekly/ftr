@@ -34,6 +34,14 @@ resolvers, and the tests lint-debt payoff; what remains is below.
   `continue-on-error: true` at introduction).
 - criterion is held at 0.7 because 0.8 declares `rust-version = 1.86` — bump
   together with the next MSRV raise.
+- Unprivileged macOS traceroute: `macos.rs` only implements raw ICMP
+  (root-gated by Darwin), but macOS supports unprivileged `SOCK_DGRAM`
+  ICMP — SwiftFTR does full traceroutes without root this way, and the v6
+  spike proved DGRAM receives Time Exceeded unprivileged
+  (`docs/IPV6_DESIGN.md`). Add a DGRAM fallback like Linux's; falls out
+  naturally from IPv6 integration, which needs the DGRAM path anyway.
+  Remember Darwin demuxes v4 DGRAM ICMP by identifier (SwiftFTR's 0.8.0
+  regression) but does NOT for v6.
 
 ## Performance & reliability (two PRs)
 
