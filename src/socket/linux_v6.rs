@@ -373,11 +373,6 @@ pub struct LinuxAsyncUdpV6Socket {
 }
 
 impl LinuxAsyncUdpV6Socket {
-    /// Create a new async UDP IPv6 socket handle.
-    pub fn new() -> Result<Self, TracerouteError> {
-        Self::new_with_config(crate::TimingConfig::default())
-    }
-
     /// Create with timing configuration.
     pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self, TracerouteError> {
         // Probe socket creation and IPV6_RECVERR support up front so the
@@ -590,15 +585,11 @@ pub struct LinuxAsyncPingV6Socket {
 }
 
 impl LinuxAsyncPingV6Socket {
-    /// Create a new ICMPv6 ping-socket handle. Fails with a permission
-    /// error when `net.ipv4.ping_group_range` (which gates ICMPv6 ping
-    /// sockets too, despite the name) excludes this process's gid — the
-    /// kernel default `1 0` disables them for everyone.
-    pub fn new() -> Result<Self, TracerouteError> {
-        Self::new_with_config(crate::TimingConfig::default())
-    }
-
-    /// Create with timing configuration.
+    /// Create a new ICMPv6 ping-socket handle with timing configuration.
+    /// Fails with a permission error when `net.ipv4.ping_group_range`
+    /// (which gates ICMPv6 ping sockets too, despite the name) excludes
+    /// this process's gid — the kernel default `1 0` disables them for
+    /// everyone.
     pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self, TracerouteError> {
         // Probe availability at creation time so the factory can fall
         // through (EACCES when ping_group_range excludes our gid).
@@ -827,12 +818,7 @@ pub struct LinuxAsyncRawIcmpV6Socket {
 }
 
 impl LinuxAsyncRawIcmpV6Socket {
-    /// Create a new raw ICMPv6 socket handle.
-    pub fn new() -> Result<Self, TracerouteError> {
-        Self::new_with_config(crate::TimingConfig::default())
-    }
-
-    /// Create with timing configuration.
+    /// Create a new raw ICMPv6 socket handle with timing configuration.
     pub fn new_with_config(_timing_config: crate::TimingConfig) -> Result<Self, TracerouteError> {
         // Probe raw-socket availability up front so permission problems
         // surface as a typed error at setup time, not on the first probe.
