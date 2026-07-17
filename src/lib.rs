@@ -307,8 +307,8 @@ impl Ftr {
     /// This is a convenience method that provides direct access to the ASN
     /// lookup service without needing to interact with `Arc<RwLock>`.
     ///
-    /// Note: Currently only IPv4 is supported. IPv6 addresses will return
-    /// an error.
+    /// Both IPv4 and IPv6 addresses are supported (IPv6 lookups use Team
+    /// Cymru's `origin6.asn.cymru.com` zone).
     ///
     /// # Arguments
     ///
@@ -401,6 +401,53 @@ impl Ftr {
         &self,
     ) -> Result<std::net::IpAddr, crate::public_ip::providers::PublicIpError> {
         self.services.stun.get_public_ip().await
+    }
+
+    /// Get the public IPv6 address of this machine
+    ///
+    /// This is a convenience method that uses STUN over UDPv6 to detect
+    /// the public IPv6 address as seen from the internet. Fails with an
+    /// error if the machine has no IPv6 connectivity.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    ///     let ftr = Ftr::new();
+    ///     let public_ipv6 = ftr.get_public_ip_v6().await?;
+    ///     println!("Public IPv6: {}", public_ipv6);
+    ///     Ok(())
+    /// }
+    /// ```
+    pub async fn get_public_ip_v6(
+        &self,
+    ) -> Result<std::net::Ipv6Addr, crate::public_ip::providers::PublicIpError> {
+        self.services.stun.get_public_ip_v6().await
+    }
+
+    /// Get the public IP addresses for both families in parallel
+    ///
+    /// Discovers the public IPv4 and IPv6 addresses concurrently via STUN
+    /// and never fails: a family without connectivity is `None` in the
+    /// returned [`PublicIps`](crate::public_ip::PublicIps).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use ftr::Ftr;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let ftr = Ftr::new();
+    ///     let ips = ftr.get_public_ips().await;
+    ///     println!("IPv4: {:?}, IPv6: {:?}", ips.v4, ips.v6);
+    /// }
+    /// ```
+    pub async fn get_public_ips(&self) -> crate::public_ip::PublicIps {
+        self.services.stun.get_public_ips().await
     }
 
     /// Clear all caches across all services

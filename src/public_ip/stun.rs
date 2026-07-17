@@ -67,6 +67,38 @@ pub async fn get_public_ip_stun_with_cache(
     get_public_ip_stun_with_cache_and_verbose(server, timeout, cache, 0).await
 }
 
+/// Address-family filter for STUN queries.
+///
+/// Crate-internal: the public entry points are
+/// [`StunClient::get_public_ip_v4`](crate::public_ip::StunClient::get_public_ip_v4),
+/// [`StunClient::get_public_ip_v6`](crate::public_ip::StunClient::get_public_ip_v6),
+/// and [`StunClient::get_public_ips`](crate::public_ip::StunClient::get_public_ips).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StunFamily {
+    /// Query over IPv4 only (A records / v4 server addresses)
+    V4,
+    /// Query over IPv6 only (AAAA records / v6 server addresses)
+    V6,
+}
+
+impl StunFamily {
+    /// Whether a resolved server address belongs to this family
+    fn matches_server(self, addr: &SocketAddr) -> bool {
+        match self {
+            StunFamily::V4 => addr.is_ipv4(),
+            StunFamily::V6 => addr.is_ipv6(),
+        }
+    }
+
+    /// Whether a mapped address returned by the server belongs to this family
+    fn matches_ip(self, ip: &IpAddr) -> bool {
+        match self {
+            StunFamily::V4 => ip.is_ipv4(),
+            StunFamily::V6 => ip.is_ipv6(),
+        }
+    }
+}
+
 /// Get public IP using STUN protocol with injected cache and an explicit
 /// verbosity level (2+ prints per-server diagnostics to stderr)
 pub async fn get_public_ip_stun_with_cache_and_verbose(
@@ -74,6 +106,19 @@ pub async fn get_public_ip_stun_with_cache_and_verbose(
     timeout: Duration,
     cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
     verbose: u8,
+) -> Result<IpAddr, StunError> {
+    get_public_ip_stun_filtered(server, timeout, cache, verbose, None).await
+}
+
+/// Get public IP from one STUN server, optionally restricted to a single
+/// address family. With a family set, only server addresses of that family
+/// are contacted and a mapped address of the wrong family is rejected.
+async fn get_public_ip_stun_filtered(
+    server: &str,
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+    verbose: u8,
+    family: Option<StunFamily>,
 ) -> Result<IpAddr, StunError> {
     if verbose >= 2 {
         eprintln!("[STUN] Attempting to contact STUN server: {}", server);
@@ -92,13 +137,32 @@ pub async fn get_public_ip_stun_with_cache_and_verbose(
         })?;
     drop(cache_read);
 
-    // Try each address until one works
+    // Try each address (of the requested family, if any) until one works
     for server_addr in server_addrs {
+        if let Some(family) = family {
+            if !family.matches_server(&server_addr) {
+                continue;
+            }
+        }
         if verbose >= 2 {
             eprintln!("[STUN] Trying {} (resolved from {})", server_addr, server);
         }
         match get_public_ip_stun_addr(server_addr, timeout).await {
             Ok(ip) => {
+                // Defense in depth: a server contacted over one family
+                // should map that family, but reject a mismatch rather
+                // than report e.g. a v4 address as the public IPv6.
+                if let Some(family) = family {
+                    if !family.matches_ip(&ip) {
+                        if verbose >= 2 {
+                            eprintln!(
+                                "[STUN] {} returned {} which is not the requested family; skipping",
+                                server_addr, ip
+                            );
+                        }
+                        continue;
+                    }
+                }
                 if verbose >= 2 {
                     eprintln!(
                         "[STUN] Successfully obtained public IP {} from {}",
@@ -127,8 +191,15 @@ async fn get_public_ip_stun_addr(
     server_addr: SocketAddr,
     timeout: Duration,
 ) -> Result<IpAddr, StunError> {
-    // Use tokio's async UDP socket
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    // Use tokio's async UDP socket, bound to the same address family as
+    // the server (a v4-bound socket cannot send to a v6 server and vice
+    // versa).
+    let bind_addr = if server_addr.is_ipv6() {
+        "[::]:0"
+    } else {
+        "0.0.0.0:0"
+    };
+    let socket = tokio::net::UdpSocket::bind(bind_addr).await?;
 
     // Build STUN Binding Request
     let request = build_binding_request();
@@ -183,6 +254,29 @@ pub async fn get_public_ip_stun_with_servers_and_cache(
     Err(StunError::Timeout)
 }
 
+/// Get the public IP for one address family using STUN, trying the provided
+/// servers in order (with injected cache).
+///
+/// Like [`get_public_ip_stun_with_servers_and_cache`] but restricted to a
+/// single address family: only server addresses of that family are
+/// contacted (e.g. AAAA-resolved addresses for [`StunFamily::V6`]), so the
+/// mapped address the server reports is the public address for that family.
+pub(crate) async fn get_public_ip_stun_family_with_servers_and_cache(
+    servers: &[String],
+    timeout: Duration,
+    cache: &Arc<RwLock<crate::public_ip::stun_cache::StunCache>>,
+    verbose: u8,
+    family: StunFamily,
+) -> Result<IpAddr, StunError> {
+    for server in servers {
+        match get_public_ip_stun_filtered(server, timeout, cache, verbose, Some(family)).await {
+            Ok(ip) => return Ok(ip),
+            Err(_) => continue, // Try next server
+        }
+    }
+    Err(StunError::Timeout)
+}
+
 /// Build a STUN Binding Request message
 fn build_binding_request() -> Vec<u8> {
     let mut request = Vec::with_capacity(20);
@@ -229,6 +323,13 @@ fn parse_stun_response(data: &[u8]) -> Result<IpAddr, StunError> {
         return Err(StunError::InvalidResponse);
     }
 
+    // Transaction ID (bytes 8..20 of the header): the response echoes the
+    // request's transaction ID, and RFC 5389 section 15.2 XORs the IPv6
+    // mapped-address bytes against magic cookie || transaction ID.
+    let transaction_id: [u8; 12] = data[8..20]
+        .try_into()
+        .expect("slice of a >=20-byte buffer is 12 bytes");
+
     // Parse attributes
     let msg_length = u16::from_be_bytes([data[2], data[3]]) as usize;
     let mut offset = 20; // Skip header
@@ -243,7 +344,10 @@ fn parse_stun_response(data: &[u8]) -> Result<IpAddr, StunError> {
 
         match attr_type {
             XOR_MAPPED_ADDRESS if attr_length >= 8 => {
-                return parse_xor_mapped_address(&data[offset + 4..offset + 4 + attr_length]);
+                return parse_xor_mapped_address(
+                    &data[offset + 4..offset + 4 + attr_length],
+                    &transaction_id,
+                );
             }
             MAPPED_ADDRESS if attr_length >= 8 => {
                 // Legacy MAPPED-ADDRESS
@@ -259,8 +363,14 @@ fn parse_stun_response(data: &[u8]) -> Result<IpAddr, StunError> {
     Err(StunError::NoMappedAddress)
 }
 
-/// Parse XOR-MAPPED-ADDRESS attribute
-fn parse_xor_mapped_address(data: &[u8]) -> Result<IpAddr, StunError> {
+/// Parse XOR-MAPPED-ADDRESS attribute (RFC 5389 section 15.2)
+///
+/// The port is XORed with the most significant 16 bits of the magic
+/// cookie. IPv4 address bytes are XORed with the magic cookie; IPv6
+/// address bytes are XORed with the concatenation of the magic cookie and
+/// the transaction ID. Validated against live Google and Cloudflare STUN
+/// servers by `examples/spike_stun6.rs`.
+fn parse_xor_mapped_address(data: &[u8], transaction_id: &[u8; 12]) -> Result<IpAddr, StunError> {
     if data.len() < 8 {
         return Err(StunError::InvalidResponse);
     }
@@ -270,7 +380,7 @@ fn parse_xor_mapped_address(data: &[u8]) -> Result<IpAddr, StunError> {
 
     match family {
         0x01 => {
-            // IPv4
+            // IPv4: 4 address bytes XORed with the magic cookie
             if data.len() < 8 {
                 return Err(StunError::InvalidResponse);
             }
@@ -283,14 +393,24 @@ fn parse_xor_mapped_address(data: &[u8]) -> Result<IpAddr, StunError> {
             Ok(IpAddr::V4(std::net::Ipv4Addr::from(addr_bytes)))
         }
         0x02 => {
-            // IPv6 - not implemented yet
-            Err(StunError::InvalidResponse)
+            // IPv6: 16 address bytes XORed with magic cookie || transaction ID
+            if data.len() < 20 {
+                return Err(StunError::InvalidResponse);
+            }
+            let mut key = [0u8; 16];
+            key[..4].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+            key[4..].copy_from_slice(transaction_id);
+            let mut addr_bytes = [0u8; 16];
+            for (i, byte) in addr_bytes.iter_mut().enumerate() {
+                *byte = data[4 + i] ^ key[i];
+            }
+            Ok(IpAddr::V6(std::net::Ipv6Addr::from(addr_bytes)))
         }
         _ => Err(StunError::InvalidResponse),
     }
 }
 
-/// Parse legacy MAPPED-ADDRESS attribute
+/// Parse legacy MAPPED-ADDRESS attribute (RFC 5389 section 15.1, no XOR)
 fn parse_mapped_address(data: &[u8]) -> Result<IpAddr, StunError> {
     if data.len() < 8 {
         return Err(StunError::InvalidResponse);
@@ -303,6 +423,16 @@ fn parse_mapped_address(data: &[u8]) -> Result<IpAddr, StunError> {
             // IPv4
             let addr_bytes = [data[4], data[5], data[6], data[7]];
             Ok(IpAddr::V4(std::net::Ipv4Addr::from(addr_bytes)))
+        }
+        0x02 => {
+            // IPv6: 16 plain (non-XORed) address bytes
+            if data.len() < 20 {
+                return Err(StunError::InvalidResponse);
+            }
+            let addr_bytes: [u8; 16] = data[4..20]
+                .try_into()
+                .expect("length checked above: 16 bytes");
+            Ok(IpAddr::V6(std::net::Ipv6Addr::from(addr_bytes)))
         }
         _ => Err(StunError::InvalidResponse),
     }
@@ -328,6 +458,110 @@ mod tests {
             u32::from_be_bytes([request[4], request[5], request[6], request[7]]),
             STUN_MAGIC_COOKIE
         );
+    }
+
+    /// Build a synthetic Binding Success Response containing one attribute.
+    fn synthetic_response(transaction_id: &[u8; 12], attr_type: u16, attr_value: &[u8]) -> Vec<u8> {
+        let padded_len = attr_value.len().div_ceil(4) * 4;
+        let mut resp = Vec::new();
+        resp.extend_from_slice(&BINDING_SUCCESS_RESPONSE.to_be_bytes());
+        resp.extend_from_slice(&((4 + padded_len) as u16).to_be_bytes());
+        resp.extend_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+        resp.extend_from_slice(transaction_id);
+        resp.extend_from_slice(&attr_type.to_be_bytes());
+        resp.extend_from_slice(&(attr_value.len() as u16).to_be_bytes());
+        resp.extend_from_slice(attr_value);
+        resp.resize(resp.len() + padded_len - attr_value.len(), 0);
+        resp
+    }
+
+    #[test]
+    fn test_parse_xor_mapped_address_v6_synthetic() {
+        // Known transaction ID and known address; the XOR key is
+        // magic cookie || transaction ID (RFC 5389 section 15.2).
+        let transaction_id: [u8; 12] = [
+            0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x07, 0x18, 0x29, 0x3a, 0x4b, 0x5c,
+        ];
+        let addr: std::net::Ipv6Addr = "2001:5a8:4684:c00:41b1:1c86:aee8:e97"
+            .parse()
+            .expect("valid IPv6 literal");
+        let port: u16 = 52410;
+
+        let mut key = [0u8; 16];
+        key[..4].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+        key[4..].copy_from_slice(&transaction_id);
+
+        // XOR-MAPPED-ADDRESS value: reserved, family, x-port, x-address
+        let mut value = vec![0u8, 0x02];
+        value.extend_from_slice(&(port ^ (STUN_MAGIC_COOKIE >> 16) as u16).to_be_bytes());
+        for (i, byte) in addr.octets().iter().enumerate() {
+            value.push(byte ^ key[i]);
+        }
+
+        let resp = synthetic_response(&transaction_id, XOR_MAPPED_ADDRESS, &value);
+        let parsed = parse_stun_response(&resp).expect("synthetic v6 response must parse");
+        assert_eq!(parsed, IpAddr::V6(addr));
+    }
+
+    #[test]
+    fn test_parse_xor_mapped_address_v6_wrong_transaction_id_garbles_address() {
+        // The un-XOR depends on the transaction ID: the same attribute
+        // bytes under a different transaction ID must NOT yield the
+        // original address (guards against ignoring the transaction ID).
+        let txid_a: [u8; 12] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        let txid_b: [u8; 12] = [12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+        let addr: std::net::Ipv6Addr = "2001:4860:4860::8888".parse().expect("valid literal");
+
+        let mut key = [0u8; 16];
+        key[..4].copy_from_slice(&STUN_MAGIC_COOKIE.to_be_bytes());
+        key[4..].copy_from_slice(&txid_a);
+        let mut value = vec![0u8, 0x02, 0, 0];
+        for (i, byte) in addr.octets().iter().enumerate() {
+            value.push(byte ^ key[i]);
+        }
+
+        let resp = synthetic_response(&txid_b, XOR_MAPPED_ADDRESS, &value);
+        let parsed = parse_stun_response(&resp).expect("still parses structurally");
+        assert_ne!(parsed, IpAddr::V6(addr));
+    }
+
+    #[test]
+    fn test_parse_xor_mapped_address_v6_truncated() {
+        // Family 0x02 with only a v4-sized value must be rejected
+        let transaction_id = [0u8; 12];
+        let value = [0u8, 0x02, 0x12, 0x34, 1, 2, 3, 4];
+        let resp = synthetic_response(&transaction_id, XOR_MAPPED_ADDRESS, &value);
+        assert!(matches!(
+            parse_stun_response(&resp),
+            Err(StunError::InvalidResponse)
+        ));
+    }
+
+    #[test]
+    fn test_parse_mapped_address_v6_legacy() {
+        // Legacy MAPPED-ADDRESS carries the address without XOR
+        let transaction_id = [7u8; 12];
+        let addr: std::net::Ipv6Addr = "2606:4700::1111".parse().expect("valid literal");
+        let mut value = vec![0u8, 0x02, 0x0d, 0x96]; // port 3478, not XORed
+        value.extend_from_slice(&addr.octets());
+        let resp = synthetic_response(&transaction_id, MAPPED_ADDRESS, &value);
+        let parsed = parse_stun_response(&resp).expect("legacy v6 response must parse");
+        assert_eq!(parsed, IpAddr::V6(addr));
+    }
+
+    #[test]
+    fn test_parse_xor_mapped_address_v4_still_works() {
+        // Regression guard: the v4 un-XOR path is unchanged
+        let transaction_id: [u8; 12] = [9u8; 12];
+        let addr: std::net::Ipv4Addr = "203.0.113.7".parse().expect("valid literal");
+        let cookie = STUN_MAGIC_COOKIE.to_be_bytes();
+        let mut value = vec![0u8, 0x01, 0, 0];
+        for (i, byte) in addr.octets().iter().enumerate() {
+            value.push(byte ^ cookie[i]);
+        }
+        let resp = synthetic_response(&transaction_id, XOR_MAPPED_ADDRESS, &value);
+        let parsed = parse_stun_response(&resp).expect("v4 response must parse");
+        assert_eq!(parsed, IpAddr::V4(addr));
     }
 
     #[tokio::test]
