@@ -1,6 +1,6 @@
 //! Public IP providers
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv6Addr};
 use std::time::Duration;
 
 /// Error type for public IP detection
@@ -75,16 +75,41 @@ impl PublicIpProvider {
     }
 }
 
+/// IPv6-only HTTPS public-IP endpoints, tried in order by
+/// [`get_public_ip_v6_https`].
+///
+/// These hostnames publish only AAAA records, which forces the connection
+/// (and therefore the reported source address) over IPv6. The dual-stack
+/// `api64.ipify.org` is deliberately absent: it may answer over IPv4.
+/// Both endpoints verified live on 2026-07-16 to return the same address
+/// as STUN over UDPv6 (see `examples/spike_stun6.rs`).
+pub const PUBLIC_IP_V6_URLS: &[&str] = &["https://api6.ipify.org", "https://ipv6.icanhazip.com"];
+
 /// Get public IP address from a specific provider
 pub async fn get_public_ip_from_provider(
     provider: PublicIpProvider,
     timeout: Duration,
 ) -> Result<IpAddr, PublicIpError> {
-    let url = provider.url().to_string();
+    fetch_ip_from_url(provider.url().to_string(), timeout).await
+}
 
+/// Fetch an IP address from an HTTPS plain-text "what is my IP" endpoint
+async fn fetch_ip_from_url(url: String, timeout: Duration) -> Result<IpAddr, PublicIpError> {
     let ip_str = tokio::task::spawn_blocking(move || {
+        // This crate builds ureq with default-features = false and only the
+        // "native-tls" feature (see Cargo.toml), but ureq 3's default TLS
+        // provider is Rustls — using it without the "rustls" feature panics
+        // at request time ("provider is Rustls but feature is not
+        // enabled"). Select the native-tls provider explicitly, per the
+        // ureq 3 docs (ureq-3.3.0/src/lib.rs "Rustls and Native TLS"
+        // section).
         let agent: ureq::Agent = ureq::Agent::config_builder()
             .timeout_global(Some(timeout))
+            .tls_config(
+                ureq::tls::TlsConfig::builder()
+                    .provider(ureq::tls::TlsProvider::NativeTls)
+                    .build(),
+            )
             .build()
             .into();
         let body = agent
@@ -131,6 +156,29 @@ pub async fn get_public_ip(preferred_provider: PublicIpProvider) -> Result<IpAdd
             Err(_) => {
                 // Continue to next provider
             }
+        }
+    }
+
+    Err(PublicIpError::AllProvidersFailed)
+}
+
+/// Get the public IPv6 address over HTTPS, trying the endpoints in
+/// [`PUBLIC_IP_V6_URLS`] in order
+///
+/// This is the HTTPS fallback for the STUN-based
+/// [`StunClient::get_public_ip_v6`](crate::public_ip::StunClient::get_public_ip_v6).
+/// Fails with [`PublicIpError::AllProvidersFailed`] when the host has no
+/// IPv6 connectivity.
+pub async fn get_public_ip_v6_https() -> Result<Ipv6Addr, PublicIpError> {
+    // Same per-attempt budget as the v4 get_public_ip path
+    let timeout = Duration::from_secs(5);
+
+    for url in PUBLIC_IP_V6_URLS {
+        match fetch_ip_from_url((*url).to_string(), timeout).await {
+            // The endpoints are v6-only so a v4 answer should be
+            // impossible; skip such an endpoint rather than mislabel it.
+            Ok(IpAddr::V6(v6)) => return Ok(v6),
+            Ok(IpAddr::V4(_)) | Err(_) => continue,
         }
     }
 
