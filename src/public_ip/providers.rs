@@ -271,18 +271,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_timeout_handling() {
-        let very_short_timeout = Duration::from_millis(1);
-        let result =
-            get_public_ip_from_provider(PublicIpProvider::AwsCheckIp, very_short_timeout).await;
+        // Hermetic timeout test: a local listener that accepts connections
+        // but never responds guarantees the request cannot complete,
+        // regardless of network conditions or ureq's sub-millisecond timer
+        // behavior (a live 1ms-timeout variant of this test flaked on CI).
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("bind local test listener");
+        let port = listener
+            .local_addr()
+            .expect("local listener has an address")
+            .port();
+        // Keep the listener alive but never accept/respond.
+        let url = format!("http://127.0.0.1:{port}/");
 
-        assert!(result.is_err());
+        let result = fetch_ip_from_url(url, Duration::from_millis(100)).await;
 
-        let err = result.expect_err("1ms timeout should fail");
+        let err = result.expect_err("unresponsive endpoint must time out");
         assert!(
             matches!(err, PublicIpError::Timeout | PublicIpError::HttpError(_)),
             "Unexpected error type: {}",
             err
         );
+        drop(listener);
     }
 
     #[test]
