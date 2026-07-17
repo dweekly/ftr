@@ -10,12 +10,14 @@ pub(crate) mod bsd;
 pub(crate) mod factory;
 pub(crate) mod icmp;
 // The ICMPv6 codec is platform-neutral and its unit tests run everywhere,
-// but only the macOS socket path consumes it so far (Linux/Windows/BSD v6
-// support is planned) — silence dead_code off-macOS until then.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+// but only the macOS and Linux socket paths consume it so far (Windows/BSD
+// v6 support is planned) — silence dead_code elsewhere until then.
+#[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))]
 pub(crate) mod icmpv6;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "linux")]
+pub(crate) mod linux_v6;
 #[cfg(target_os = "macos")]
 pub(crate) mod macos;
 #[cfg(target_os = "macos")]
@@ -30,7 +32,10 @@ use serde::{Deserialize, Serialize};
 /// IP version to use for probing
 ///
 /// IPv4 is supported on all platforms. IPv6 probing is currently supported
-/// on macOS (unprivileged DGRAM ICMPv6); other platforms return
+/// on macOS (unprivileged DGRAM ICMPv6) and Linux (unprivileged UDP with
+/// `IPV6_RECVERR` by default, ICMPv6 ping sockets where
+/// `net.ipv4.ping_group_range` permits, raw ICMPv6 as root); other
+/// platforms return
 /// [`TracerouteError::Ipv6NotSupported`](crate::TracerouteError::Ipv6NotSupported)
 /// for IPv6 targets until their implementations land.
 ///

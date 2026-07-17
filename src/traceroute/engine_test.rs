@@ -359,3 +359,106 @@ async fn test_engine_uses_injected_services_for_enrichment() {
     assert_eq!(isp.asn, 64512);
     assert_eq!(isp.hostname.as_deref(), Some("sentinel.rdns.test"));
 }
+
+/// v6 on-link LAN classification (`classify_v6_hop`): the shared-/64
+/// heuristic plus the internal-scope rules, platform-independent.
+mod classify_v6_hop {
+    use crate::traceroute::AsnInfo;
+    use crate::traceroute::SegmentType;
+    use crate::traceroute::engine::TracerouteEngine;
+    use std::net::Ipv6Addr;
+
+    /// The maintainer's own topology (docs/IPV6_DESIGN.md live trace):
+    /// host source and gateway share the delegated /64.
+    const LOCAL_SOURCE: Ipv6Addr = Ipv6Addr::new(
+        0x2001, 0x5a8, 0x4681, 0x2c00, 0x41b1, 0x1c86, 0xaee8, 0x0e97,
+    );
+    const GATEWAY: Ipv6Addr = Ipv6Addr::new(0x2001, 0x5a8, 0x4681, 0x2c00, 0, 0, 0, 1);
+    /// Sonic's first upstream hop — same ISP, different /64.
+    const ISP_HOP: Ipv6Addr = Ipv6Addr::new(0x2001, 0x5a8, 0x657, 0x21, 0, 0, 0xf0, 4);
+
+    fn sonic_asn() -> AsnInfo {
+        AsnInfo {
+            asn: 46375,
+            prefix: "2001:5a8::/32".to_string(),
+            country_code: "US".to_string(),
+            registry: "arin".to_string(),
+            name: "AS-SONICTELECOM".to_string(),
+        }
+    }
+
+    #[test]
+    fn gateway_in_same_slash64_is_lan() {
+        // The gateway answers from a global address in the delegated
+        // prefix; even with the ISP's ASN attached it must be LAN.
+        let mut in_isp = false;
+        let segment = TracerouteEngine::classify_v6_hop(
+            &GATEWAY,
+            Some(&LOCAL_SOURCE),
+            Some(&sonic_asn()),
+            Some(46375),
+            None,
+            &mut in_isp,
+        );
+        assert_eq!(segment, SegmentType::Lan);
+        assert!(!in_isp, "LAN hop must not open the ISP segment");
+    }
+
+    #[test]
+    fn different_slash64_same_isp_is_isp() {
+        // One /64 boundary out, ASN classification takes over.
+        let mut in_isp = false;
+        let segment = TracerouteEngine::classify_v6_hop(
+            &ISP_HOP,
+            Some(&LOCAL_SOURCE),
+            Some(&sonic_asn()),
+            Some(46375),
+            None,
+            &mut in_isp,
+        );
+        assert_eq!(segment, SegmentType::Isp);
+        assert!(in_isp);
+    }
+
+    #[test]
+    fn link_local_is_lan_regardless_of_source() {
+        let fe80: Ipv6Addr = "fe80::1".parse().expect("valid");
+        let mut in_isp = false;
+        // Even with no local source available, fe80::/10 stays LAN.
+        let segment = TracerouteEngine::classify_v6_hop(&fe80, None, None, None, None, &mut in_isp);
+        assert_eq!(segment, SegmentType::Lan);
+    }
+
+    #[test]
+    fn no_local_source_falls_back_to_asn_logic() {
+        // Without a local source the /64 heuristic is inert: the gateway
+        // address classifies by ASN (the pre-fix behavior).
+        let mut in_isp = false;
+        let segment = TracerouteEngine::classify_v6_hop(
+            &GATEWAY,
+            None,
+            Some(&sonic_asn()),
+            Some(46375),
+            None,
+            &mut in_isp,
+        );
+        assert_eq!(segment, SegmentType::Isp);
+    }
+
+    #[test]
+    fn prefix_match_is_exactly_64_bits() {
+        // 2001:5a8:4681:2c01::1 differs only in the 4th hextet (the /64
+        // boundary) — must NOT be treated as on-link.
+        let neighbor_prefix = Ipv6Addr::new(0x2001, 0x5a8, 0x4681, 0x2c01, 0, 0, 0, 1);
+        let mut in_isp = false;
+        let segment = TracerouteEngine::classify_v6_hop(
+            &neighbor_prefix,
+            Some(&LOCAL_SOURCE),
+            Some(&sonic_asn()),
+            Some(46375),
+            None,
+            &mut in_isp,
+        );
+        assert_eq!(segment, SegmentType::Isp);
+    }
+}

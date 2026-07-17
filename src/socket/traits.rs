@@ -20,11 +20,14 @@ pub enum ProbeMode {
     DgramIcmp,
     /// ICMP echo requests using Windows IcmpSendEcho2 API
     WindowsIcmp,
-    /// UDP probes with IP_RECVERR (Linux)
+    /// UDP probes with the socket error queue (Linux): `IP_RECVERR` for
+    /// IPv4 targets, `IPV6_RECVERR` for IPv6 targets
     UdpWithRecverr,
-    /// Raw ICMP sockets (fallback)
+    /// Raw ICMP/ICMPv6 sockets (fallback; requires root/CAP_NET_RAW)
     RawIcmp,
-    /// ICMPv6 echo requests using DGRAM sockets (macOS, unprivileged)
+    /// ICMPv6 echo requests using DGRAM sockets, unprivileged: macOS
+    /// (Darwin DGRAM ICMPv6) and Linux (ping sockets, gated by
+    /// `net.ipv4.ping_group_range`)
     // Appended last: inserting variants mid-enum shifts existing
     // discriminants, which cargo-semver-checks flags as breaking.
     DgramIcmpv6,

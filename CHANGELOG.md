@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Linux IPv6 traceroute (`-6`), mirroring the IPv4 mode ladder: unprivileged
+  UDP with `IPV6_RECVERR` (the default — works with stock sysctls, no root),
+  ICMPv6 ping sockets where `net.ipv4.ping_group_range` permits (the kernel
+  assigns the echo identifier; matching is per-socket by sequence), and raw
+  ICMPv6 as root/CAP_NET_RAW. Kernel behavior validated live on Ubuntu
+  24.04 / kernel 6.8 (`examples/spike_linux_v6.rs`, `docs/IPV6_DESIGN.md`)
+
+### Fixed
+- IPv6 hops sharing the trace's local /64 (e.g. a home gateway answering
+  from its global address inside the delegated prefix) now classify as LAN
+  instead of ISP, on all platforms; link-local and ULA hops stay LAN
+
 ## [0.8.0] - 2026-07-16
 
 The API-stability release: Rust edition 2024, a breaking public-API cleanup
