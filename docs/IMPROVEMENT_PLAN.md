@@ -105,29 +105,23 @@ before/after `cargo tree` counts in the body.
   network tests behind an env var and serialize them (SwiftFTR's
   `NetworkTestGate` pattern) instead of letting them flake CI.
 
-## IPv6 support (release train, closes issue #22)
+## IPv6: remaining platform + polish work
 
-Design and macOS kernel behavior are validated — see `docs/IPV6_DESIGN.md`
-(spikes in `examples/spike_*.rs`, PR #27). Key validated facts: unprivileged
-DGRAM ICMPv6 on macOS receives Time Exceeded directly (no root needed, unlike
-v4); Darwin does NOT demux v6 replies by echo identifier, so userspace id
-filtering is mandatory; `ICMP6_FILTER` works via raw `setsockopt` (constant 18
-from the macOS SDK, absent from libc/socket2); kernel computes ICMPv6
-checksums on DGRAM; STUN v6 and Cymru `origin6` ASN lookups verified live.
+macOS, Linux, and BSD IPv6 shipped in 0.9.0 (PRs #38–#43). Remaining:
 
-Remaining before integration:
-- Validate Linux (do ping sockets rewrite ids? filter semantics inverted?),
-  Windows (`Icmp6SendEcho2`), and BSD behavior — run the spikes there
-  (Parallels VMs / trogdor; GitHub cloud runners have no public IPv6, so live
-  v6 tests must be env-gated).
-- Root-mode RAW-vs-DGRAM comparison on macOS: `sudo cargo run --example
-  spike_traceroute6` (spike auto-detects euid 0).
-
-Bundle v6 trace + v6 ASN enrichment in one release (each is a half-feature
-alone); STUN v6 can trail. Contracts (from SwiftFTR, full list in the design
-doc): canonical `inet_ntop`-stable address strings; never strip `%zone` from
-link-local; single family-agnostic entry point; family in error *context*, not
-error type; `--preferred-family`/auto selection with `AI_V4MAPPED` for NAT64.
+- Windows IPv6 via `Icmp6SendEcho2`, mirroring the v4 `IcmpSendEcho2`
+  implementation. Validate live on the `nwx-dell-11` Tailscale box (local
+  Parallels is unreliable); also pay down the ~16 dead-code lints visible
+  only under a Windows-target `clippy --all-targets` (CI's clippy job runs
+  on Ubuntu and never compiles windows.rs — consider a windows-target
+  clippy cross-check in CI).
+- Open observations: router-originated ICMPv6 Time Exceeded on FreeBSD
+  remains unobserved first-hand (CI VM has no external v6); macOS root-mode
+  RAW-vs-DGRAM comparison (`sudo cargo run --release --example
+  spike_traceroute6`).
+- Polish: NAT64/DNS64 handling review (`AI_V4MAPPED`-style synthesis for
+  v4 literals on v6-only networks); first-class zone-scoped (`fe80::%if`)
+  targets; hop-level zone display.
 
 ## Feature ports from SwiftFTR (optional, by appetite)
 

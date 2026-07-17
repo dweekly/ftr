@@ -15,6 +15,7 @@ A fast, parallel traceroute implementation with automatic ASN lookup. Available 
 - **ASN Enrichment** - Automatic AS number and organization lookup with caching
 - **ISP Detection** - Identifies your ISP and classifies network segments
 - **Cross-Platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
+- **IPv6** - Full IPv6 traceroute with v6 ASN/rDNS/STUN enrichment (`-6`); no root needed on macOS or Linux (Windows IPv6 planned)
 - **Multiple Protocols** - ICMP and UDP support with automatic fallback
 - **JSON Output** - Structured output for programmatic use
 - **Minimal Dependencies** - Efficient design with focus on performance
@@ -275,6 +276,7 @@ ftr example.com -m 20 -W 5000
 
 ### Options
 
+- `-4` / `-6` - Force IPv4 or IPv6 (default: auto — v4 preferred for dual-stack targets)
 - `-s, --start-ttl <START_TTL>` - Starting TTL value (default: 1)
 - `-m, --max-hops <MAX_HOPS>` - Maximum number of hops (default: 30)
 - `--probe-timeout-ms <MS>` - Timeout for individual probes in milliseconds (default: 1000)
@@ -326,11 +328,13 @@ Detected ISP from public IP 192.184.165.158: AS46375 (AS-SONICTELECOM, US)
 
 ### Privilege Requirements
 
-Privilege requirements vary by mode and platform:
-- **ICMP modes**: Root or ping_group_range configuration
-- **UDP mode**: 
-  - Linux: No privileges required (uses `IP_RECVERR`)
+Privilege requirements vary by mode, family, and platform:
+- **ICMP modes (IPv4)**: Root or ping_group_range configuration
+- **ICMPv6 on macOS**: No privileges required (unprivileged DGRAM ICMPv6)
+- **UDP mode**:
+  - Linux: No privileges required, IPv4 and IPv6 (`IP_RECVERR`/`IPV6_RECVERR`)
   - Other platforms: Root (needs raw socket for ICMP responses)
+- **BSDs**: Root for all traceroute operations, both families
 
 On Linux, you can enable DGRAM ICMP for non-root users:
 ```bash
