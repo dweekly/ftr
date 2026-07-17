@@ -37,8 +37,9 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
 // Re-export commonly used types
+pub use api::resolve_target_with_family;
 pub use api::{Traceroute, trace_async as trace, trace_with_config_async as trace_with_config};
-pub use config::{TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
+pub use config::{PreferredFamily, TimingConfig, TracerouteConfig, TracerouteConfigBuilder};
 pub use error::{ConfigError, TracerouteError};
 pub use result::{TracerouteProgress, TracerouteResult};
 pub use types::{ClassifiedHopInfo, IspInfo, RawHopInfo};
@@ -95,6 +96,24 @@ pub fn is_internal_ip(ip: &Ipv4Addr) -> bool {
 pub fn is_cgnat(ip: &Ipv4Addr) -> bool {
     let octets = ip.octets();
     octets[0] == 100 && (64..=127).contains(&octets[1])
+}
+
+/// Checks if an IPv6 address is within private/internal ranges — the
+/// LAN-equivalent scopes for segment classification:
+///
+/// - loopback `::1` (RFC 4291 section 2.5.3)
+/// - link-local unicast `fe80::/10` (RFC 4291 section 2.5.6)
+/// - unique local addresses `fc00::/7` (RFC 4193 section 3.1)
+///
+/// Bit checks are written out explicitly (rather than via the
+/// `Ipv6Addr::is_*` helpers) so each range is auditable against its RFC.
+pub fn is_internal_ipv6(ip: &std::net::Ipv6Addr) -> bool {
+    let first_segment = ip.segments()[0];
+    ip.is_loopback()
+        // fe80::/10: top 10 bits are 1111 1110 10
+        || (first_segment & 0xffc0) == 0xfe80
+        // fc00::/7: top 7 bits are 1111 110
+        || (first_segment & 0xfe00) == 0xfc00
 }
 
 /// Parse an ASN string into components
@@ -223,6 +242,39 @@ mod tests {
         // Other IPs
         assert!(!is_cgnat(&"8.8.8.8".parse().unwrap()));
         assert!(!is_cgnat(&"192.168.1.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_is_internal_ipv6() {
+        use std::net::Ipv6Addr;
+        // Loopback
+        assert!(is_internal_ipv6(&Ipv6Addr::LOCALHOST));
+        // Link-local fe80::/10 spans fe80:: through febf:ffff:...
+        assert!(is_internal_ipv6(&"fe80::1".parse::<Ipv6Addr>().unwrap()));
+        assert!(is_internal_ipv6(
+            &"febf:ffff::1".parse::<Ipv6Addr>().unwrap()
+        ));
+        // Just outside link-local
+        assert!(!is_internal_ipv6(&"fec0::1".parse::<Ipv6Addr>().unwrap()));
+        assert!(!is_internal_ipv6(&"fe7f::1".parse::<Ipv6Addr>().unwrap()));
+        // ULA fc00::/7 spans fc00:: through fdff:ffff:...
+        assert!(is_internal_ipv6(&"fc00::1".parse::<Ipv6Addr>().unwrap()));
+        assert!(is_internal_ipv6(
+            &"fd12:3456:789a::1".parse::<Ipv6Addr>().unwrap()
+        ));
+        assert!(is_internal_ipv6(
+            &"fdff:ffff::ffff".parse::<Ipv6Addr>().unwrap()
+        ));
+        // Just outside ULA
+        assert!(!is_internal_ipv6(&"fbff::1".parse::<Ipv6Addr>().unwrap()));
+        // Global unicast and unspecified are not internal
+        assert!(!is_internal_ipv6(
+            &"2001:4860:4860::8888".parse::<Ipv6Addr>().unwrap()
+        ));
+        assert!(!is_internal_ipv6(
+            &"2606:4700::1".parse::<Ipv6Addr>().unwrap()
+        ));
+        assert!(!is_internal_ipv6(&Ipv6Addr::UNSPECIFIED));
     }
 
     #[test]

@@ -24,6 +24,10 @@ pub enum ProbeMode {
     UdpWithRecverr,
     /// Raw ICMP sockets (fallback)
     RawIcmp,
+    /// ICMPv6 echo requests using DGRAM sockets (macOS, unprivileged)
+    // Appended last: inserting variants mid-enum shifts existing
+    // discriminants, which cargo-semver-checks flags as breaking.
+    DgramIcmpv6,
 }
 
 /// Trait for probe sockets

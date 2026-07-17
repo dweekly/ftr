@@ -457,54 +457,43 @@ impl TracerouteEngine {
                         let hostname = enrichment.and_then(|e| e.hostname.clone());
                         let asn_info = enrichment.and_then(|e| e.asn_info.clone());
 
-                        // Classify segment
-                        let segment = if let IpAddr::V4(ipv4) = addr {
-                            if crate::traceroute::is_internal_ip(&ipv4) {
-                                SegmentType::Lan
-                            } else if crate::traceroute::is_cgnat(&ipv4) {
-                                in_isp_segment = true;
-                                SegmentType::Isp
-                            } else {
-                                // Public IP classification requires ISP and/or destination ASN
-                                if let Some(ref asn) = asn_info {
-                                    // ISP boundary check if known
-                                    if let Some(isp) = isp_asn {
-                                        if asn.asn == isp {
-                                            in_isp_segment = true;
-                                            SegmentType::Isp
-                                        } else if let Some(ref dest) = dest_asn {
-                                            if asn.asn == dest.asn {
-                                                SegmentType::Destination
-                                            } else {
-                                                SegmentType::Transit
-                                            }
-                                        } else {
-                                            // ISP known but not this AS; without dest ASN, mark as TRANSIT
-                                            SegmentType::Transit
-                                        }
-                                    } else if let Some(ref dest) = dest_asn {
-                                        if asn.asn == dest.asn {
-                                            SegmentType::Destination
-                                        } else if in_isp_segment {
-                                            SegmentType::Transit
-                                        } else {
-                                            SegmentType::Unknown
-                                        }
-                                    } else if in_isp_segment {
-                                        SegmentType::Transit
-                                    } else {
-                                        SegmentType::Unknown
-                                    }
-                                } else if in_isp_segment {
-                                    // Public IP after ISP without ASN = likely IXP/peering point
-                                    SegmentType::Transit
+                        // Classify segment. Private/internal ranges are LAN
+                        // for both families; CGNAT is v4-only; public
+                        // addresses share the ASN-based classification.
+                        let segment = match addr {
+                            IpAddr::V4(ipv4) => {
+                                if crate::traceroute::is_internal_ip(&ipv4) {
+                                    SegmentType::Lan
+                                } else if crate::traceroute::is_cgnat(&ipv4) {
+                                    in_isp_segment = true;
+                                    SegmentType::Isp
                                 } else {
-                                    // Public IP without ASN before ISP boundary = assume transit
-                                    SegmentType::Transit
+                                    Self::classify_public_hop(
+                                        asn_info.as_ref(),
+                                        isp_asn,
+                                        dest_asn.as_ref(),
+                                        &mut in_isp_segment,
+                                    )
                                 }
                             }
-                        } else {
-                            SegmentType::Unknown
+                            IpAddr::V6(ipv6) => {
+                                if crate::traceroute::is_internal_ipv6(&ipv6) {
+                                    // Link-local (fe80::/10) and ULA
+                                    // (fc00::/7) hops are LAN-equivalent.
+                                    SegmentType::Lan
+                                } else {
+                                    // Global unicast: same ASN logic as v4.
+                                    // Absent ASN data (e.g. v6 enrichment
+                                    // unavailable) this degrades gracefully
+                                    // to TRANSIT/UNKNOWN, never panics.
+                                    Self::classify_public_hop(
+                                        asn_info.as_ref(),
+                                        isp_asn,
+                                        dest_asn.as_ref(),
+                                        &mut in_isp_segment,
+                                    )
+                                }
+                            }
                         };
 
                         hop_infos.push(ClassifiedHopInfo {
@@ -551,7 +540,10 @@ impl TracerouteEngine {
 
         // Determine protocol and socket mode
         let (protocol_used, socket_mode_used) = match self.socket.mode() {
-            crate::socket::traits::ProbeMode::DgramIcmp => (ProbeProtocol::Icmp, SocketMode::Dgram),
+            crate::socket::traits::ProbeMode::DgramIcmp
+            | crate::socket::traits::ProbeMode::DgramIcmpv6 => {
+                (ProbeProtocol::Icmp, SocketMode::Dgram)
+            }
             crate::socket::traits::ProbeMode::WindowsIcmp => (ProbeProtocol::Icmp, SocketMode::Raw),
             crate::socket::traits::ProbeMode::UdpWithRecverr => {
                 (ProbeProtocol::Udp, SocketMode::Dgram)
@@ -576,6 +568,57 @@ impl TracerouteEngine {
             destination_reached,
             total_duration: elapsed,
         })
+    }
+
+    /// Classify a public (non-private, non-CGNAT) hop of either address
+    /// family from its ASN relative to the ISP and destination ASNs.
+    ///
+    /// `in_isp_segment` is set when the hop is inside the ISP's AS so later
+    /// unclassifiable hops lean TRANSIT rather than UNKNOWN. All inputs are
+    /// optional: with no ASN data at all this returns TRANSIT/UNKNOWN,
+    /// which the sandwich pass may later refine.
+    fn classify_public_hop(
+        asn_info: Option<&AsnInfo>,
+        isp_asn: Option<u32>,
+        dest_asn: Option<&AsnInfo>,
+        in_isp_segment: &mut bool,
+    ) -> SegmentType {
+        if let Some(asn) = asn_info {
+            // ISP boundary check if known
+            if let Some(isp) = isp_asn {
+                if asn.asn == isp {
+                    *in_isp_segment = true;
+                    SegmentType::Isp
+                } else if let Some(dest) = dest_asn {
+                    if asn.asn == dest.asn {
+                        SegmentType::Destination
+                    } else {
+                        SegmentType::Transit
+                    }
+                } else {
+                    // ISP known but not this AS; without dest ASN, mark as TRANSIT
+                    SegmentType::Transit
+                }
+            } else if let Some(dest) = dest_asn {
+                if asn.asn == dest.asn {
+                    SegmentType::Destination
+                } else if *in_isp_segment {
+                    SegmentType::Transit
+                } else {
+                    SegmentType::Unknown
+                }
+            } else if *in_isp_segment {
+                SegmentType::Transit
+            } else {
+                SegmentType::Unknown
+            }
+        } else if *in_isp_segment {
+            // Public IP after ISP without ASN = likely IXP/peering point
+            SegmentType::Transit
+        } else {
+            // Public IP without ASN before ISP boundary = assume transit
+            SegmentType::Transit
+        }
     }
 
     /// Apply sandwich logic: if Unknown/Transit hops are between two hops of the same segment type,

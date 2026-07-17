@@ -145,9 +145,9 @@ pub mod traceroute;
 // Re-export core types for library users
 pub use socket::{IpVersion, ProbeMode, ProbeProtocol, SocketMode};
 pub use traceroute::{
-    AsnInfo, ClassifiedHopInfo, ConfigError, IspInfo, RawHopInfo, SegmentType, TimingConfig,
-    Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError, TracerouteProgress,
-    TracerouteResult, trace, trace_with_config,
+    AsnInfo, ClassifiedHopInfo, ConfigError, IspInfo, PreferredFamily, RawHopInfo, SegmentType,
+    TimingConfig, Traceroute, TracerouteConfig, TracerouteConfigBuilder, TracerouteError,
+    TracerouteProgress, TracerouteResult, resolve_target_with_family, trace, trace_with_config,
 };
 
 // Re-export API
