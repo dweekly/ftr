@@ -7,26 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-17
+
+IPv6 support (closes #22): full-parity IPv6 traceroute with ASN, reverse
+DNS, and STUN enrichment — unprivileged on macOS and Linux, root on the
+BSDs. Windows IPv6 follows in a later release (`-6` there returns a typed
+`Ipv6NotSupported` error). All macOS/Linux kernel behavior was validated
+live before implementation (`docs/IPV6_DESIGN.md`).
+
 ### Added
-- Linux IPv6 traceroute (`-6`), mirroring the IPv4 mode ladder: unprivileged
-  UDP with `IPV6_RECVERR` (the default — works with stock sysctls, no root),
-  ICMPv6 ping sockets where `net.ipv4.ping_group_range` permits (the kernel
-  assigns the echo identifier; matching is per-socket by sequence), and raw
-  ICMPv6 as root/CAP_NET_RAW. Kernel behavior validated live on Ubuntu
-  24.04 / kernel 6.8 (`examples/spike_linux_v6.rs`, `docs/IPV6_DESIGN.md`)
-- FreeBSD/OpenBSD/NetBSD/DragonFly IPv6 traceroute (`-6`) via raw ICMPv6
-  sockets — root required, matching the BSDs' IPv4 behavior (they have no
-  unprivileged ICMP sockets of either family). The kernel computes the
-  ICMPv6 checksum on raw v6 sockets (RFC 3542 section 3.1; FreeBSD ip6(4))
-  and an `ICMP6_FILTER` (optname 18 in each BSD's `netinet6/in6.h`, bit
-  set = PASS) sheds noise on FreeBSD/OpenBSD. Exercised by CI's FreeBSD VM
-  (loopback v6; the VM has no external IPv6); OpenBSD/NetBSD/DragonFly are
-  best-effort and untested
+- IPv6 traceroute (`-6`, or automatic for v6-only targets) with per-hop
+  ASN, reverse DNS (`ip6.arpa`), and LAN/ISP/TRANSIT/DESTINATION segments
+- macOS: unprivileged DGRAM ICMPv6 — IPv6 traces need NO root on macOS
+  (unlike v4 raw); the kernel computes checksums, Time Exceeded arrives on
+  the normal receive path, and ftr filters by echo identifier in userspace
+  (Darwin does not demux ICMPv6 by id; `ICMP6_FILTER` constant 18 sheds
+  NDP noise)
+- Linux IPv6 mode ladder mirroring v4: unprivileged UDP with
+  `IPV6_RECVERR` (default — works with stock sysctls), ICMPv6 ping sockets
+  where `net.ipv4.ping_group_range` permits (kernel-assigned identifiers,
+  per-socket sequence matching), raw ICMPv6 as root. Validated live on
+  Ubuntu 24.04 / kernel 6.8 (`examples/spike_linux_v6.rs`)
+- FreeBSD/OpenBSD/NetBSD/DragonFly IPv6 via raw ICMPv6 (root, matching
+  their v4 posture); kernel checksums per RFC 3542 §3.1; exercised by CI's
+  FreeBSD VM on loopback (no external v6 on GitHub runners);
+  OpenBSD/NetBSD/DragonFly best-effort
+- `-4`/`-6` CLI flags and `PreferredFamily` config (Auto prefers v4 for
+  dual-stack targets; existing v4 behavior byte-identical)
+- IPv6 ASN lookups via Team Cymru `origin6` (nibble-reversed queries) with
+  offline short-circuits for reserved ranges (link-local, ULA, loopback,
+  documentation, v4-mapped defers to the v4 path)
+- STUN over IPv6 (XOR-MAPPED-ADDRESS family 0x02) and a both-families API:
+  `StunClient::{get_public_ip_v4, get_public_ip_v6, get_public_ips}`,
+  `Ftr::{get_public_ip_v6, get_public_ips}`, `PublicIps { v4, v6 }`
+  (parallel, never-throws); IPv6 ISP detection
+- ICMPv6 codec with embedded-identifier validation inside Time
+  Exceeded/Unreachable payloads; RFC 5952-canonical address output;
+  link-local `%zone` never stripped
+
+### Changed
+- **BREAKING**: `TracerouteConfig` is `#[non_exhaustive]` — construct via
+  `TracerouteConfig::builder()` or `Default`, not struct literals (a
+  `preferred_family` field was added; the builder path is unaffected)
 
 ### Fixed
+- HTTPS public-IP fallback panicked at runtime: ureq 3 defaults to a
+  Rustls TLS provider this crate does not compile in; the agent now
+  selects native-tls explicitly (all providers re-verified live)
 - IPv6 hops sharing the trace's local /64 (e.g. a home gateway answering
   from its global address inside the delegated prefix) now classify as LAN
-  instead of ISP, on all platforms; link-local and ULA hops stay LAN
+  instead of ISP; link-local and ULA hops stay LAN
+- Multi-origin Team Cymru payloads ("15169 36040 | ...") now yield the
+  first ASN instead of silently parsing as ASN 0
 
 ## [0.8.0] - 2026-07-16
 
@@ -574,7 +606,8 @@ let ftr = Ftr::with_caches(Some(asn_cache), None, None);
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/dweekly/ftr/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dweekly/ftr/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/dweekly/ftr/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dweekly/ftr/compare/v0.5.0...v0.6.0

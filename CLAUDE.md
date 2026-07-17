@@ -73,10 +73,10 @@ git config core.hooksPath .githooks
 
 | Platform | Socket Mode | Root Required | Notes |
 |----------|-------------|---------------|-------|
-| macOS    | Raw ICMP    | Yes           | Raw socket access |
-| Linux    | Raw/DGRAM/UDP | No (UDP via IP_RECVERR) | Unprivileged UDP traceroute supported |
-| FreeBSD/OpenBSD | Raw ICMP | Yes | Requires root for all operations |
-| Windows  | Win32 ICMP API | No | Uses IcmpSendEcho, not raw sockets |
+| macOS    | v4: Raw ICMP; v6: DGRAM ICMPv6 | v4: Yes; v6: No | v6 needs no root (Darwin unprivileged DGRAM ICMPv6) |
+| Linux    | Raw/DGRAM/UDP (v4+v6) | No (UDP via IP(V6)_RECVERR) | Unprivileged UDP traceroute both families |
+| FreeBSD/OpenBSD | Raw ICMP (v4+v6) | Yes | Requires root for all operations |
+| Windows  | Win32 ICMP API (v4 only) | No | Uses IcmpSendEcho; IPv6 planned (Icmp6SendEcho2) |
 
 ## CI Pipeline
 
