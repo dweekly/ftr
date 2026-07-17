@@ -203,6 +203,97 @@ fn test_freebsd_setuid_suggestion() {
         .stderr(predicate::str::contains("sudo chmod u+s"));
 }
 
+#[test]
+fn test_freebsd_ipv6_loopback_trace_with_root() {
+    // Raw ICMPv6 to ::1 needs no external IPv6 connectivity, so this runs
+    // in the CI VM (which has none) and exercises the full v6 probe path:
+    // send with kernel-computed checksum, receive starting at the ICMPv6
+    // header, userspace id/seq demux on the echo reply.
+    if !is_running_as_root() {
+        eprintln!("Skipping test_freebsd_ipv6_loopback_trace_with_root - not running as root");
+        return;
+    }
+
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
+    cmd.args(["--max-hops", "1", "--no-enrich", "::1"]);
+
+    cmd.assert()
+        .success()
+        .stdout(predicate::str::contains("::1"));
+}
+
+#[test]
+fn test_freebsd_ipv6_verbose_mode_with_root() {
+    if !is_running_as_root() {
+        eprintln!("Skipping test_freebsd_ipv6_verbose_mode_with_root - not running as root");
+        return;
+    }
+
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
+    cmd.args(["-v", "--max-hops", "1", "--no-enrich", "::1"]);
+
+    cmd.assert()
+        .success()
+        .stderr(predicate::str::contains("Using raw ICMPv6 mode"));
+}
+
+#[test]
+fn test_freebsd_ipv6_requires_root() {
+    // Without root the raw-only v6 path must fail with the root-privilege
+    // message (the CLI's up-front gate), never a crash or a v6-specific
+    // "not supported" claim.
+    if is_running_as_root() {
+        eprintln!("Skipping test_freebsd_ipv6_requires_root - running as root");
+        return;
+    }
+
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
+    cmd.args(["--max-hops", "1", "::1"]);
+
+    cmd.assert()
+        .failure()
+        .stderr(predicate::str::contains("requires root privileges"));
+}
+
+#[test]
+fn test_freebsd_ipv6_external_trace_with_root() {
+    // Live external IPv6 trace — only meaningful when the host actually
+    // has IPv6 connectivity, which GitHub-hosted CI VMs do not. Probe the
+    // routing table first (UDP connect() is a local operation: it fails
+    // with EHOSTUNREACH/ENETUNREACH when there is no v6 route) and skip
+    // cleanly otherwise, per the design doc's recommendation.
+    if !is_running_as_root() {
+        eprintln!("Skipping test_freebsd_ipv6_external_trace_with_root - not running as root");
+        return;
+    }
+    if !has_ipv6_route() {
+        eprintln!(
+            "Skipping test_freebsd_ipv6_external_trace_with_root - no IPv6 route to the Internet \
+             (expected in CI VMs; run on a dual-stack host to exercise this)"
+        );
+        return;
+    }
+
+    let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
+    // Google Public DNS IPv6 anycast, the same target the validation
+    // spikes used. Success here means the trace ran; individual hops may
+    // still time out, which is normal traceroute behavior.
+    cmd.args(["--max-hops", "12", "--no-enrich", "2001:4860:4860::8888"]);
+
+    cmd.assert().success();
+}
+
+/// Whether the host has a route to the public IPv6 Internet. UDP `connect`
+/// makes only a local routing decision (no packets are sent), so this is a
+/// safe, fast connectivity probe.
+fn has_ipv6_route() -> bool {
+    use std::net::UdpSocket;
+    match UdpSocket::bind("[::]:0") {
+        Ok(sock) => sock.connect("[2001:4860:4860::8888]:53").is_ok(),
+        Err(_) => false,
+    }
+}
+
 // Helper function to check if running as root
 fn is_running_as_root() -> bool {
     unsafe { libc::geteuid() == 0 }

@@ -84,8 +84,9 @@ async fn test_ipv6_target_platform_behavior() {
 
     // macOS (unprivileged DGRAM ICMPv6) and Linux (unprivileged UDP with
     // IPV6_RECVERR) both trace IPv6 without root: a loopback trace reaches
-    // ::1 in one hop, classified as LAN. Platforms without IPv6 probe
-    // support must surface the typed Ipv6NotSupported error.
+    // ::1 in one hop, classified as LAN. The BSDs trace IPv6 only via raw
+    // ICMPv6 (root required); platforms without IPv6 probe support must
+    // surface the typed Ipv6NotSupported error.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
         let trace = result.expect("IPv6 loopback trace should succeed unprivileged");
@@ -96,7 +97,41 @@ async fn test_ipv6_target_platform_behavior() {
         );
         println!("IPv6 loopback trace succeeded");
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(any(
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    ))]
+    {
+        if ftr::socket::utils::is_root() {
+            let trace = result.expect("IPv6 loopback trace should succeed as root");
+            assert!(trace.destination_reached, "::1 must be reachable");
+            assert_eq!(
+                trace.hops.first().and_then(|h| h.addr),
+                Some("::1".parse().expect("valid IPv6")),
+            );
+            println!("IPv6 loopback trace succeeded as root");
+        } else {
+            assert!(
+                matches!(
+                    &result,
+                    Err(TracerouteError::InsufficientPermissions { .. })
+                ),
+                "Expected InsufficientPermissions error, got: {:?}",
+                result
+            );
+            println!("Got expected InsufficientPermissions error (raw ICMPv6 needs root)");
+        }
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "linux",
+        target_os = "freebsd",
+        target_os = "openbsd",
+        target_os = "netbsd",
+        target_os = "dragonfly"
+    )))]
     {
         assert!(
             matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
