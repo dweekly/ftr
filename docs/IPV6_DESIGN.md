@@ -7,16 +7,20 @@ Design basis for adding IPv6 traceroute support to ftr
 paraphrased. The spikes stay in the repo as permanent diagnostics: re-run them
 whenever kernel, library, or network behavior is in question.
 
-**Validation environment:** macOS 26.5.1 (build 25F80), Apple Silicon (arm64),
+**Validation environments:** macOS 26.5.1 (build 25F80), Apple Silicon (arm64),
 rustc 1.97.0, socket2 0.6, dual-stack network with live public IPv6
-(Sonic fiber). Linux, Windows, FreeBSD, and OpenBSD behavior is **unvalidated**
-— see [Open questions](#open-questions-unvalidated-platforms).
+(Sonic fiber); Linux — Ubuntu 24.04.4 LTS, kernel 6.8.0-124-generic (x86_64),
+glibc 2.39, rustc 1.97.1, same socket2, native IPv6 on the same Sonic fiber
+(see [Validated findings (Linux)](#validated-findings-linux)). Windows,
+FreeBSD, and OpenBSD behavior is **unvalidated** — see
+[Open questions](#open-questions-unvalidated-platforms).
 
 Run all spikes with:
 
 ```bash
 cargo run --example spike_icmpv6_socket
 cargo run --example spike_traceroute6
+cargo run --example spike_linux_v6     # Linux-only sections; stub main elsewhere
 cargo run --example spike_stun6
 cargo run --example spike_asn6
 ```
@@ -184,6 +188,203 @@ TXT payload format is identical to the v4 `origin.asn.cymru.com` zone
 only the query-name construction differs (32 reversed nibbles vs 4 reversed
 octets).
 
+## Validated findings (Linux)
+
+All from `examples/spike_linux_v6.rs` on **trogdor**: Ubuntu 24.04.4 LTS,
+kernel `6.8.0-124-generic` (x86_64), glibc 2.39, rustc 1.97.1, run 2026-07-16.
+The host's `net.ipv4.ping_group_range` is the kernel default `1 0` — an empty
+range, so ping sockets are disabled for **every** gid (the system `ping`
+works via file capabilities instead). Because widening it needs root, the
+ping-socket sections were validated in a Docker container **on the same
+kernel** with the netns-scoped sysctl widened
+(`docker run --sysctl net.ipv4.ping_group_range="0 2147483647" ...` on a
+`docker network create --ipv6` network, NAT66 to real Internet routers).
+`ping_group_range` is per-network-namespace, so this exercises exactly the
+kernel code paths in question. The UDP sections ran directly on the host,
+fully unprivileged.
+
+### Ping sockets (SOCK_DGRAM, IPPROTO_ICMPV6)
+
+| Question | Verdict |
+|----------|---------|
+| Available unprivileged | **Only if `ping_group_range` covers your gid** — default `1 0` yields EACCES (os error 13); note the *ipv4-named* sysctl gates ICMPv6 ping sockets too |
+| Kernel rewrites the echo identifier | **YES** — sent id `0x1234`, wire/reply id is the kernel-assigned per-socket ident (= `getsockname` port) |
+| Kernel demuxes replies per-socket by ident | **YES** — two concurrent sockets each saw only their own reply (opposite of Darwin, which floods every DGRAM ICMPv6 socket) |
+| Received buffer starts at ICMPv6 header | **Yes** — first byte 129, same as Darwin |
+| Kernel computes checksum on send | **Yes** — zero-checksum sends got replies |
+| `IPV6_RECVHOPLIMIT` cmsg on normal path | **Works** (reply hop limit 108 from Google DNS) |
+
+Observed output (host, unprivileged, default sysctl):
+
+```
+[1] unprivileged socket availability:
+    RAW ICMPv6: Operation not permitted (os error 1) (os error Some(1))
+    DGRAM ICMPv6 (ping socket): Permission denied (os error 13) (os error Some(13))
+```
+
+Observed output (container, same kernel, sysctl widened, euid=1000):
+
+```
+[2] echo identifier rewrite on ping socket:
+    sent echo claiming id=0x1234 seq=1
+    getsockname port (= kernel-assigned icmp ident): Some("0x0001")
+    received 26 bytes from Some(2001:4860:4860::8888): type=129 id=0x0001 seq=1
+    first byte = 129 — buffer starts at ICMPv6 header (no IPv6 header prepended)
+    => kernel REWROTE the identifier (we sent 0x1234, reply carries 0x0001)
+
+[3] demux test: two ping sockets, distinct seq markers:
+    socket A ident=Some("0x0002") sent seq=41; socket B ident=Some("0x0003") sent seq=42
+    socket A: got reply id=0x0002 seq=41
+    socket A: own reply: true, foreign reply: false
+    socket B: got reply id=0x0003 seq=42
+    socket B: own reply: true, foreign reply: false
+```
+
+**Design consequence:** on Linux ping sockets the session cannot choose its
+own identifier — read it back via `getsockname` if it is ever reported, and
+match probes by **sequence number only** (safe because the kernel already
+isolates sockets by ident). The shared demux layer must support both models:
+Darwin = choose id, filter everything in userspace; Linux ping = kernel
+assigns id, per-socket isolation.
+
+### Time Exceeded delivery to ping sockets — errqueue ONLY
+
+| Question | Verdict |
+|----------|---------|
+| TE on the normal receive path | **NO** — nothing delivered within 3 s |
+| TE via `IPV6_RECVERR` + `MSG_ERRQUEUE` | **YES** — `sock_extended_err` with `ee_origin=3` (`SO_EE_ORIGIN_ICMP6`), `ee_type=3`, `ee_code=0`, `ee_errno=113` (EHOSTUNREACH) |
+| Offender (router) address | **Works** — `SO_EE_OFFENDER` sockaddr follows the `sock_extended_err`, exactly like ftr's v4 `src/socket/linux.rs` |
+| TE with `IPV6_RECVERR` off | **Dropped entirely** — normal path silent *and* errqueue empty |
+| ICMP error packet's hop limit | **Works** — `IPV6_HOPLIMIT` cmsg is attached to the errqueue message when `IPV6_RECVHOPLIMIT` is on |
+
+```
+[4] Time Exceeded delivery to ping socket (hop_limit=3):
+    phase A: plain ping socket, NO IPV6_RECVERR:
+    normal path: NOTHING within 3s
+    errqueue (RECVERR off): empty, as expected
+    phase B: ping socket WITH IPV6_RECVERR + IPV6_RECVHOPLIMIT:
+    errqueue: ee_errno=113 (No route to host (os error 113)) ee_origin=3 ee_type=3 ee_code=0 offender=Some(2001:5a8:657:21::f0:4) hoplimit_cmsg=Some(62)
+    => Time Exceeded ARRIVES on the error queue (origin_icmp6=true)
+    normal path: silent (error went only to the errqueue)
+```
+
+So the Linux v6 receive path is **errqueue-based regardless of probe type**
+(ICMP ping socket or UDP) — a clean mirror of ftr's existing v4 Linux UDP
+mode, and structurally different from Darwin (normal receive path).
+
+### ICMP6_FILTER — raw sockets only; semantics INVERTED vs BSD
+
+| Question | Verdict |
+|----------|---------|
+| Optname value | **1** (`/usr/include/linux/icmpv6.h:150` `ICMPV6_FILTER`, glibc `netinet/icmp6.h:26` `ICMP6_FILTER`) — Darwin uses 18 |
+| Works on ping sockets | **NO** — `setsockopt` fails with ENOPROTOOPT ("Protocol not available", os error 92) |
+| Bit semantics | **INVERTED vs BSD, empirically confirmed** on a raw socket: bit SET = **BLOCK** (glibc `ICMP6_FILTER_SETPASSALL` = memset 0, `SETBLOCKALL` = memset 0xFF, `netinet/icmp6.h:89-105`) |
+
+```
+[5] ICMP6_FILTER (optname 1, Linux bit=BLOCK semantics):
+    phase A: filter BLOCKS Echo Reply (bit 129 set); expect NO reply:
+    setsockopt(ICMPV6_FILTER) FAILED: Protocol not available (os error 92) — filter unusable here
+
+[7] RAW ICMPv6 socket tests:  (container root = CAP_NET_RAW)
+    c: ICMP6_FILTER positive control on the raw socket:
+    phase A: pass-all + BLOCK Time Exceeded (bit 3 set); expect NO TE:
+    setsockopt(ICMPV6_FILTER) OK
+    => TE delivered while bit 3 SET: false (false = bit means BLOCK)
+    phase B: pass-all (all bits clear); expect the TE again:
+    got TIME EXCEEDED from Some(2001:5a8:657:21::f0:4) embedded id=0x7777 seq=4 (reply hoplimit cmsg: Some(62))
+    => TE delivered with all bits CLEAR: true (true = clear means PASS)
+    => positive control PASSED: Linux ICMP6_FILTER semantics are INVERTED vs BSD (bit set = BLOCK)
+```
+
+Two-phase positive control as on macOS: the same probe yields no Time
+Exceeded with bit 3 set and yields it with the filter cleared, so the filter
+(not luck) caused the difference. **Design consequence:** the planned
+`ICMP6_FILTER` noise-shedding optimization applies to Darwin (DGRAM) and raw
+sockets, but NOT to Linux ping sockets — which don't need it anyway, since
+the kernel already delivers only the socket's own echo replies.
+
+### Raw ICMPv6 (root / CAP_NET_RAW)
+
+Validated as root inside the container (same kernel). Kernel computes the
+checksum on raw ICMPv6 sends too (zero-checksum echo got a reply), the raw
+receive buffer also starts at the ICMPv6 header, and — unlike ping sockets —
+**Time Exceeded arrives on the raw socket's normal receive path**, no
+errqueue needed:
+
+```
+[7] RAW ICMPv6 socket tests:
+    a: zero-checksum echo (does the kernel checksum raw v6 sends?):
+    got ECHO REPLY id=0x7777 seq=1 from Some(2001:4860:4860::8888) — raw buffer also starts at the ICMPv6 header
+    => reply to zero-checksum raw send: true (true = kernel computes ICMPv6 checksums on raw too)
+    b: hop-limited probe — Time Exceeded on NORMAL receive path?
+    got TIME EXCEEDED from Some(2001:5a8:657:21::f0:4) embedded id=0x7777 seq=2 (reply hoplimit cmsg: Some(62))
+    => RAW socket receives Time Exceeded on the normal path (no errqueue needed)
+```
+
+### UDP6 + IPV6_RECVERR — unprivileged Linux v6 traceroute WORKS
+
+**The make-or-break result.** Plain unprivileged UDP sockets with
+`IPV6_UNICAST_HOPS` per hop and `IPV6_RECVERR`, read via `MSG_ERRQUEUE` —
+identical structure to ftr's v4 Linux UDP mode — produce a complete real
+traceroute, run directly on the host with the default (ping-socket-disabled)
+sysctl, euid 1000:
+
+```
+[6] UDP6 + IPV6_RECVERR traceroute to 2001:4860:4860::8888 (ports 33434+hop, unprivileged):
+    hop  1: 2001:5a8:4681:2c00::1 ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(64) rtt=10.2ms
+    hop  2: 2001:5a8:657:21::f0:4 ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(63) rtt=10.2ms
+    hop  3: 2001:5a8:5:403f::f1:2 ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(62) rtt=10.1ms
+    hop  4: 2001:5a8:5:403f::e3:b ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(61) rtt=20.2ms
+    hop  5: 2001:5a8:5:403f::97:a ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(60) rtt=10.1ms
+    hop  6: 2001:5a8:5:40b0::b ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(59) rtt=10.1ms
+    hop  7: 2001:5a8:5:40b0::b ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(59) rtt=10.1ms
+    hop  8: 2001:5a8:5:403f::96:a ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(58) rtt=10.1ms
+    hop  9: * (no ICMPv6 error within 2s)
+    hop 10: * (no ICMPv6 error within 2s)
+    hop 11: * (no ICMPv6 error within 2s)
+    hop 12: 2001:5a8:5:403f::8a:a ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(53) rtt=10.2ms
+    hop 13: 2001:4860:1:1::3ab6 ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(243) rtt=10.3ms
+    hop 14: 2607:f8b0:85c1:c0::1 ee_type=3 ee_code=0 ee_errno=113 [time exceeded] hoplimit_cmsg=Some(47) rtt=10.3ms
+    hop 15: 2001:4860:4860::8888 ee_type=1 ee_code=4 ee_errno=111 [port unreachable (DESTINATION)] hoplimit_cmsg=Some(109) rtt=10.2ms
+    => DESTINATION REACHED at hop 15 — UDP6 mode WORKS
+```
+
+Notes:
+
+- Error-to-errno mapping matches v4: Time Exceeded surfaces as
+  `ee_errno=113` (EHOSTUNREACH), destination port unreachable as
+  `ee_errno=111` (ECONNREFUSED); the real ICMPv6 type/code are in
+  `ee_type`/`ee_code` and the router address in the `SO_EE_OFFENDER`
+  sockaddr — so `src/socket/linux.rs` generalizes to v6 by swapping
+  `IP_RECVERR`/`sockaddr_in` for `IPV6_RECVERR` (value 25,
+  `/usr/include/linux/in6.h:178`) / `sockaddr_in6` and the v4 type/code
+  checks (11/3-3) for v6 ones (3 / 1-4).
+- The `IPV6_HOPLIMIT` cmsg rides along on errqueue reads, so the
+  reply-hop-limit heuristic needs no extra socket on Linux.
+- Missing hops 9-11 are routers that rate-limit or don't emit v6 TE — normal
+  traceroute behavior, handled like v4 timeouts.
+
+### What needs root on Linux (recorded, not run)
+
+- **Enable ping sockets host-wide** (the container validation above makes
+  this optional for development, but production unprivileged ICMPv6 mode on
+  hosts like trogdor needs it):
+
+  ```bash
+  sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+  # persist:
+  echo 'net.ipv4.ping_group_range=0 2147483647' | sudo tee /etc/sysctl.d/99-ping.conf
+  ```
+
+- **Raw ICMPv6 on the host** (already validated via container CAP_NET_RAW,
+  same kernel; re-run on the host for completeness):
+
+  ```bash
+  sudo ./target/debug/examples/spike_linux_v6
+  ```
+
+  The spike auto-detects raw-socket availability and runs section [7].
+
 ## Design decisions for stage-6 integration
 
 ### Socket mode per platform
@@ -191,7 +392,7 @@ octets).
 | Platform | v6 probe socket | Root needed | Status |
 |----------|-----------------|-------------|--------|
 | macOS | `IPV6`/`DGRAM`/`ICMPV6` | **No** | **Validated here** |
-| Linux | `IPV6`/`DGRAM`/`ICMPV6` (ping socket, gated by `net.ipv4.ping_group_range`); fallback raw; UDP+`IPV6_RECVERR` for unprivileged UDP mode | Depends | Unvalidated |
+| Linux | UDP + `IPV6_RECVERR` errqueue (unprivileged, works with default sysctls); `IPV6`/`DGRAM`/`ICMPV6` ping socket + `IPV6_RECVERR` where `ping_group_range` allows (disabled by default: `1 0`); raw ICMPv6 as root | **No** (UDP mode) | **Validated here** |
 | Windows | `Icmp6SendEcho2` (IP Helper) | No | Unvalidated |
 | FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes (expected) | Unvalidated |
 
@@ -201,6 +402,14 @@ v4 on macOS, where ftr requires root for raw ICMP.
 ### Identifier/sequence demux strategy
 
 Because Darwin delivers **all** inbound ICMPv6 to every DGRAM ICMPv6 socket:
+
+On Linux the kernel inverts both assumptions (validated above): ping sockets
+get a **kernel-assigned** identifier (chosen ids are rewritten on the wire)
+and replies are **already demuxed per-socket**, so per-socket sequence
+matching suffices there; Time Exceeded arrives via the errqueue, carrying
+`ee_type`/`ee_code`/offender instead of an embedded invoking packet. The
+demux layer therefore takes per-platform strategies rather than assuming
+either model.
 
 - Assign a **unique ICMP identifier per concurrent traceroute session**
   (contract carried from SwiftFTR), and validate it on **every** receive path:
@@ -264,13 +473,6 @@ Because Darwin delivers **all** inbound ICMPv6 to every DGRAM ICMPv6 socket:
 Nothing below has been tested — these are hypotheses to validate by running
 the spikes on the target OS before implementing stage 6 there:
 
-- **Linux**: do ICMPv6 ping sockets (`IPPROTO_ICMPV6` DGRAM, gated by
-  `ping_group_range`) deliver Time Exceeded on the normal receive path, or
-  only via `IPV6_RECVERR`/`MSG_ERRQUEUE` like v4 UDP mode? Linux ping sockets
-  are documented to demux by identifier (kernel rewrites the id to a per-socket
-  value) — opposite of the Darwin finding, so the demux layer must not assume
-  either behavior. `ICMP6_FILTER` optname is 1 and semantics are inverted
-  (bit = block). The spikes compile on Linux; run them there.
 - **Windows**: `Icmp6SendEcho2` should make traceroute mechanics moot (the
   API handles TTL and reply matching), but hop-limit reporting and embedded
   payload access need checking. Spikes currently print
