@@ -689,7 +689,42 @@ impl ProbeSocket for LinuxAsyncPingV6Socket {
                 let mut retry_count = 0;
 
                 loop {
-                    // 1) Normal receive path: echo replies only (the kernel
+                    // 1) Error queue FIRST: Time Exceeded / Destination
+                    // Unreachable from intermediate routers. With
+                    // IPV6_RECVERR set, a pending error also makes plain
+                    // recv fail with the mapped errno (EHOSTUNREACH etc.)
+                    // until the errqueue is drained, so the errqueue must
+                    // be polled before the normal path.
+                    match check_errqueue_v6(fd) {
+                        ErrqueueCheck::Found(err) if err.ee_origin == SO_EE_ORIGIN_ICMP6 => {
+                            if let Some((offender, _scope_id)) = err.offender {
+                                let rtt = Instant::now().duration_since(sent_at);
+                                pending_count.fetch_sub(1, Ordering::Relaxed);
+                                // Echo probes signal destination via the
+                                // echo reply below; errqueue messages are
+                                // intermediate-hop errors (mirroring the
+                                // IPv4 raw path's TE/unreachable handling).
+                                let _ = tx.send(ProbeResponse {
+                                    from_addr: IpAddr::V6(offender),
+                                    sequence,
+                                    ttl,
+                                    rtt,
+                                    received_at: Instant::now(),
+                                    is_destination: false,
+                                    is_timeout: false,
+                                });
+                                break;
+                            }
+                        }
+                        ErrqueueCheck::Found(_) => {}
+                        ErrqueueCheck::Error => {
+                            pending_count.fetch_sub(1, Ordering::Relaxed);
+                            break;
+                        }
+                        ErrqueueCheck::NoData => {}
+                    }
+
+                    // 2) Normal receive path: echo replies (the kernel
                     // never delivers ICMPv6 errors here for ping sockets).
                     let mut buf = [std::mem::MaybeUninit::uninit(); RECV_BUFFER_SIZE];
                     match socket.recv_from(&mut buf) {
@@ -729,40 +764,12 @@ impl ProbeSocket for LinuxAsyncPingV6Socket {
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
                         Err(_) => {
-                            pending_count.fetch_sub(1, Ordering::Relaxed);
-                            break;
+                            // A pending socket error surfaces here as the
+                            // mapped errno (e.g. EHOSTUNREACH) — the real
+                            // answer is on the errqueue, dequeued on the
+                            // next iteration. Never fatal; the retry
+                            // budget bounds the loop.
                         }
-                    }
-
-                    // 2) Error queue: Time Exceeded / Destination
-                    // Unreachable from intermediate routers.
-                    match check_errqueue_v6(fd) {
-                        ErrqueueCheck::Found(err) if err.ee_origin == SO_EE_ORIGIN_ICMP6 => {
-                            if let Some((offender, _scope_id)) = err.offender {
-                                let rtt = Instant::now().duration_since(sent_at);
-                                pending_count.fetch_sub(1, Ordering::Relaxed);
-                                // Echo probes signal destination via the
-                                // echo reply above; errqueue messages are
-                                // intermediate-hop errors (mirroring the
-                                // IPv4 raw path's TE/unreachable handling).
-                                let _ = tx.send(ProbeResponse {
-                                    from_addr: IpAddr::V6(offender),
-                                    sequence,
-                                    ttl,
-                                    rtt,
-                                    received_at: Instant::now(),
-                                    is_destination: false,
-                                    is_timeout: false,
-                                });
-                                break;
-                            }
-                        }
-                        ErrqueueCheck::Found(_) => {}
-                        ErrqueueCheck::Error => {
-                            pending_count.fetch_sub(1, Ordering::Relaxed);
-                            break;
-                        }
-                        ErrqueueCheck::NoData => {}
                     }
 
                     retry_count += 1;
