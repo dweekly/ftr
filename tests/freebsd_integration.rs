@@ -40,9 +40,12 @@ fn test_freebsd_requires_root() {
 
 #[test]
 fn test_freebsd_no_dgram_icmp() {
-    // FreeBSD does not support DGRAM ICMP
+    // FreeBSD has no DGRAM ICMP sockets; the factory's BSD arm ignores
+    // mode preferences and always uses raw ICMP, so an explicit dgram
+    // request still traces successfully in raw mode (as root).
     let mut cmd = Command::cargo_bin("ftr").expect("ftr binary should be built");
     cmd.args([
+        "-v",
         "--socket-mode",
         "dgram",
         "--protocol",
@@ -53,18 +56,21 @@ fn test_freebsd_no_dgram_icmp() {
     ]);
 
     let output = cmd.output().expect("failed to run ftr");
+    let stderr = String::from_utf8_lossy(&output.stderr);
 
     if !is_running_as_root() {
         // Non-root: should get the root privilege error first
-        let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(stderr.contains("requires root privileges"));
     } else {
-        // Root: should get error about DGRAM ICMP not being supported
-        assert!(!output.status.success());
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Root: raw fallback, never a DGRAM socket
         assert!(
-            stderr.contains("Datagram mode is not supported for ICMP protocol on freebsd"),
-            "Expected DGRAM ICMP not supported error, got: {}",
+            output.status.success(),
+            "dgram request should fall back to raw and succeed, stderr: {}",
+            stderr
+        );
+        assert!(
+            stderr.contains("Using Raw ICMP mode"),
+            "Expected raw ICMP fallback, got: {}",
             stderr
         );
     }
@@ -82,7 +88,7 @@ fn test_freebsd_raw_icmp_with_root() {
 
     cmd.assert()
         .success()
-        .stderr(predicate::str::contains("Using Raw ICMP IPv4 mode"));
+        .stderr(predicate::str::contains("Using Raw ICMP mode"));
 }
 
 #[test]
