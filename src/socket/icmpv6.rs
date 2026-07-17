@@ -176,6 +176,10 @@ pub fn is_ndp(icmpv6_type: u8) -> bool {
 /// On Unix platforms with `libc` available the interface name is used
 /// (`fe80::1%en0`); otherwise, or if the index has no name, the numeric
 /// form (`fe80::1%5`) — both are valid RFC 4007 zone identifiers.
+// Only the macOS verbose path renders zones so far; the Linux modes carry
+// scope ids in SocketAddrV6/parsed form. Keep the helper (and its tests)
+// available everywhere for the platforms that will need it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn format_ipv6_with_zone(addr: Ipv6Addr, scope_id: u32) -> String {
     if scope_id == 0 {
         return addr.to_string();

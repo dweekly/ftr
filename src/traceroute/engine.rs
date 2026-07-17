@@ -420,6 +420,16 @@ impl TracerouteEngine {
         let mut hop_infos: Vec<ClassifiedHopInfo> = Vec::new();
         let mut in_isp_segment = false;
 
+        // For IPv6 traces, discover which local source address the kernel
+        // uses toward the target so on-link hops (the user's own gateway,
+        // which typically answers from a *global* address in the delegated
+        // prefix) can be classified LAN by the shared-/64 heuristic in
+        // `classify_v6_hop` instead of falling through to ISP.
+        let local_v6_source = match self.target {
+            IpAddr::V6(target_v6) => Self::local_ipv6_source_for(target_v6),
+            IpAddr::V4(_) => None,
+        };
+
         let display_max_ttl = if destination_reached {
             destination_ttl
         } else {
@@ -476,24 +486,14 @@ impl TracerouteEngine {
                                     )
                                 }
                             }
-                            IpAddr::V6(ipv6) => {
-                                if crate::traceroute::is_internal_ipv6(&ipv6) {
-                                    // Link-local (fe80::/10) and ULA
-                                    // (fc00::/7) hops are LAN-equivalent.
-                                    SegmentType::Lan
-                                } else {
-                                    // Global unicast: same ASN logic as v4.
-                                    // Absent ASN data (e.g. v6 enrichment
-                                    // unavailable) this degrades gracefully
-                                    // to TRANSIT/UNKNOWN, never panics.
-                                    Self::classify_public_hop(
-                                        asn_info.as_ref(),
-                                        isp_asn,
-                                        dest_asn.as_ref(),
-                                        &mut in_isp_segment,
-                                    )
-                                }
-                            }
+                            IpAddr::V6(ipv6) => Self::classify_v6_hop(
+                                &ipv6,
+                                local_v6_source.as_ref(),
+                                asn_info.as_ref(),
+                                isp_asn,
+                                dest_asn.as_ref(),
+                                &mut in_isp_segment,
+                            ),
                         };
 
                         hop_infos.push(ClassifiedHopInfo {
@@ -568,6 +568,61 @@ impl TracerouteEngine {
             destination_reached,
             total_duration: elapsed,
         })
+    }
+
+    /// Discover the local IPv6 source address the kernel would pick to
+    /// reach `target`. `connect()` on a UDP socket performs source-address
+    /// selection (RFC 6724) without sending any packets, so this is free
+    /// and side-effect-less; the port is arbitrary (9, the discard port,
+    /// by convention). Returns `None` when the host has no IPv6 route to
+    /// the target.
+    fn local_ipv6_source_for(target: std::net::Ipv6Addr) -> Option<std::net::Ipv6Addr> {
+        let socket = std::net::UdpSocket::bind((std::net::Ipv6Addr::UNSPECIFIED, 0)).ok()?;
+        socket.connect((target, 9)).ok()?;
+        match socket.local_addr().ok()? {
+            std::net::SocketAddr::V6(sa) => Some(*sa.ip()),
+            std::net::SocketAddr::V4(_) => None,
+        }
+    }
+
+    /// Classify one IPv6 hop.
+    ///
+    /// LAN detection has two layers:
+    ///
+    /// 1. Internal scopes — link-local (`fe80::/10`), ULA (`fc00::/7`),
+    ///    loopback — are always LAN ([`crate::traceroute::is_internal_ipv6`]).
+    /// 2. **On-link /64 heuristic**: a hop sharing a /64 with the trace's
+    ///    local source address is LAN. Home gateways typically answer from
+    ///    a *global* address inside the delegated prefix (e.g.
+    ///    `2001:5a8:4681:2c00::1` when the host is
+    ///    `2001:5a8:4681:2c00:...`), which ASN-based classification would
+    ///    otherwise mislabel ISP — the ISP owns the whole delegated
+    ///    prefix. IPv6 LANs are effectively /64s (SLAAC requires it, RFC
+    ///    4291 section 2.5.1 / RFC 7421), so shared-/64 is a reliable
+    ///    on-link signal. Limits: a site whose delegation (shorter than
+    ///    /64) spans multiple internal LANs still classifies only the
+    ///    on-link segment (this host's /64) as LAN — deeper internal
+    ///    routers fall back to the ASN logic; and a routed (non-NAT)
+    ///    upstream hop can never share the host's /64, so no false
+    ///    positives arise there.
+    ///
+    /// Everything else is global unicast, classified by ASN like v4;
+    /// absent ASN data this degrades gracefully to TRANSIT/UNKNOWN.
+    fn classify_v6_hop(
+        ipv6: &std::net::Ipv6Addr,
+        local_v6_source: Option<&std::net::Ipv6Addr>,
+        asn_info: Option<&AsnInfo>,
+        isp_asn: Option<u32>,
+        dest_asn: Option<&AsnInfo>,
+        in_isp_segment: &mut bool,
+    ) -> SegmentType {
+        let shares_local_prefix64 =
+            local_v6_source.is_some_and(|src| ipv6.segments()[..4] == src.segments()[..4]);
+        if crate::traceroute::is_internal_ipv6(ipv6) || shares_local_prefix64 {
+            SegmentType::Lan
+        } else {
+            Self::classify_public_hop(asn_info, isp_asn, dest_asn, in_isp_segment)
+        }
     }
 
     /// Classify a public (non-private, non-CGNAT) hop of either address
