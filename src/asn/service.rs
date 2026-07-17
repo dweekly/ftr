@@ -4,16 +4,18 @@
 //! abstracting away the caching implementation details.
 
 use super::cache::AsnCache;
-use super::lookup::{AsnLookupError, lookup_asn_with_cache};
+use super::lookup::{AsnLookupError, lookup_asn_v6_with_cache, lookup_asn_with_cache};
 use crate::traceroute::AsnInfo;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// ASN (Autonomous System Number) lookup service
 ///
-/// This service provides ASN information for IPv4 addresses using Team Cymru's
-/// whois service. It internally caches results to improve performance.
+/// This service provides ASN information for IPv4 and IPv6 addresses using
+/// Team Cymru's whois service (`origin.asn.cymru.com` for v4,
+/// `origin6.asn.cymru.com` for v6). It internally caches results to improve
+/// performance.
 ///
 /// # Examples
 ///
@@ -56,13 +58,18 @@ impl AsnLookup {
     pub async fn lookup(&self, ip: IpAddr) -> Result<AsnInfo, AsnLookupError> {
         match ip {
             IpAddr::V4(ipv4) => lookup_asn_with_cache(ipv4, &self.cache).await,
-            IpAddr::V6(_) => Err(AsnLookupError::NotFound),
+            IpAddr::V6(ipv6) => lookup_asn_v6_with_cache(ipv6, &self.cache).await,
         }
     }
 
     /// Look up ASN information for an IPv4 address
     pub async fn lookup_ipv4(&self, ip: Ipv4Addr) -> Result<AsnInfo, AsnLookupError> {
         self.lookup(IpAddr::V4(ip)).await
+    }
+
+    /// Look up ASN information for an IPv6 address
+    pub async fn lookup_ipv6(&self, ip: Ipv6Addr) -> Result<AsnInfo, AsnLookupError> {
+        self.lookup(IpAddr::V6(ip)).await
     }
 
     /// Clear all cached ASN information
@@ -84,6 +91,15 @@ impl AsnLookup {
     pub async fn is_cached(&self, ip: &Ipv4Addr) -> bool {
         let cache = self.cache.read().await;
         cache.get(ip).is_some()
+    }
+
+    /// Check if an IP address (either family) is in the cache
+    pub async fn is_cached_ip(&self, ip: &IpAddr) -> bool {
+        let cache = self.cache.read().await;
+        match ip {
+            IpAddr::V4(ipv4) => cache.get(ipv4).is_some(),
+            IpAddr::V6(ipv6) => cache.get_ipv6(ipv6).is_some(),
+        }
     }
 }
 

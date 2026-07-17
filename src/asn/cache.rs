@@ -1,7 +1,7 @@
 //! ASN lookup caching functionality
 
 use crate::traceroute::AsnInfo;
-use ip_network::Ipv4Network;
+use ip_network::{Ipv4Network, Ipv6Network};
 use ip_network_table::IpNetworkTable;
 use std::sync::{Arc, RwLock};
 
@@ -38,8 +38,25 @@ impl AsnCache {
             .map(|(_, asn_info)| asn_info.clone())
     }
 
+    /// Look up an IPv6 address in the cache
+    ///
+    /// Longest-prefix match over cached IPv6 networks (e.g. an entry for
+    /// `2001:4860::/32` answers for `2001:4860:4860::8888`).
+    pub fn get_ipv6(&self, ip: &std::net::Ipv6Addr) -> Option<AsnInfo> {
+        let cache = self.cache.read().expect("rwlock poisoned");
+        cache
+            .longest_match(*ip)
+            .map(|(_, asn_info)| asn_info.clone())
+    }
+
     /// Insert an ASN info entry into the cache
     pub fn insert(&self, prefix: Ipv4Network, asn_info: AsnInfo) {
+        let mut cache = self.cache.write().expect("rwlock poisoned");
+        cache.insert(prefix, asn_info);
+    }
+
+    /// Insert an ASN info entry for an IPv6 prefix into the cache
+    pub fn insert_ipv6(&self, prefix: Ipv6Network, asn_info: AsnInfo) {
         let mut cache = self.cache.write().expect("rwlock poisoned");
         cache.insert(prefix, asn_info);
     }
@@ -105,6 +122,83 @@ mod tests {
         cache.clear();
         assert!(cache.is_empty());
         assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_asn_cache_ipv6() {
+        use std::net::Ipv6Addr;
+
+        let cache = AsnCache::new();
+
+        let asn_info = AsnInfo {
+            asn: 15169,
+            prefix: "2001:4860::/32".to_string(),
+            country_code: "US".to_string(),
+            registry: "arin".to_string(),
+            name: "GOOGLE".to_string(),
+        };
+
+        let prefix: Ipv6Network = "2001:4860::/32".parse().expect("valid prefix");
+        cache.insert_ipv6(prefix, asn_info.clone());
+        assert_eq!(cache.len(), 1);
+
+        // Longest-prefix match: an address inside the /32 hits the entry
+        let ip: Ipv6Addr = "2001:4860:4860::8888".parse().expect("valid IP");
+        let result = cache.get_ipv6(&ip);
+        assert_eq!(result.expect("cache should contain entry").asn, 15169);
+
+        // An address outside the prefix misses
+        let ip: Ipv6Addr = "2606:4700::1111".parse().expect("valid IP");
+        assert!(cache.get_ipv6(&ip).is_none());
+
+        // v4 and v6 entries coexist without cross-family hits
+        let v4_prefix: Ipv4Network = "8.8.8.0/24".parse().expect("valid prefix");
+        cache.insert(v4_prefix, asn_info.clone());
+        assert_eq!(cache.len(), 2);
+        let v4_ip: Ipv4Addr = "8.8.8.8".parse().expect("valid IP");
+        assert!(cache.get(&v4_ip).is_some());
+
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn test_overlapping_prefixes_ipv6() {
+        use std::net::Ipv6Addr;
+
+        let cache = AsnCache::new();
+        let specific: Ipv6Network = "2001:4860:4860::/48".parse().expect("valid prefix");
+        cache.insert_ipv6(
+            specific,
+            AsnInfo {
+                asn: 1,
+                prefix: "2001:4860:4860::/48".to_string(),
+                country_code: "US".to_string(),
+                registry: "arin".to_string(),
+                name: "Specific".to_string(),
+            },
+        );
+        let broader: Ipv6Network = "2001:4860::/32".parse().expect("valid prefix");
+        cache.insert_ipv6(
+            broader,
+            AsnInfo {
+                asn: 2,
+                prefix: "2001:4860::/32".to_string(),
+                country_code: "US".to_string(),
+                registry: "arin".to_string(),
+                name: "Broader".to_string(),
+            },
+        );
+
+        // Should match the most specific prefix
+        let ip: Ipv6Addr = "2001:4860:4860::8888".parse().expect("valid IP");
+        let result = cache.get_ipv6(&ip);
+        assert_eq!(result.expect("cache should contain entry").asn, 1);
+
+        // Outside the /48 but inside the /32 hits the broader entry
+        let ip: Ipv6Addr = "2001:4860:4802::1".parse().expect("valid IP");
+        let result = cache.get_ipv6(&ip);
+        assert_eq!(result.expect("cache should contain entry").asn, 2);
     }
 
     #[test]

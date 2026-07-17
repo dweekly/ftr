@@ -4,12 +4,60 @@
 //! abstracting away the server address caching implementation details.
 
 use super::PublicIpError;
-use super::stun::{STUN_SERVERS, StunError, get_public_ip_stun_with_servers_and_cache};
+use super::stun::{
+    STUN_SERVERS, StunError, StunFamily, get_public_ip_stun_family_with_servers_and_cache,
+    get_public_ip_stun_with_servers_and_cache,
+};
 use super::stun_cache::StunCache;
-use std::net::IpAddr;
+use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+
+/// Public IP addresses for both address families
+///
+/// Aggregate result of [`StunClient::get_public_ips`], which discovers both
+/// families in parallel with never-throws semantics (mirroring SwiftFTR's
+/// `getPublicIPs()`): a family that cannot be discovered — no connectivity
+/// for that family, all servers failed, or a timeout — is simply `None`.
+///
+/// # Examples
+///
+/// ```no_run
+/// use ftr::public_ip::StunClient;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     let stun = StunClient::new();
+///     let ips = stun.get_public_ips().await;
+///     match ips.v6 {
+///         Some(v6) => println!("Public IPv6: {v6}"),
+///         None => println!("No public IPv6 connectivity"),
+///     }
+/// }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct PublicIps {
+    /// Public IPv4 address, if discoverable
+    pub v4: Option<Ipv4Addr>,
+    /// Public IPv6 address, if discoverable
+    pub v6: Option<Ipv6Addr>,
+}
+
+/// Map a low-level STUN error into the public-IP error type
+fn map_stun_error(e: StunError) -> PublicIpError {
+    match e {
+        StunError::Timeout => PublicIpError::Timeout,
+        StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
+        StunError::InvalidResponse => {
+            PublicIpError::ParseError("Invalid STUN response".to_string())
+        }
+        StunError::NoMappedAddress => {
+            PublicIpError::ParseError("No mapped address in STUN response".to_string())
+        }
+    }
+}
 
 /// STUN client for public IP detection
 ///
@@ -122,16 +170,73 @@ impl StunClient {
             self.verbose,
         )
         .await
-        .map_err(|e| match e {
-            StunError::Timeout => PublicIpError::Timeout,
-            StunError::IoError(err) => PublicIpError::HttpError(err.to_string()),
-            StunError::InvalidResponse => {
-                PublicIpError::ParseError("Invalid STUN response".to_string())
-            }
-            StunError::NoMappedAddress => {
-                PublicIpError::ParseError("No mapped address in STUN response".to_string())
-            }
-        })
+        .map_err(map_stun_error)
+    }
+
+    /// Get the public IPv4 address
+    ///
+    /// Like [`get_public_ip`](Self::get_public_ip) but contacts the STUN
+    /// servers over IPv4 only (via their A records), so the mapped address
+    /// is guaranteed to be the public IPv4 address.
+    pub async fn get_public_ip_v4(&self) -> Result<Ipv4Addr, PublicIpError> {
+        let ip = get_public_ip_stun_family_with_servers_and_cache(
+            &self.servers,
+            self.timeout,
+            &self.cache,
+            self.verbose,
+            StunFamily::V4,
+        )
+        .await
+        .map_err(map_stun_error)?;
+        match ip {
+            IpAddr::V4(v4) => Ok(v4),
+            // Unreachable in practice: the family filter rejects mismatches
+            IpAddr::V6(v6) => Err(PublicIpError::ParseError(format!(
+                "STUN IPv4 query returned IPv6 address {v6}"
+            ))),
+        }
+    }
+
+    /// Get the public IPv6 address
+    ///
+    /// Contacts the STUN servers over IPv6 only (via their AAAA records)
+    /// and returns the XOR-MAPPED-ADDRESS they report. Note that IPv6
+    /// rarely involves NAT, so this usually equals the host's own global
+    /// address — but it still confirms end-to-end v6 reachability and
+    /// detects NAT66/NPTv6 edge cases.
+    ///
+    /// Fails with an error if the host has no IPv6 connectivity.
+    pub async fn get_public_ip_v6(&self) -> Result<Ipv6Addr, PublicIpError> {
+        let ip = get_public_ip_stun_family_with_servers_and_cache(
+            &self.servers,
+            self.timeout,
+            &self.cache,
+            self.verbose,
+            StunFamily::V6,
+        )
+        .await
+        .map_err(map_stun_error)?;
+        match ip {
+            IpAddr::V6(v6) => Ok(v6),
+            // Unreachable in practice: the family filter rejects mismatches
+            IpAddr::V4(v4) => Err(PublicIpError::ParseError(format!(
+                "STUN IPv6 query returned IPv4 address {v4}"
+            ))),
+        }
+    }
+
+    /// Get the public IP addresses for both families in parallel
+    ///
+    /// Runs the IPv4 and IPv6 discoveries concurrently and never fails:
+    /// a family that cannot be discovered is `None` in the returned
+    /// [`PublicIps`]. On an IPv4-only network `v6` is `None`; on an
+    /// IPv6-only network `v4` is `None`.
+    pub async fn get_public_ips(&self) -> PublicIps {
+        let (v4, v6) = tokio::join!(self.get_public_ip_v4(), self.get_public_ip_v6());
+        PublicIps {
+            v4: v4.ok(),
+            v6: v6.ok(),
+        }
     }
 
     /// Get the list of configured STUN servers
