@@ -240,6 +240,13 @@ jobs:
           echo "Running FreeBSD-specific tests..."
           cargo test --lib socket::factory::tests::test_freebsd
           cargo test --lib socket::factory::tests::test_has_non_root_capability
+
+          # Run FreeBSD integration tests (includes the raw-ICMPv6 IPv6
+          # tests: the VM runs as root, so the ::1 loopback trace exercises
+          # the real v6 probe path; the external v6 trace skips itself when
+          # the VM has no IPv6 route, which GitHub-hosted runners don't)
+          echo "Running FreeBSD integration tests..."
+          cargo test --test freebsd_integration --verbose -- --nocapture
           
           # Test that non-root execution fails appropriately
           echo "Testing non-root error..."
@@ -296,3 +303,15 @@ jobs:
           else
             sudo ./target/release/ftr -v --max-hops 1 127.0.0.1 2>&1 | grep "Using Raw ICMP"
           fi
+
+          # Test IPv6 loopback trace (raw ICMPv6; needs no external IPv6
+          # connectivity, so it must pass even in this v4-only VM)
+          echo "Testing IPv6 loopback trace..."
+          if [ "$(id -u)" = "0" ]; then
+            ./target/release/ftr --max-hops 1 --no-enrich ::1
+            ./target/release/ftr -v --max-hops 1 --no-enrich ::1 2>&1 | grep "Using raw ICMPv6"
+          else
+            sudo ./target/release/ftr --max-hops 1 --no-enrich ::1
+            sudo ./target/release/ftr -v --max-hops 1 --no-enrich ::1 2>&1 | grep "Using raw ICMPv6"
+          fi
+          echo "✓ IPv6 loopback trace works"

@@ -14,6 +14,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   assigns the echo identifier; matching is per-socket by sequence), and raw
   ICMPv6 as root/CAP_NET_RAW. Kernel behavior validated live on Ubuntu
   24.04 / kernel 6.8 (`examples/spike_linux_v6.rs`, `docs/IPV6_DESIGN.md`)
+- FreeBSD/OpenBSD/NetBSD/DragonFly IPv6 traceroute (`-6`) via raw ICMPv6
+  sockets — root required, matching the BSDs' IPv4 behavior (they have no
+  unprivileged ICMP sockets of either family). The kernel computes the
+  ICMPv6 checksum on raw v6 sockets (RFC 3542 section 3.1; FreeBSD ip6(4))
+  and an `ICMP6_FILTER` (optname 18 in each BSD's `netinet6/in6.h`, bit
+  set = PASS) sheds noise on FreeBSD/OpenBSD. Exercised by CI's FreeBSD VM
+  (loopback v6; the VM has no external IPv6); OpenBSD/NetBSD/DragonFly are
+  best-effort and untested
 
 ### Fixed
 - IPv6 hops sharing the trace's local /64 (e.g. a home gateway answering

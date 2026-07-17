@@ -394,7 +394,7 @@ Notes:
 | macOS | `IPV6`/`DGRAM`/`ICMPV6` | **No** | **Validated here** |
 | Linux | UDP + `IPV6_RECVERR` errqueue (unprivileged, works with default sysctls); `IPV6`/`DGRAM`/`ICMPV6` ping socket + `IPV6_RECVERR` where `ping_group_range` allows (disabled by default: `1 0`); raw ICMPv6 as root | **No** (UDP mode) | **Validated here** |
 | Windows | `Icmp6SendEcho2` (IP Helper) | No | Unvalidated |
-| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes (expected) | Unvalidated |
+| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate (loopback v6 only — the VM has no external IPv6). OpenBSD/NetBSD/DragonFly best-effort, untested |
 
 macOS gets a first-class unprivileged v6 mode — this is strictly better than
 v4 on macOS, where ftr requires root for raw ICMP.
@@ -465,8 +465,9 @@ either model.
 
   The spike auto-detects euid 0 and adds the RAW socket test. Open item:
   record the output here once run.
-- FreeBSD/OpenBSD are expected to require root for all ICMPv6 modes (as they
-  do for v4); unvalidated.
+- FreeBSD/OpenBSD require root for all ICMPv6 modes (as they do for v4);
+  `src/socket/bsd_v6.rs` probes the raw socket up front and surfaces a typed
+  permission error, confirmed by the FreeBSD CI VM's non-root test path.
 
 ## Open questions (unvalidated platforms)
 
@@ -477,9 +478,16 @@ the spikes on the target OS before implementing stage 6 there:
   API handles TTL and reply matching), but hop-limit reporting and embedded
   payload access need checking. Spikes currently print
   "only implemented for macOS/Linux/FreeBSD" on Windows.
-- **FreeBSD**: spikes compile (libc is already a dev-dependency there); the
-  ICMP6_FILTER section is skipped pending verification of the optname value
-  from FreeBSD's own headers.
+- **FreeBSD**: the `ICMP6_FILTER` optname is 18
+  (`#define ICMP6_FILTER 18` in `sys/netinet6/in6.h` of freebsd-src; the
+  same line appears verbatim in OpenBSD, NetBSD, and DragonFly — all KAME
+  heritage, matching Darwin), with BSD bit-set-means-PASS semantics
+  (`ICMP6_FILTER_SETPASS` ORs the bit in, `SETBLOCKALL` is memset 0, per
+  each OS's `netinet/icmp6.h`). Still open: no ftr developer has run the
+  spikes or a live multi-hop v6 trace on real BSD hardware — the raw-ICMPv6
+  behaviors (kernel checksum per RFC 3542 section 3.1, no IPv6 header on
+  receive, no id demux) are RFC-mandated and CI-exercised via loopback, but
+  a real-router Time Exceeded on FreeBSD has not been observed first-hand.
 - **Zone-id preservation** end to end (see contracts above) — needs a
   link-local responder to observe in the wild.
 - **Source address selection**: the embedded invoking header conveniently

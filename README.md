@@ -417,7 +417,7 @@ When enrichment is enabled (default), each hop is labeled:
 | [docs/UDP_TRACEROUTE_LINUX.md](docs/UDP_TRACEROUTE_LINUX.md) | Linux UDP traceroute and IP_RECVERR |
 | [docs/TIMING_CONFIGURATION.md](docs/TIMING_CONFIGURATION.md) | Timing system for performance tuning |
 | [docs/WINDOWS_ASYNC_FINDINGS.md](docs/WINDOWS_ASYNC_FINDINGS.md) | Windows async ICMP implementation analysis |
-| [docs/IPV6_DESIGN.md](docs/IPV6_DESIGN.md) | IPv6 support design with validated socket/protocol spike findings (fresh as of 2026-07-16) |
+| [docs/IPV6_DESIGN.md](docs/IPV6_DESIGN.md) | IPv6 support design with validated socket/protocol spike findings (fresh as of 2026-07-17) |
 | [docs/IXP_DETECTION_PROPOSAL.md](docs/IXP_DETECTION_PROPOSAL.md) | Proposed IXP/peering point detection (future) |
 | [docs/WHOIS_ENHANCEMENT_PROPOSAL.md](docs/WHOIS_ENHANCEMENT_PROPOSAL.md) | Proposed WHOIS fallback for network ownership (future) |
 | [scripts/README.md](scripts/README.md) | Cross-platform VM testing scripts |

@@ -162,10 +162,43 @@ pub async fn create_probe_socket_with_options_and_verbose(
                 create_linux_v6_socket(timing_config, protocol, socket_mode, verbose)
             }
 
-            // Windows/BSD IPv6 probing is planned (see docs/IPV6_DESIGN.md
-            // open questions); until each platform's behavior is
-            // spike-validated, report the typed error.
-            #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            ))]
+            {
+                let _ = socket_mode;
+                // Raw ICMPv6 (root) is the only IPv6 mode on the BSDs: they
+                // have no unprivileged ICMP sockets of either family, and
+                // UDP IPv6 probing is not implemented here.
+                if let Some(ProbeProtocol::Udp) = protocol {
+                    return Err(TracerouteError::NotImplemented {
+                        feature: "UDP IPv6 traceroute on BSD".to_string(),
+                    });
+                }
+                use super::bsd_v6::BsdAsyncIcmpV6Socket;
+                let socket = BsdAsyncIcmpV6Socket::new_with_config(timing_config)?;
+
+                if verbose > 0 {
+                    eprintln!("Using raw ICMPv6 mode for traceroute");
+                }
+
+                Ok(Box::new(socket))
+            }
+
+            // Windows IPv6 probing is planned (see docs/IPV6_DESIGN.md
+            // open questions); until its behavior is validated, report
+            // the typed error.
+            #[cfg(not(any(
+                target_os = "macos",
+                target_os = "linux",
+                target_os = "freebsd",
+                target_os = "openbsd",
+                target_os = "netbsd",
+                target_os = "dragonfly"
+            )))]
             {
                 let _ = (timing_config, socket_mode, verbose);
                 Err(TracerouteError::Ipv6NotSupported)
