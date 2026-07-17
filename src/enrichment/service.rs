@@ -163,10 +163,16 @@ mod tests {
         assert!(results.contains_key(&ipv6_addr));
         let result = &results[&ipv6_addr];
 
-        // IPv6 ASN lookups aren't supported yet, so asn_info should be None
-        assert!(result.asn_info.is_none());
+        // IPv6 ASN lookups are supported via Team Cymru's origin6 zone:
+        // with network access this enriches to Google's AS15169. asn_info
+        // is None only when the live lookup failed (offline environment).
+        if let Some(asn_info) = &result.asn_info {
+            assert_eq!(asn_info.asn, 15169, "Google DNS v6 should be AS15169");
+        } else {
+            eprintln!("test_ipv6_enrichment: no ASN info (offline?); skipping ASN assertion");
+        }
 
-        // But DNS lookup should work
+        // DNS lookup should work
         assert_eq!(result.addr, ipv6_addr);
     }
 
