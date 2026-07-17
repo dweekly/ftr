@@ -18,14 +18,16 @@ use std::pin::Pin;
 pub enum ProbeMode {
     /// ICMP echo requests using DGRAM sockets (Linux/macOS)
     DgramIcmp,
-    /// ICMPv6 echo requests using DGRAM sockets (macOS, unprivileged)
-    DgramIcmpv6,
     /// ICMP echo requests using Windows IcmpSendEcho2 API
     WindowsIcmp,
     /// UDP probes with IP_RECVERR (Linux)
     UdpWithRecverr,
     /// Raw ICMP sockets (fallback)
     RawIcmp,
+    /// ICMPv6 echo requests using DGRAM sockets (macOS, unprivileged)
+    // Appended last: inserting variants mid-enum shifts existing
+    // discriminants, which cargo-semver-checks flags as breaking.
+    DgramIcmpv6,
 }
 
 /// Trait for probe sockets
