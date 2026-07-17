@@ -43,6 +43,48 @@ resolvers, and the tests lint-debt payoff; what remains is below.
   Remember Darwin demuxes v4 DGRAM ICMP by identifier (SwiftFTR's 0.8.0
   regression) but does NOT for v6.
 
+## Dependency diet (standing theme + a ladder of PRs)
+
+Maintainer directive (2026-07-17): as an overall theme, reduce the size and
+complexity of the dependency tree — SwiftFTR's zero-third-party-deps is the
+aspiration. Every new dependency needs justification; prefer hand-rolled
+minimal implementations for narrow needs (the 0.7.0 hickory/reqwest/pnet
+replacements are the model). Baseline 2026-07-17: **78 transitive crates
+from 10 direct** (macOS; Linux adds vendored OpenSSL). Ladder, biggest win
+first:
+
+- **Kill ureq + TLS (32 crates, 40% of the tree)**: its sole use is the
+  HTTPS public-IP fallback. STUN stays primary (it reflects the probing
+  socket's true public mapping). Replace the HTTPS fallback with a STUN
+  server (or trivial UDP address-echo) on the Network Weather DigitalOcean
+  droplet — infrastructure we control, same protocol, zero TLS. Maintainer
+  ruling (2026-07-17): DNS whoami techniques (Akamai/Cloudflare/Google) are
+  NOT acceptable — the reported address is the recursive resolver's egress,
+  not the client's, whenever queries traverse a forwarding resolver, and
+  port-53 interception corrupts even direct queries. (Cloudflare's
+  `cdn-cgi/trace` endpoints are useful only if an HTTPS fallback survives.)
+  Also removes the vendored-OpenSSL Linux build and the TLS provider
+  fragility (a runtime panic lived there until PR #39).
+- **getrandom (3 crates)**: only seeds STUN transaction IDs and DNS query
+  IDs — `std::hash::RandomState` per-process entropy hashed with a counter
+  suffices for these non-crypto IDs (document the security posture: DNS ID
+  is anti-spoofing defense-in-depth alongside source-port randomization).
+- **ip_network + ip_network_table (3 crates)**: ASN cache longest-prefix
+  match over a few hundred prefixes — a sorted-Vec binary search or small
+  hand-rolled trie replaces it.
+- **serde + serde_json (9 crates incl. proc-macro build deps)**: ftr only
+  *serializes* (JSON output); a small hand-rolled JSON emitter with correct
+  string escaping covers it. TODO.md already contemplates this.
+- **clap (19 crates)**: 16 flags; a minimal parser (or `lexopt`-style
+  single-crate) with hand-written --help. Trade-off: loses completions and
+  polish — do last, only if the theme still has appetite.
+- **thiserror (8 crates, build-time syn/quote)**: mechanical hand-written
+  `Display`/`Error` impls. Low value per churn — optional.
+- **tokio stays**: the async API is the product; consumers depend on it.
+
+Do NOT batch these with feature work; each rung is its own PR with
+before/after `cargo tree` counts in the body.
+
 ## Performance & reliability (two PRs)
 
 - Replace 1ms busy-poll receive loops (`linux.rs`, `macos.rs`, `bsd.rs`) with
