@@ -54,12 +54,17 @@ from 10 direct** (macOS; Linux adds vendored OpenSSL). Ladder, biggest win
 first:
 
 - **Kill ureq + TLS (32 crates, 40% of the tree)**: its sole use is the
-  HTTPS public-IP fallback — replace with DNS-based public-IP detection via
-  our own resolver (SwiftFTR ships this): Akamai `whoami.akamai.net` A/AAAA,
-  Cloudflare `whoami.cloudflare` TXT (CH class) against 1.1.1.1, Google
-  `o-o.myaddr.l.google.com` TXT. STUN stays primary; DNS becomes the
-  fallback. Also removes the vendored-OpenSSL Linux build and the TLS
-  provider fragility (a runtime panic lived there until PR #39).
+  HTTPS public-IP fallback. STUN stays primary (it reflects the probing
+  socket's true public mapping). Replace the HTTPS fallback with a STUN
+  server (or trivial UDP address-echo) on the Network Weather DigitalOcean
+  droplet — infrastructure we control, same protocol, zero TLS. Maintainer
+  ruling (2026-07-17): DNS whoami techniques (Akamai/Cloudflare/Google) are
+  NOT acceptable — the reported address is the recursive resolver's egress,
+  not the client's, whenever queries traverse a forwarding resolver, and
+  port-53 interception corrupts even direct queries. (Cloudflare's
+  `cdn-cgi/trace` endpoints are useful only if an HTTPS fallback survives.)
+  Also removes the vendored-OpenSSL Linux build and the TLS provider
+  fragility (a runtime panic lived there until PR #39).
 - **getrandom (3 crates)**: only seeds STUN transaction IDs and DNS query
   IDs — `std::hash::RandomState` per-process entropy hashed with a counter
   suffices for these non-crypto IDs (document the security posture: DNS ID
