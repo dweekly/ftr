@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-07-18
+
+Completes IPv6 across every supported platform: with Windows added, `ftr -6`
+now works on macOS, Linux, Windows, and the BSDs — unprivileged everywhere
+except the BSDs (which need root for all traceroute, matching their v4
+posture).
+
 ### Added
 - Windows IPv6 traceroute via the IP Helper `Icmp6SendEcho2` API — the
   last platform without v6. No elevation required (same as v4); `-6` now
@@ -23,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   examples that only surface under
   `cargo clippy --target x86_64-pc-windows-msvc --all-targets` (CI's
   clippy job runs on Ubuntu and never sees them) are all resolved
+- Removed a dead `BsdAsyncIcmpSocket::new()` constructor surfaced by the
+  first release-profile builds of ftr on live FreeBSD 14.3 and OpenBSD 7.7
+  (the `cfg(target_os = "openbsd")` code compiled for the first time; both
+  BSD IPv6 builds are clean)
 
 ## [0.9.0] - 2026-07-17
 
@@ -623,7 +634,8 @@ let ftr = Ftr::with_caches(Some(asn_cache), None, None);
 - Clean, informative output with RTT measurements
 - Support for both hostnames and IP addresses
 
-[Unreleased]: https://github.com/dweekly/ftr/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/dweekly/ftr/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/dweekly/ftr/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dweekly/ftr/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dweekly/ftr/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/dweekly/ftr/compare/v0.6.0...v0.7.0
