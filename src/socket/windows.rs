@@ -70,11 +70,6 @@ pub struct WindowsAsyncIcmpSocket {
 }
 
 impl WindowsAsyncIcmpSocket {
-    /// Create a new Windows async ICMP socket
-    pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
-        Self::new_with_config_and_verbose(timing_config, 0)
-    }
-
     /// Create a new Windows async ICMP socket with an explicit verbosity
     /// level (replaces the former FTR_VERBOSE environment lookup)
     pub fn new_with_config_and_verbose(

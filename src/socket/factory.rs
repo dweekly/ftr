@@ -188,10 +188,29 @@ pub async fn create_probe_socket_with_options_and_verbose(
                 Ok(Box::new(socket))
             }
 
-            // Windows IPv6 probing is planned (see docs/IPV6_DESIGN.md
-            // open questions); until its behavior is validated, report
-            // the typed error.
+            #[cfg(target_os = "windows")]
+            {
+                let _ = socket_mode;
+                // The Win32 ICMP API is the only probing mechanism ftr
+                // uses on Windows, for v6 as for v4.
+                if let Some(ProbeProtocol::Udp) = protocol {
+                    return Err(TracerouteError::NotImplemented {
+                        feature: "UDP IPv6 traceroute on Windows".to_string(),
+                    });
+                }
+                use super::windows_v6::WindowsAsyncIcmpV6Socket;
+                let socket =
+                    WindowsAsyncIcmpV6Socket::new_with_config_and_verbose(timing_config, verbose)?;
+
+                if verbose > 0 {
+                    eprintln!("Using Windows ICMPv6 API mode for traceroute");
+                }
+
+                Ok(Box::new(socket))
+            }
+
             #[cfg(not(any(
+                target_os = "windows",
                 target_os = "macos",
                 target_os = "linux",
                 target_os = "freebsd",

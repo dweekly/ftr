@@ -282,16 +282,17 @@ async fn test_error_types() {
         result
     );
 
-    // IPv6 targets: unprivileged DGRAM ICMPv6 traceroute on macOS and
-    // unprivileged UDP + IPV6_RECVERR on Linux; the typed Ipv6NotSupported
-    // error on platforms without v6 probe support.
+    // IPv6 targets: unprivileged DGRAM ICMPv6 traceroute on macOS,
+    // unprivileged UDP + IPV6_RECVERR on Linux, and the unprivileged
+    // Icmp6SendEcho2 API on Windows; the typed Ipv6NotSupported error on
+    // platforms without v6 probe support.
     let result = trace("::1").await;
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     {
         let v6_trace = result.expect("IPv6 loopback trace should succeed unprivileged");
         assert!(v6_trace.destination_reached);
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     assert!(
         matches!(&result, Err(TracerouteError::Ipv6NotSupported)),
         "Expected Ipv6NotSupported error, got: {:?}",

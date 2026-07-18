@@ -82,12 +82,13 @@ async fn test_ipv6_target_platform_behavior() {
     let ftr_instance = ftr::Ftr::new();
     let result = ftr_instance.trace_with_config(config).await;
 
-    // macOS (unprivileged DGRAM ICMPv6) and Linux (unprivileged UDP with
-    // IPV6_RECVERR) both trace IPv6 without root: a loopback trace reaches
-    // ::1 in one hop, classified as LAN. The BSDs trace IPv6 only via raw
-    // ICMPv6 (root required); platforms without IPv6 probe support must
-    // surface the typed Ipv6NotSupported error.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    // macOS (unprivileged DGRAM ICMPv6), Linux (unprivileged UDP with
+    // IPV6_RECVERR), and Windows (Icmp6SendEcho2, no elevation) all trace
+    // IPv6 without root: a loopback trace reaches ::1 in one hop,
+    // classified as LAN. The BSDs trace IPv6 only via raw ICMPv6 (root
+    // required); platforms without IPv6 probe support must surface the
+    // typed Ipv6NotSupported error.
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     {
         let trace = result.expect("IPv6 loopback trace should succeed unprivileged");
         assert!(trace.destination_reached, "::1 must be reachable");
@@ -127,6 +128,7 @@ async fn test_ipv6_target_platform_behavior() {
     #[cfg(not(any(
         target_os = "macos",
         target_os = "linux",
+        target_os = "windows",
         target_os = "freebsd",
         target_os = "openbsd",
         target_os = "netbsd",

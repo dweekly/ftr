@@ -22,6 +22,13 @@
 //! Findings are recorded in docs/IPV6_DESIGN.md. This spike stays in-repo as
 //! a permanent diagnostic: re-run it if kernel/OS behavior is in question.
 
+// On other platforms (e.g. Windows) only the stub main is compiled and the
+// constants below are unreferenced; keep target-specific clippy runs clean.
+#![cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "freebsd")),
+    allow(dead_code)
+)]
+
 /// ICMPv6 Echo Request message type (RFC 4443 section 4.1).
 const ICMPV6_ECHO_REQUEST: u8 = 128;
 /// ICMPv6 Echo Reply message type (RFC 4443 section 4.2).
