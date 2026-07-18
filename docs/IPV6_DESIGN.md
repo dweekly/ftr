@@ -15,8 +15,12 @@ glibc 2.39, rustc 1.97.1, same socket2, native IPv6 on the same Sonic fiber
 Windows 11 ARM64 (build 26100), rustc 1.88.0, bridged network with native
 IPv6 on the same Sonic fiber (see
 [Validated findings (Windows)](#validated-findings-windows)).
-FreeBSD and OpenBSD behavior is **unvalidated** — see
-[Open questions](#open-questions-unvalidated-platforms).
+FreeBSD 14.3 and OpenBSD 7.7 were **partially validated live** on 2026-07-18
+(external-v6 reachability, the v0.9.0 release build — including OpenBSD's
+first-ever compile — and the non-root permission path; the root multi-hop trace
+is still pending). See
+[Validated findings (FreeBSD / OpenBSD)](#validated-findings-freebsd-143--openbsd-77--live-vms)
+and [Open questions](#open-questions-unvalidated-platforms).
 
 Run all spikes with:
 
@@ -453,6 +457,112 @@ through Sonic to `sfo07s17-in-x0e.1e100.net` with full ASN/rDNS/segment
 enrichment and v6 STUN public-IP detection, and `ftr 8.8.8.8` confirmed
 no v4 regression.
 
+## Validated findings (FreeBSD 14.3 / OpenBSD 7.7 — live VMs)
+
+Validated 2026-07-18 on two local Parallels VMs bridged onto the same Sonic
+fiber LAN as the macOS/Linux/Windows environments above. Both run arm64.
+This pass covered what is reachable **without root**: external-v6 reachability,
+the v0.9.0 release build (the OpenBSD build is a first — see below), and the
+non-root permission path. **The live multi-hop root trace was not run this
+session** (see "what remains" at the end of this section).
+
+### FreeBSD 14.3-RELEASE (arm64)
+
+`uname -a`:
+```
+FreeBSD freebsd143 14.3-RELEASE FreeBSD 14.3-RELEASE releng/14.3-n271432-8c9ce319fef7 GENERIC arm64
+```
+
+**External IPv6: yes.** Global SLAAC address and default v6 route present,
+`ping6` to the public internet succeeds (verbatim):
+```
+# ifconfig (inet6, non-link-local)
+	inet6 2001:5a8:4681:2c00:21c:42ff:fed9:7283 prefixlen 64 autoconf pltime 19510 vltime 19510
+# netstat -rn -f inet6
+default                           fe80::e263:daff:fe80:2451%vtnet0 UG        vtnet0
+# ping6 -c2 google.com
+16 bytes from 2607:f8b0:4005:808::200e, icmp_seq=0 hlim=109 time=3.251 ms
+16 bytes from 2607:f8b0:4005:808::200e, icmp_seq=1 hlim=109 time=3.328 ms
+2 packets transmitted, 2 packets received, 0.0% packet loss
+```
+
+**Build:** `cargo`/`rustc` were already installed under `/usr/local/bin`, `cc`
+present, but `git` was **not** installed — the v0.9.0 source was transferred as
+a tarball instead of cloned. `cargo build --release` succeeded (exit 0),
+producing a 1,163,584-byte `target/release/ftr`.
+
+**Non-root permission path (validated):** run as the unprivileged `ftr` user,
+both the v6 and v4 CLI surface the typed permission error rather than
+attempting a raw socket (verbatim):
+```
+$ ./target/release/ftr --version
+ftr 0.9.0
+$ ./target/release/ftr -6 ::1        # exit 1
+Error: ftr requires root privileges on freebsd
+This platform does not support unprivileged traceroute.
+$ ./target/release/ftr 8.8.8.8       # exit 1
+Error: ftr requires root privileges on freebsd
+This platform does not support unprivileged traceroute.
+```
+This confirms the `InsufficientPermissions` gate for BsdAsyncIcmpV6Socket /
+BsdAsyncIcmpSocket on real FreeBSD, matching the CI VM's non-root test path.
+
+### OpenBSD 7.7 (arm64) — first-ever compile of the `cfg(target_os = "openbsd")` arm
+
+`uname -a`:
+```
+OpenBSD openbsd7.localdomain 7.7 GENERIC.MP#2 arm64
+```
+
+**External IPv6: no.** The interface received no global v6 address and there is
+no v6 default route, so `ping6` to the internet fails (verbatim) — OpenBSD's v6
+traces on this host are limited to `::1`:
+```
+# ifconfig (inet6): only  inet6 ::1 prefixlen 128
+# netstat -rn -f inet6: NO_V6_DEFAULT
+# ping6 -c2 google.com
+PING google.com (2607:f8b0:4005:808::200e): 56 data bytes
+ping: wrote google.com 64 chars, ret=-1
+ping: wrote google.com 64 chars, ret=-1
+2 packets transmitted, 0 packets received, 100.0% packet loss
+```
+
+**Build (headline): the OpenBSD `bsd_v6.rs` cfg arm compiled for the first time
+ever, and it compiled clean.** `cargo`/`rustc`/`git` were all present under
+`/usr/local/bin`. `git clone --branch v0.9.0` + `cargo build --release`
+succeeded (exit 0) in 2m20s, producing a 1,251,000-byte `target/release/ftr`.
+The build emitted exactly **one** warning — dead code, and in the shared IPv4
+path, not the v6 arm:
+```
+warning: associated function `new` is never used
+  --> src/socket/bsd.rs:35:12
+warning: `ftr` (lib) generated 1 warning
+```
+`BsdAsyncIcmpSocket::new()` had only one caller, its own `#[cfg(test)]` unit
+test, so a non-test **release** build on any BSD flags it. It went unnoticed
+because CI's FreeBSD job builds in *test* profile (where the test uses it) and
+`clippy -D warnings` runs on Linux/macOS, where `bsd.rs` is not compiled at all
+— the same class of platform-gated dead code cleaned up for the macOS and
+Windows arms earlier. The fix removes the redundant `new()` and points its test
+at `new_with_config(TimingConfig::default())` (the constructor the factory
+actually uses); after the patch, `cargo build --release` finishes warning-free
+on **both** OpenBSD (33.85s incremental) and FreeBSD (7.50s incremental).
+
+### What remains (root-gated, not completed this session)
+
+Raw ICMPv6 requires root on the BSDs (the documented posture). Direct root SSH
+is disabled on both VMs and no host-sanctioned privilege-escalation path was
+available to this session, so the following were **not** run and are recorded
+for a maintainer to execute from a root shell on the VM:
+
+- **FreeBSD live multi-hop v6 trace** — `ftr -6 2001:4860:4860::8888`. FreeBSD
+  has confirmed external v6 (above), so this is the run that would finally
+  observe a **router-originated ICMPv6 Time Exceeded on FreeBSD first-hand** and
+  close that long-standing open item. Also `ftr 8.8.8.8` (v4 regression) and the
+  root-gated `cargo test`.
+- **OpenBSD** — `ftr -6 ::1` (loopback only, no external v6 here) + `ftr 8.8.8.8`
+  + root `cargo test`.
+
 ## Design decisions for stage-6 integration
 
 ### Socket mode per platform
@@ -462,7 +572,7 @@ no v4 regression.
 | macOS | `IPV6`/`DGRAM`/`ICMPV6` | **No** | **Validated here** |
 | Linux | UDP + `IPV6_RECVERR` errqueue (unprivileged, works with default sysctls); `IPV6`/`DGRAM`/`ICMPV6` ping socket + `IPV6_RECVERR` where `ping_group_range` allows (disabled by default: `1 0`); raw ICMPv6 as root | **No** (UDP mode) | **Validated here** |
 | Windows | `Icmp6SendEcho2` (IP Helper) | No | **Validated & implemented** (`src/socket/windows_v6.rs`; see [Validated findings (Windows)](#validated-findings-windows)) |
-| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate (loopback v6 only — the VM has no external IPv6). OpenBSD/NetBSD/DragonFly best-effort, untested |
+| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate. **v0.9.0 builds clean on real FreeBSD 14.3 and OpenBSD 7.7 (arm64); non-root permission path validated live** ([findings](#validated-findings-freebsd-143--openbsd-77--live-vms)); live root multi-hop trace still pending. NetBSD/DragonFly best-effort, untested |
 
 macOS gets a first-class unprivileged v6 mode — this is strictly better than
 v4 on macOS, where ftr requires root for raw ICMP.
@@ -547,11 +657,16 @@ the spikes on the target OS before implementing stage 6 there:
   same line appears verbatim in OpenBSD, NetBSD, and DragonFly — all KAME
   heritage, matching Darwin), with BSD bit-set-means-PASS semantics
   (`ICMP6_FILTER_SETPASS` ORs the bit in, `SETBLOCKALL` is memset 0, per
-  each OS's `netinet/icmp6.h`). Still open: no ftr developer has run the
-  spikes or a live multi-hop v6 trace on real BSD hardware — the raw-ICMPv6
+  each OS's `netinet/icmp6.h`). Partially closed 2026-07-18: v0.9.0 now builds
+  clean on real FreeBSD 14.3 and OpenBSD 7.7 hardware and the non-root
+  permission path was validated live (see
+  [Validated findings (FreeBSD / OpenBSD)](#validated-findings-freebsd-143--openbsd-77--live-vms)).
+  **Still open:** a live multi-hop v6 trace on real BSD hardware. The raw-ICMPv6
   behaviors (kernel checksum per RFC 3542 section 3.1, no IPv6 header on
-  receive, no id demux) are RFC-mandated and CI-exercised via loopback, but
-  a real-router Time Exceeded on FreeBSD has not been observed first-hand.
+  receive, no id demux) are RFC-mandated and CI-exercised via loopback, but a
+  real-router Time Exceeded on FreeBSD has not been observed first-hand — the
+  root-gated run was deferred to a maintainer (FreeBSD has confirmed external
+  v6, so the trace is achievable there; OpenBSD's VM has no external v6).
 - **Zone-id preservation** end to end (see contracts above) — needs a
   link-local responder to observe in the wild.
 - **Source address selection**: the embedded invoking header conveniently
