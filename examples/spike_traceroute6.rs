@@ -33,6 +33,13 @@
 //! Findings are recorded in docs/IPV6_DESIGN.md. This spike stays in-repo as
 //! a permanent diagnostic: re-run it if kernel/OS behavior is in question.
 
+// On other platforms (e.g. Windows) only the stub main is compiled and the
+// constants below are unreferenced; keep target-specific clippy runs clean.
+#![cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", target_os = "freebsd")),
+    allow(dead_code)
+)]
+
 /// ICMPv6 message types (RFC 4443).
 const ICMPV6_DEST_UNREACHABLE: u8 = 1;
 /// Time Exceeded (RFC 4443 section 3.3).
