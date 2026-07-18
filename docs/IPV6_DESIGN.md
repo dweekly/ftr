@@ -11,8 +11,11 @@ whenever kernel, library, or network behavior is in question.
 rustc 1.97.0, socket2 0.6, dual-stack network with live public IPv6
 (Sonic fiber); Linux — Ubuntu 24.04.4 LTS, kernel 6.8.0-124-generic (x86_64),
 glibc 2.39, rustc 1.97.1, same socket2, native IPv6 on the same Sonic fiber
-(see [Validated findings (Linux)](#validated-findings-linux)). Windows,
-FreeBSD, and OpenBSD behavior is **unvalidated** — see
+(see [Validated findings (Linux)](#validated-findings-linux)); Windows —
+Windows 11 ARM64 (build 26100), rustc 1.88.0, bridged network with native
+IPv6 on the same Sonic fiber (see
+[Validated findings (Windows)](#validated-findings-windows)).
+FreeBSD and OpenBSD behavior is **unvalidated** — see
 [Open questions](#open-questions-unvalidated-platforms).
 
 Run all spikes with:
@@ -23,6 +26,7 @@ cargo run --example spike_traceroute6
 cargo run --example spike_linux_v6     # Linux-only sections; stub main elsewhere
 cargo run --example spike_stun6
 cargo run --example spike_asn6
+cargo run --example spike_windows_v6   # Windows-only; stub main elsewhere
 ```
 
 ## Validated findings (macOS)
@@ -385,6 +389,70 @@ Notes:
 
   The spike auto-detects raw-socket availability and runs section [7].
 
+## Validated findings (Windows)
+
+Validated 2026-07-17 by `examples/spike_windows_v6.rs` in a Windows 11
+ARM64 VM (build 26100, Parallels bridged network, native IPv6 on Sonic
+fiber), then confirmed end to end with live `ftr -6` traces from the same
+VM. The implementation is `src/socket/windows_v6.rs`.
+
+### spike_windows_v6 — Icmp6SendEcho2 mechanics
+
+Everything the design hypothesized about the IP Helper v6 API holds, and
+the open questions are answered:
+
+1. **Source address**: `Icmp6SendEcho2` requires a source `SOCKADDR_IN6`
+   (unlike v4). Passing the unspecified address `::` with
+   `sin6_family = AF_INET6` works — the stack performs normal source
+   selection; no interface enumeration or `GetBestInterfaceEx` needed.
+2. **Hop limit**: the `IP_OPTION_INFORMATION.Ttl` field caps the outgoing
+   hop limit exactly as in v4. Expired probes come back as replies with
+   `Status = IP_HOP_LIMIT_EXCEEDED` (11013 — numerically identical to
+   v4's `IP_TTL_EXPIRED_TRANSIT`) carrying the router's address.
+3. **Reply layout** (spike printed sizes and hex dumps):
+   `ICMPV6_ECHO_REPLY_LH` is 36 bytes — packed 26-byte `IPV6_ADDRESS_EX`
+   at offset 0 (address `[u16; 8]` words at byte 6, **network byte
+   order**; `sin6_scope_id` at 22), 2 bytes padding, `Status` at 28,
+   `RoundTripTime` (ms) at 32. For Echo Replies the echoed request
+   payload sits directly after the struct at offset 36; Time Exceeded
+   replies do **not** echo the payload — the same asymmetry as v4, so
+   identifier/sequence verification is only possible on Echo Replies.
+4. **Async completion**: with an event handle, the event signals on reply
+   AND on timeout. `Icmp6ParseReplies` returns the reply count; on
+   timeout it returns 0 with `GetLastError() = IP_REQ_TIMED_OUT` (11010),
+   and the buffer's `Status` field also reads 11010. (The status field is
+   observably valid even before the parse call, as the v4 code assumes
+   for `IcmpSendEcho2`, but the v6 implementation calls
+   `Icmp6ParseReplies` per the API contract.)
+5. **No elevation**: all of the above from a normal user context (the
+   spike ran as SYSTEM via `prlctl exec`, but the shipped path is the
+   same unprivileged Win32 API as v4 — no raw sockets anywhere).
+
+Spike output (abridged; router addresses from the live Sonic path):
+
+```text
+[1] Icmp6CreateFile: OK
+[2] loopback ::1, full hop limit (sanity: Echo Reply path)
+  hop_limit=128: replies=1 raw_status_pre_parse=0
+    status=0 rtt_ms=0 from=::1 scope_id=0
+    struct sizes: ICMPV6_ECHO_REPLY_LH=36 IPV6_ADDRESS_EX=26
+[3] 2001:4860:4860::8888, hop limits 1..=4 (Time Exceeded path)
+  hop_limit=1: status=11013 rtt_ms=0 from=2001:5a8:4681:2c00::1
+  hop_limit=2: status=11013 rtt_ms=0 from=2001:5a8:657:21::f1:4
+  hop_limit=3: status=11013 rtt_ms=1 from=2001:5a8:5:403f::f0:2
+  hop_limit=4: status=11013 rtt_ms=7 from=2001:5a8:5:403f::e3:b
+[4] 2001:4860:4860::8888, hop limit 128 (destination Echo Reply)
+  hop_limit=128: status=0 rtt_ms=3 from=2001:4860:4860::8888
+    (echoed id/seq/payload verified at offset 36 in the hex dump)
+[5] unroutable 2001:db8::1, 50ms timeout (timeout path)
+  hop_limit=128: replies=0 (GetLastError after parse=11010)
+```
+
+A follow-up live `ftr -6 -v google.com` from the VM traced 17 hops
+through Sonic to `sfo07s17-in-x0e.1e100.net` with full ASN/rDNS/segment
+enrichment and v6 STUN public-IP detection, and `ftr 8.8.8.8` confirmed
+no v4 regression.
+
 ## Design decisions for stage-6 integration
 
 ### Socket mode per platform
@@ -393,7 +461,7 @@ Notes:
 |----------|-----------------|-------------|--------|
 | macOS | `IPV6`/`DGRAM`/`ICMPV6` | **No** | **Validated here** |
 | Linux | UDP + `IPV6_RECVERR` errqueue (unprivileged, works with default sysctls); `IPV6`/`DGRAM`/`ICMPV6` ping socket + `IPV6_RECVERR` where `ping_group_range` allows (disabled by default: `1 0`); raw ICMPv6 as root | **No** (UDP mode) | **Validated here** |
-| Windows | `Icmp6SendEcho2` (IP Helper) | No | Unvalidated |
+| Windows | `Icmp6SendEcho2` (IP Helper) | No | **Validated & implemented** (`src/socket/windows_v6.rs`; see [Validated findings (Windows)](#validated-findings-windows)) |
 | FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate (loopback v6 only — the VM has no external IPv6). OpenBSD/NetBSD/DragonFly best-effort, untested |
 
 macOS gets a first-class unprivileged v6 mode — this is strictly better than
@@ -474,10 +542,6 @@ either model.
 Nothing below has been tested — these are hypotheses to validate by running
 the spikes on the target OS before implementing stage 6 there:
 
-- **Windows**: `Icmp6SendEcho2` should make traceroute mechanics moot (the
-  API handles TTL and reply matching), but hop-limit reporting and embedded
-  payload access need checking. Spikes currently print
-  "only implemented for macOS/Linux/FreeBSD" on Windows.
 - **FreeBSD**: the `ICMP6_FILTER` optname is 18
   (`#define ICMP6_FILTER 18` in `sys/netinet6/in6.h` of freebsd-src; the
   same line appears verbatim in OpenBSD, NetBSD, and DragonFly — all KAME
