@@ -15,10 +15,15 @@ pub(crate) mod bsd;
 ))]
 pub(crate) mod bsd_v6;
 pub(crate) mod factory;
+// The v4 ICMP codec's parse/build helpers are only consumed by the Unix
+// socket paths; Windows probes through the Win32 ICMP API, which parses
+// replies itself, so there they are compiled for their unit tests only.
+#[cfg_attr(target_os = "windows", allow(dead_code))]
 pub(crate) mod icmp;
 // The ICMPv6 codec is platform-neutral and its unit tests run everywhere,
-// but only the macOS, Linux, and BSD socket paths consume it so far
-// (Windows v6 support is planned) — silence dead_code elsewhere until then.
+// but only the macOS, Linux, and BSD socket paths consume it — the Windows
+// v6 path doesn't (the Icmp6SendEcho2 API parses replies itself), so
+// silence dead_code elsewhere.
 #[cfg_attr(
     not(any(
         target_os = "macos",
@@ -43,20 +48,23 @@ pub mod traits;
 pub mod utils;
 #[cfg(target_os = "windows")]
 pub(crate) mod windows;
+#[cfg(target_os = "windows")]
+pub(crate) mod windows_v6;
 
 use serde::{Deserialize, Serialize};
 
 /// IP version to use for probing
 ///
-/// IPv4 is supported on all platforms. IPv6 probing is currently supported
-/// on macOS (unprivileged DGRAM ICMPv6), Linux (unprivileged UDP with
+/// IPv4 is supported on all platforms. IPv6 probing is supported on macOS
+/// (unprivileged DGRAM ICMPv6), Linux (unprivileged UDP with
 /// `IPV6_RECVERR` by default, ICMPv6 ping sockets where
-/// `net.ipv4.ping_group_range` permits, raw ICMPv6 as root), and the BSDs
+/// `net.ipv4.ping_group_range` permits, raw ICMPv6 as root), Windows
+/// (`Icmp6SendEcho2`, no elevation required), and the BSDs
 /// (raw ICMPv6, root required — exercised by CI's FreeBSD VM; OpenBSD/
-/// NetBSD/DragonFly are best-effort and untested); other
-/// platforms return
+/// NetBSD/DragonFly are best-effort and untested); any remaining platform
+/// returns
 /// [`TracerouteError::Ipv6NotSupported`](crate::TracerouteError::Ipv6NotSupported)
-/// for IPv6 targets until their implementations land.
+/// for IPv6 targets.
 ///
 /// This enum is `#[non_exhaustive]` so downstream matches must include a
 /// wildcard arm.

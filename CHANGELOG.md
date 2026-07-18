@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Windows IPv6 traceroute via the IP Helper `Icmp6SendEcho2` API — the
+  last platform without v6. No elevation required (same as v4); `-6` now
+  works on all supported platforms. API behavior (unspecified `::` source
+  address, hop limit via `IP_OPTION_INFORMATION.Ttl`, reply layout, and
+  timeout semantics) was validated live in a Windows 11 VM before
+  implementation (`examples/spike_windows_v6.rs`, findings in
+  `docs/IPV6_DESIGN.md`), then confirmed with a live 17-hop external `-6`
+  trace with full ASN/rDNS/segment enrichment
+
+### Fixed
+- Paid down Windows-target lint debt: dead-code warnings in
+  `src/socket/icmp.rs`, `src/socket/windows.rs`, and the IPv6 spike
+  examples that only surface under
+  `cargo clippy --target x86_64-pc-windows-msvc --all-targets` (CI's
+  clippy job runs on Ubuntu and never sees them) are all resolved
+
 ## [0.9.0] - 2026-07-17
 
 IPv6 support (closes #22): full-parity IPv6 traceroute with ASN, reverse
