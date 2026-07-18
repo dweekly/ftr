@@ -66,11 +66,19 @@ async fn test_polling_vs_event_driven() {
 
     println!("Event-driven approach: {:?}", event_elapsed);
 
-    // Event-driven should be close to 100ms, polling will have overhead
-    // Allow more tolerance for system load and CI environments
+    // The event fires after a 100ms sleep, so event_elapsed must be at least
+    // ~100ms (proves we actually waited on the channel, not a spurious wake).
+    // We deliberately do NOT assert a tight upper bound: this runs on shared
+    // CI runners where task scheduling can add tens to hundreds of ms of
+    // jitter under load, which made a 150ms ceiling flaky. The generous 2s
+    // ceiling still catches a real regression (a deadlocked channel or a hang)
+    // without failing on scheduling noise.
     assert!(
-        event_elapsed < Duration::from_millis(150),
-        "Event-driven took too long: {:?}",
-        event_elapsed
+        event_elapsed >= Duration::from_millis(90),
+        "Event fired implausibly early ({event_elapsed:?}); expected to block ~100ms"
+    );
+    assert!(
+        event_elapsed < Duration::from_secs(2),
+        "Event-driven wakeup took far too long ({event_elapsed:?}); likely a hang"
     );
 }

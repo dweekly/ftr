@@ -15,7 +15,7 @@ A fast, parallel traceroute implementation with automatic ASN lookup. Available 
 - **ASN Enrichment** - Automatic AS number and organization lookup with caching
 - **ISP Detection** - Identifies your ISP and classifies network segments
 - **Cross-Platform** - Works on Linux, macOS, Windows, FreeBSD, and OpenBSD
-- **IPv6** - Full IPv6 traceroute with v6 ASN/rDNS/STUN enrichment (`-6`); no root needed on macOS or Linux (Windows IPv6 planned)
+- **IPv6** - Full IPv6 traceroute with v6 ASN/rDNS/STUN enrichment (`-6`) on all platforms; no root needed except on the BSDs
 - **Multiple Protocols** - ICMP and UDP support with automatic fallback
 - **JSON Output** - Structured output for programmatic use
 - **Minimal Dependencies** - Efficient design with focus on performance

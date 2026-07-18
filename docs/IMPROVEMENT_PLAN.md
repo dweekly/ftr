@@ -105,20 +105,24 @@ before/after `cargo tree` counts in the body.
   network tests behind an env var and serialize them (SwiftFTR's
   `NetworkTestGate` pattern) instead of letting them flake CI.
 
-## IPv6: remaining platform + polish work
+## IPv6: polish + remaining validation
 
-macOS, Linux, and BSD IPv6 shipped in 0.9.0 (PRs #38–#43). Remaining:
+IPv6 traceroute ships on every supported platform as of 0.10.0 (macOS,
+Linux, BSD in 0.9.0 via PRs #38–#43; Windows in 0.10.0 via #50), each
+live-validated on real hardware/VMs with external v6. Remaining:
 
-- Windows IPv6 via `Icmp6SendEcho2`, mirroring the v4 `IcmpSendEcho2`
-  implementation. Validate live on the `nwx-dell-11` Tailscale box (local
-  Parallels is unreliable); also pay down the ~16 dead-code lints visible
-  only under a Windows-target `clippy --all-targets` (CI's clippy job runs
-  on Ubuntu and never compiles windows.rs — consider a windows-target
-  clippy cross-check in CI).
-- Open observations: router-originated ICMPv6 Time Exceeded on FreeBSD
-  remains unobserved first-hand (CI VM has no external v6); macOS root-mode
-  RAW-vs-DGRAM comparison (`sudo cargo run --release --example
+- Deferred live validation (needs privileged access we couldn't script):
+  router-originated ICMPv6 Time Exceeded observed first-hand on FreeBSD
+  (the FreeBSD VM has external v6, but raw sockets need root and the test
+  `ftr` user isn't in `wheel`; run from console or `pw group mod wheel -m
+  ftr`, then `ftr -6 2001:4860:4860::8888`). OpenBSD's VM has no external
+  v6, so its live multi-hop trace needs a v6-connected host. macOS
+  root-mode RAW-vs-DGRAM comparison (`sudo cargo run --release --example
   spike_traceroute6`).
+- CI gap that keeps biting: clippy runs only on Ubuntu, so `windows.rs` and
+  `bsd*.rs` dead-code/lints surface only when someone compiles those
+  targets (three separate cleanups so far). Add windows-target (and ideally
+  a BSD-target) `clippy --all-targets` cross-check to CI.
 - Polish: NAT64/DNS64 handling review (`AI_V4MAPPED`-style synthesis for
   v4 literals on v6-only networks); first-class zone-scoped (`fe80::%if`)
   targets; hop-level zone display.
