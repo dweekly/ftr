@@ -31,11 +31,6 @@ pub struct BsdAsyncIcmpSocket {
 }
 
 impl BsdAsyncIcmpSocket {
-    /// Create a new BSD async ICMP socket
-    pub fn new() -> Result<Self, TracerouteError> {
-        Self::new_with_config(TimingConfig::default())
-    }
-
     /// Create a new BSD async ICMP socket with custom timing configuration
     pub fn new_with_config(timing_config: TimingConfig) -> Result<Self, TracerouteError> {
         let icmp_identifier = std::process::id() as u16;
@@ -292,9 +287,9 @@ mod tests {
 
     #[test]
     fn test_socket_initialization() {
-        // BsdAsyncIcmpSocket::new() just initializes the struct, doesn't create actual socket
-        // The actual socket is created when sending probes
-        let result = BsdAsyncIcmpSocket::new();
+        // new_with_config() just initializes the struct, doesn't create an
+        // actual socket — the real socket is created when sending probes.
+        let result = BsdAsyncIcmpSocket::new_with_config(TimingConfig::default());
         assert!(
             result.is_ok(),
             "Socket struct initialization should always succeed"
