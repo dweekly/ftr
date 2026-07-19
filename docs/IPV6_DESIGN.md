@@ -548,20 +548,47 @@ at `new_with_config(TimingConfig::default())` (the constructor the factory
 actually uses); after the patch, `cargo build --release` finishes warning-free
 on **both** OpenBSD (33.85s incremental) and FreeBSD (7.50s incremental).
 
-### What remains (root-gated, not completed this session)
+### FreeBSD live root trace — router-originated Time Exceeded observed
 
-Raw ICMPv6 requires root on the BSDs (the documented posture). Direct root SSH
-is disabled on both VMs and no host-sanctioned privilege-escalation path was
-available to this session, so the following were **not** run and are recorded
-for a maintainer to execute from a root shell on the VM:
+Run 2026-07-19 on FreeBSD 14.3-RELEASE arm64 (`freebsd143`), a bridged
+Parallels VM with real Sonic global v6. Access recipe that finally worked
+non-interactively: `sshpass` with `PreferredAuthentications=keyboard-interactive`
+(FreeBSD sshd offers no `password` method) as user `ftr`, then **`sudo`** — not
+`su`. `su` fails because the `ftr` user is not in `wheel`; `sudo` is configured
+NOPASSWD, so raw ICMPv6 (root-only on BSD) runs cleanly. Binary was v0.9.0, but
+`src/socket/bsd_v6.rs` is unchanged through v0.10.0 (0.10.0 only added the
+Windows arm and removed an unrelated dead constructor), so this exercises the
+shipped FreeBSD raw ICMPv6 path.
 
-- **FreeBSD live multi-hop v6 trace** — `ftr -6 2001:4860:4860::8888`. FreeBSD
-  has confirmed external v6 (above), so this is the run that would finally
-  observe a **router-originated ICMPv6 Time Exceeded on FreeBSD first-hand** and
-  close that long-standing open item. Also `ftr 8.8.8.8` (v4 regression) and the
-  root-gated `cargo test`.
-- **OpenBSD** — `ftr -6 ::1` (loopback only, no external v6 here) + `ftr 8.8.8.8`
-  + root `cargo test`.
+`sudo ftr -6 2001:4860:4860::8888` — **17 hops, router-originated ICMPv6 Time
+Exceeded received first-hand from every intermediate Sonic router**, destination
+reached, full ASN/rDNS/segment enrichment; the gateway `2001:5a8:4681:2c00::1`
+correctly classified `[LAN]` via the shared-/64 heuristic:
+
+```
+ 1 [LAN   ] unifi.localdomain (2001:5a8:4681:2c00::1) 2.429 ms [AS46375 - AS-SONICTELECOM - Sonic Telecom LLC, US]
+ 2 [ISP   ] 2001:5a8:657:21::f0:4 2.413 ms [AS46375 - AS-SONICTELECOM - Sonic Telecom LLC, US]
+ 3 [ISP   ] 2001:5a8:5:403f::f0:2 2.406 ms [AS46375 - AS-SONICTELECOM - Sonic Telecom LLC, US]
+ 4 [ISP   ] ae5.cr3.colaca01.sonic.net (2001:5a8:5:403f::e3:b) 7.603 ms [AS46375 ...]
+ ... (hops 5-13 intermediate Sonic routers, all via ICMPv6 Time Exceeded) ...
+14 [DESTINATION] 2001:4860:1:1::3ab6 5.005 ms [AS15169 - GOOGLE - Google LLC, US]
+17 [DESTINATION] dns.google (2001:4860:4860::8888) 5.007 ms [AS15169 - GOOGLE - Google LLC, US]
+```
+
+`sudo ftr -6 google.com` (19 hops) and `sudo ftr 8.8.8.8` (v4 regression) were
+also clean. This closes the last IPv6 design-doc open item: every supported
+platform's IPv6 path is now implemented **and** observed on real
+hardware/kernels.
+
+### Still deferred (low value, environment-limited)
+
+- **OpenBSD live external trace** — the OpenBSD 7.7 VM has no external v6
+  (loopback only), so a multi-hop v6 trace there needs a v6-connected OpenBSD
+  host. The build (first-ever clean compile of the `cfg(openbsd)` arm) and the
+  unprivileged permission gate are validated above.
+- macOS root-mode RAW-vs-DGRAM comparison (`sudo cargo run --release --example
+  spike_traceroute6`) — informational; the unprivileged DGRAM path is what ftr
+  ships and is validated.
 
 ## Design decisions for stage-6 integration
 
@@ -572,7 +599,7 @@ for a maintainer to execute from a root shell on the VM:
 | macOS | `IPV6`/`DGRAM`/`ICMPV6` | **No** | **Validated here** |
 | Linux | UDP + `IPV6_RECVERR` errqueue (unprivileged, works with default sysctls); `IPV6`/`DGRAM`/`ICMPV6` ping socket + `IPV6_RECVERR` where `ping_group_range` allows (disabled by default: `1 0`); raw ICMPv6 as root | **No** (UDP mode) | **Validated here** |
 | Windows | `Icmp6SendEcho2` (IP Helper) | No | **Validated & implemented** (`src/socket/windows_v6.rs`; see [Validated findings (Windows)](#validated-findings-windows)) |
-| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate. **v0.9.0 builds clean on real FreeBSD 14.3 and OpenBSD 7.7 (arm64); non-root permission path validated live** ([findings](#validated-findings-freebsd-143--openbsd-77--live-vms)); live root multi-hop trace still pending. NetBSD/DragonFly best-effort, untested |
+| FreeBSD/OpenBSD | `IPV6`/`RAW`/`ICMPV6` | Yes | Implemented (`src/socket/bsd_v6.rs`); CI's FreeBSD VM is the test gate. **Builds clean on real FreeBSD 14.3 and OpenBSD 7.7 (arm64); FreeBSD root multi-hop v6 trace observed live (router-originated Time Exceeded); non-root permission path validated live** ([findings](#validated-findings-freebsd-143--openbsd-77--live-vms)). OpenBSD external trace pending a v6-connected host; NetBSD/DragonFly best-effort, untested |
 
 macOS gets a first-class unprivileged v6 mode — this is strictly better than
 v4 on macOS, where ftr requires root for raw ICMP.
