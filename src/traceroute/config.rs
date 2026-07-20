@@ -61,11 +61,13 @@ impl Default for TimingConfig {
 /// # Default (`Auto`)
 ///
 /// `Auto` prefers IPv4 when a host has both A and AAAA records, and uses
-/// IPv6 only when the host is v6-only. This is a deliberately conservative
-/// default while IPv6 probing is new (currently macOS-only): a dual-stack
-/// host keeps yielding exactly the same trace as previous ftr releases on
-/// every platform, and platforms without IPv6 probe support quietly keep
-/// working. Pass `V6` (CLI `-6`) to opt in for dual-stack hosts.
+/// IPv6 only when the host is v6-only. IPv6 probing is supported on every
+/// platform (macOS/Linux/BSD since 0.9.0, Windows since 0.10.0); the
+/// v4-first default is kept for behavioral compatibility — a dual-stack
+/// host yields exactly the same trace as pre-0.9 ftr releases. This is
+/// deliberately not Happy Eyeballs: the OS may prefer IPv6 for its own
+/// connections to the same host. Pass `V6` (CLI `-6`) to opt in for
+/// dual-stack hosts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum PreferredFamily {
     /// Only resolve to IPv4; error if the host has no A records

@@ -87,7 +87,7 @@
 //!     
 //!     // Other structured errors
 //!     Err(TracerouteError::Ipv6NotSupported) => {
-//!         eprintln!("IPv6 targets are not yet supported");
+//!         eprintln!("IPv6 targets are not supported on this platform");
 //!     }
 //!     Err(TracerouteError::ResolutionError(msg)) => {
 //!         eprintln!("DNS resolution failed: {}", msg);
