@@ -76,7 +76,9 @@ pub enum TracerouteError {
         feature: String,
     },
 
-    /// IPv6 targets are not yet supported
+    /// IPv6 targets are not supported on this platform (all tier-1
+    /// platforms — macOS, Linux, Windows, the BSDs — support IPv6; only
+    /// other OSes return this)
     #[error("IPv6 targets are not yet supported")]
     Ipv6NotSupported,
 

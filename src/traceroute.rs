@@ -13,7 +13,7 @@
 //!
 //! - **`InsufficientPermissions`** - Includes what permissions are needed and suggestions
 //! - **`NotImplemented`** - Feature not yet implemented (e.g., TCP traceroute)
-//! - **`Ipv6NotSupported`** - IPv6 targets not yet supported
+//! - **`Ipv6NotSupported`** - IPv6 targets not supported on this platform
 //! - **`ResolutionError`** - DNS resolution failed
 //! - **`SocketError`** - Socket creation/operation failed
 //! - **`ConfigError`** - Invalid configuration
