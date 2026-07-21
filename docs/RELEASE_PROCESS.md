@@ -107,17 +107,27 @@ When you push the tag, the following automated processes will run:
    - Link to the full CHANGELOG
    - Credit contributors
 
-4. **Publish the release** (this triggers the crates.io publish)
+4. **Publish the release** (this triggers the crates.io publish and the Homebrew tap update)
 
 ### 7. Verify the Release
 
 After publishing:
 1. Check that the release appears on crates.io
-2. Test installation methods:
+2. Check that [dweekly/homebrew-ftr](https://github.com/dweekly/homebrew-ftr) got the automated formula bump commit
+3. Test installation methods:
    - `cargo install ftr`
+   - `brew upgrade ftr` (builds from source)
    - Debian package installation
    - Windows binary execution
-3. Update any documentation that references the version
+4. Update any documentation that references the version
+
+## Required Secrets
+
+The release workflow depends on these repository secrets:
+- `CARGO_REGISTRY_TOKEN` — crates.io API token for `cargo publish`
+- `HOMEBREW_TAP_TOKEN` — GitHub personal access token with push access to
+  `dweekly/homebrew-ftr` (fine-grained PAT scoped to that repo with
+  Contents: read/write). The default `GITHUB_TOKEN` cannot push cross-repo.
 
 ## Security Considerations
 
@@ -162,6 +172,15 @@ If the crates.io publish fails:
    - Version already exists on crates.io
    - Missing or invalid API token
    - Cargo.toml metadata issues
+
+### Homebrew tap update fails
+
+If the `Update Homebrew Tap` job fails:
+1. Check that the `HOMEBREW_TAP_TOKEN` secret exists and has not expired
+2. Fall back to a manual bump in `dweekly/homebrew-ftr`: update the `url` and
+   `sha256` lines in `ftr.rb` (download the tarball first, then
+   `shasum -a 256 <file>` — don't pipe curl into shasum; that produced a
+   wrong hash for v0.6.0) and push
 
 ## Emergency Release Process
 
