@@ -50,6 +50,42 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+  # Update the Homebrew tap formula (only when release is published, like crates.io)
+  publish-homebrew:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published' && !github.event.release.prerelease
+    steps:
+      - name: Compute release tarball SHA256
+        id: tarball
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          curl -sL --fail "https://github.com/${{ github.repository }}/archive/refs/tags/${TAG}.tar.gz" -o ftr.tar.gz
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum ftr.tar.gz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-ftr tap
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          repository: dweekly/homebrew-ftr
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update formula and push
+        run: |
+          VERSION="${{ steps.tarball.outputs.version }}"
+          SHA256="${{ steps.tarball.outputs.sha256 }}"
+          sed -i -E "s|^  url \".*\"|  url \"https://github.com/dweekly/ftr/archive/refs/tags/v${VERSION}.tar.gz\"|" ftr.rb
+          sed -i -E "s|^  sha256 \".*\"|  sha256 \"${SHA256}\"|" ftr.rb
+          if git diff --quiet ftr.rb; then
+            echo "Formula already at v${VERSION}, nothing to do"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update ftr to v${VERSION}"
+          git push
+
   build-deb:
     name: Build Debian Package
     runs-on: ubuntu-latest
