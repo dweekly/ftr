@@ -24,7 +24,7 @@ jobs:
           - os: ubuntu-latest
             rust: 1.85.0
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Install Rust
       uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
       with:
@@ -50,8 +50,8 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
         components: rustfmt
@@ -65,8 +65,8 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
         components: clippy
@@ -86,8 +86,8 @@ jobs:
     # Consider making this job blocking once it has a track record of stability.
     continue-on-error: true
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
         components: llvm-tools-preview
@@ -117,7 +117,7 @@ jobs:
     name: Cargo deny (advisories, licenses, bans, sources)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
       with:
         command: check
@@ -129,15 +129,15 @@ jobs:
     name: Semver checks
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: obi1kenobi/cargo-semver-checks-action@6b69fcf40e9b5fb17adeb57e4b6ecd020649a239 # v2.9
 
   unused-deps:
     name: Check unused dependencies
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -153,8 +153,8 @@ jobs:
     name: Check outdated dependencies
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -170,8 +170,8 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: stable
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -186,8 +186,8 @@ jobs:
     name: Check MSRV
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-06-30)
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master (2026-06-30)
       with:
         toolchain: 1.85.0
     - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -200,7 +200,7 @@ jobs:
     name: FreeBSD
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - name: Test on FreeBSD 14.0
       uses: vmactions/freebsd-vm@83b151f58c6047089f4c80eb5ba2039d158ce093 # v1.5.3
       with:
